@@ -70,7 +70,7 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
                 @for (column of columns(); track column.id) {
                   @let cell = row.subtopic.cells[column.id];
                   <td
-                    class="border border-slate-200 px-2 py-2 align-top"
+                    class="border border-slate-200 p-0 align-top"
                     [class.border-sky-400]="activeReferencedColumnId() === column.id"
                     (contextmenu)="openMenu($event, column.id)"
                     (mousedown)="onColumnAssistMouseDown($event, column.id, row.subtopic.id, column.id)"
@@ -79,16 +79,17 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
                       <input
                         #formulaInput
                         [attr.data-cell-key]="makeCellKey(row.subtopic.id, column.id)"
-                        [ngModel]="cell?.raw ?? ''"
+                        [ngModel]="editingCellDraft()"
                         (focus)="selectNode.emit(row.subtopic.id)"
-                        (blur)="stopEditingCell()"
+                        (blur)="onEditingBlur()"
                         (click)="onFormulaCursorChange($event)"
                         (keyup)="onFormulaCursorChange($event)"
                         (input)="onFormulaCursorChange($event)"
-                        (keydown.enter)="stopEditingCell()"
-                        (ngModelChange)="setCell.emit({ nodeId: row.subtopic.id, columnId: column.id, raw: $event })"
+                        (keydown.enter)="commitEditingCell()"
+                        (keydown.escape)="cancelEditingCell($event)"
+                        (ngModelChange)="onEditingDraftChange($event)"
                         [attr.aria-invalid]="cell?.error ? 'true' : 'false'"
-                        class="min-w-0 w-full overflow-x-auto whitespace-nowrap rounded border px-2 py-1.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-500"
+                        class="block min-h-[44px] min-w-0 w-full overflow-x-auto whitespace-nowrap rounded-none border-0 px-2 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
                         [class.border-rose-300]="!!cell?.error"
                         [class.border-slate-300]="!cell?.error"
                       />
@@ -96,7 +97,7 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
                       <button
                         (click)="onViewCellClick($event, row.subtopic.id, column.id)"
                         [attr.aria-label]="'Edit cell ' + column.name"
-                        class="w-full truncate rounded border border-transparent px-2 py-1.5 text-left text-sm text-slate-700 hover:border-slate-200 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-500"
+                        class="block min-h-[44px] w-full truncate rounded-none border-0 px-2 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
                         type="button"
                       >
                         {{ displayCellValue(cell?.raw ?? '', cell?.value ?? null, cell?.error ?? null) }}
@@ -151,9 +152,11 @@ export class SubtopicTableComponent {
   protected readonly editingCellKey = signal<string | null>(null);
   protected readonly editingCellNodeId = signal<string | null>(null);
   protected readonly editingCellColumnId = signal<string | null>(null);
+  protected readonly editingCellDraft = signal('');
   protected readonly formulaEditingMode = signal(false);
   protected readonly activeReferencedColumnId = signal<string | null>(null);
   protected readonly keepEditingOnNextBlur = signal(false);
+  private blurGuardTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly tableContainerRef = viewChild<ElementRef<HTMLElement>>('tableContainer');
   private readonly formulaInputRef = viewChild<ElementRef<HTMLInputElement>>('formulaInput');
@@ -219,11 +222,14 @@ export class SubtopicTableComponent {
     this.editingCellKey.set(this.makeCellKey(nodeId, columnId));
     this.editingCellNodeId.set(nodeId);
     this.editingCellColumnId.set(columnId);
+    this.editingCellDraft.set(raw);
     this.formulaEditingMode.set(raw.trim().startsWith('='));
     this.activeReferencedColumnId.set(null);
+    const cellKey = this.makeCellKey(nodeId, columnId);
+    this.focusEditingInput(cellKey);
   }
 
-  stopEditingCell(): void {
+  onEditingBlur(): void {
     if (this.keepEditingOnNextBlur()) {
       this.keepEditingOnNextBlur.set(false);
       queueMicrotask(() => {
@@ -232,9 +238,38 @@ export class SubtopicTableComponent {
       return;
     }
 
+    this.commitEditingCell();
+  }
+
+  commitEditingCell(): void {
+    const nodeId = this.editingCellNodeId();
+    const columnId = this.editingCellColumnId();
+    if (nodeId && columnId) {
+      this.setCell.emit({
+        nodeId,
+        columnId,
+        raw: this.editingCellDraft(),
+      });
+    }
+
     this.editingCellKey.set(null);
     this.editingCellNodeId.set(null);
     this.editingCellColumnId.set(null);
+    this.editingCellDraft.set('');
+    this.formulaEditingMode.set(false);
+    this.activeReferencedColumnId.set(null);
+  }
+
+  cancelEditingCell(event?: Event): void {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    this.editingCellKey.set(null);
+    this.editingCellNodeId.set(null);
+    this.editingCellColumnId.set(null);
+    this.editingCellDraft.set('');
     this.formulaEditingMode.set(false);
     this.activeReferencedColumnId.set(null);
   }
@@ -291,6 +326,13 @@ export class SubtopicTableComponent {
     }
 
     this.keepEditingOnNextBlur.set(true);
+    if (this.blurGuardTimer) {
+      clearTimeout(this.blurGuardTimer);
+    }
+    this.blurGuardTimer = setTimeout(() => {
+      this.keepEditingOnNextBlur.set(false);
+      this.blurGuardTimer = null;
+    }, 0);
     event.preventDefault();
     event.stopPropagation();
     this.insertColumnReference(clickedColumnId);
@@ -319,6 +361,14 @@ export class SubtopicTableComponent {
     this.activeReferencedColumnId.set(this.findReferencedColumnAtCursor(raw, cursor));
   }
 
+  protected onEditingDraftChange(raw: string): void {
+    this.editingCellDraft.set(raw);
+    this.formulaEditingMode.set(raw.trim().startsWith('='));
+    if (!raw.trim().startsWith('=')) {
+      this.activeReferencedColumnId.set(null);
+    }
+  }
+
   protected onDocumentMouseDown(event: MouseEvent): void {
     if (!this.isEditingAnyCell()) {
       return;
@@ -327,12 +377,12 @@ export class SubtopicTableComponent {
     const table = this.tableContainerRef()?.nativeElement;
     const target = event.target as Node | null;
     if (!table || !target) {
-      this.stopEditingCell();
+      this.commitEditingCell();
       return;
     }
 
     if (!table.contains(target)) {
-      this.stopEditingCell();
+      this.commitEditingCell();
     }
   }
 
@@ -362,7 +412,7 @@ export class SubtopicTableComponent {
       return;
     }
 
-    const current = input.value;
+    const current = this.editingCellDraft();
     const selectionStart = input.selectionStart ?? current.length;
     const selectionEnd = input.selectionEnd ?? selectionStart;
     const range = this.getReferenceRangeAtCursor(current, selectionStart);
@@ -370,11 +420,8 @@ export class SubtopicTableComponent {
     const replaceEnd = range ? range.end : selectionEnd;
     const inserted = `${current.slice(0, replaceStart)}${columnId}${current.slice(replaceEnd)}`;
 
-    this.setCell.emit({
-      nodeId,
-      columnId: editingColumnId,
-      raw: inserted,
-    });
+    this.editingCellDraft.set(inserted);
+    this.formulaEditingMode.set(true);
 
     const cellKey = this.makeCellKey(nodeId, editingColumnId);
     const nextCursor = replaceStart + columnId.length;
@@ -452,5 +499,30 @@ export class SubtopicTableComponent {
     };
 
     requestAnimationFrame(applySelection);
+  }
+
+  private focusEditingInput(cellKey: string): void {
+    let attempts = 0;
+    const maxAttempts = 6;
+
+    const tryFocus = (): void => {
+      attempts += 1;
+      const tableRoot = this.tableContainerRef()?.nativeElement;
+      const liveInput =
+        tableRoot?.querySelector<HTMLInputElement>(`input[data-cell-key=\"${cellKey}\"]`) ??
+        this.formulaInputRef()?.nativeElement;
+      if (!liveInput) {
+        if (attempts < maxAttempts) {
+          requestAnimationFrame(tryFocus);
+        }
+        return;
+      }
+
+      liveInput.focus();
+      const cursor = liveInput.value.length;
+      liveInput.setSelectionRange(cursor, cursor);
+    };
+
+    requestAnimationFrame(tryFocus);
   }
 }
