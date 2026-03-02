@@ -50,23 +50,21 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
               </button>
 
               <div
-                class="relative min-w-0 flex-1 rounded-full border border-sky-300 bg-sky-100 px-3 py-2"
+                class="relative min-w-0 flex-1 rounded-full border border-sky-300 bg-sky-100"
                 [class.ring-2]="selectedNodeId() === topic.id"
                 [class.ring-sky-400]="selectedNodeId() === topic.id"
                 (contextmenu)="openTopicMenu($event, topic.id)"
               >
-                <div class="flex items-center gap-2">
-                  <input
-                    [ngModel]="nodeInputValue(topic.id, topic.label)"
-                    (focus)="onNodeFocus(topic.id, topic.label)"
-                    (ngModelChange)="onNodeModelChange(topic.id, $event)"
-                    (blur)="onNodeBlur($event, topic.id, topic.label)"
-                    (keydown.enter)="onNodeEnter($event, topic.id, topic.label)"
-                    (keydown.escape)="onNodeEscape($event, topic.id, topic.label)"
-                    class="min-w-0 flex-1 border-0 bg-transparent text-sm font-semibold text-slate-800 focus-visible:outline-none"
-                    [attr.aria-label]="'Topic label: ' + topic.label"
-                  />
-                </div>
+                <input
+                  [ngModel]="nodeInputValue(topic.id, topic.label)"
+                  (focus)="onNodeFocus(topic.id, topic.label)"
+                  (ngModelChange)="onNodeModelChange(topic.id, $event)"
+                  (blur)="onNodeBlur($event, topic.id, topic.label)"
+                  (keydown.enter)="onNodeEnter($event, topic.id, topic.label)"
+                  (keydown.escape)="onNodeEscape($event, topic.id, topic.label)"
+                  class="block min-h-[40px] w-full rounded-full border-0 bg-transparent px-3 py-2 text-sm font-semibold text-slate-800 focus-visible:outline-none"
+                  [attr.aria-label]="'Topic label: ' + topic.label"
+                />
               </div>
             </div>
 
@@ -90,7 +88,7 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
                   </button>
 
                   <div
-                    class="min-w-0 flex-1 rounded-xl border border-amber-300 bg-amber-100 px-3 py-2"
+                    class="min-w-0 flex-1 rounded-xl border border-amber-300 bg-amber-100"
                     [class.ring-2]="selectedNodeId() === subtopic.id"
                     [class.ring-amber-400]="selectedNodeId() === subtopic.id"
                     (contextmenu)="openSubtopicMenu($event, topic.id, subtopic.id)"
@@ -102,7 +100,7 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
                       (blur)="onNodeBlur($event, subtopic.id, subtopic.label)"
                       (keydown.enter)="onNodeEnter($event, subtopic.id, subtopic.label)"
                       (keydown.escape)="onNodeEscape($event, subtopic.id, subtopic.label)"
-                      class="w-full border-0 bg-transparent text-sm font-medium text-slate-800 focus-visible:outline-none"
+                      class="block min-h-[40px] w-full rounded-xl border-0 bg-transparent px-3 py-2 text-sm font-medium text-slate-800 focus-visible:outline-none"
                       [attr.aria-label]="'Subtopic label: ' + subtopic.label"
                     />
                   </div>
