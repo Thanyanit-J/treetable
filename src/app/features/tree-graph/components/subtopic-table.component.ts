@@ -40,7 +40,8 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
                     } @else {
                       <button
                         (dblclick)="startColumnRename(column.id, column.name)"
-                        (click)="selectColumn(column.id)"
+                        (mousedown)="onHeaderLabelMouseDown($event, column.id)"
+                        (click)="onHeaderLabelClick($event, column.id)"
                         class="truncate text-left"
                         type="button"
                       >
@@ -175,6 +176,33 @@ export class SubtopicTableComponent {
 
   selectColumn(columnId: string): void {
     this.menuColumnId.set(columnId);
+  }
+
+  protected onHeaderLabelMouseDown(event: MouseEvent, columnId: string): void {
+    if (!this.formulaEditingMode()) {
+      return;
+    }
+
+    const editingColumnId = this.editingCellColumnId();
+    if (editingColumnId === columnId) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    // Keep focus on active formula input while still allowing <th> mousedown
+    // to bubble and insert reference for different columns.
+    event.preventDefault();
+  }
+
+  protected onHeaderLabelClick(event: MouseEvent, columnId: string): void {
+    if (this.formulaEditingMode()) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    this.selectColumn(columnId);
   }
 
   onMenuAction(action: 'insertLeft' | 'insertRight' | 'rename' | 'delete'): void {
@@ -335,6 +363,20 @@ export class SubtopicTableComponent {
       return;
     }
 
+    const editingColumnId = this.editingCellColumnId();
+    if (editingColumnId && clickedColumnId === editingColumnId) {
+      // Same-column clicks should never auto insert/replace.
+      if (clickedNodeId && clickedNodeId !== this.editingCellNodeId()) {
+        // Treat as Enter, then let browser move focus to clicked cell.
+        this.commitEditingCell();
+        return;
+      }
+      // Header click in same column: keep current formula edit active.
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     event.preventDefault();
     event.stopPropagation();
     this.insertColumnReference(clickedColumnId);
@@ -351,7 +393,7 @@ export class SubtopicTableComponent {
 
   protected onColumnAssistClick(
     event: MouseEvent,
-    _clickedColumnId: string,
+    clickedColumnId: string,
     clickedNodeId: string | null,
     clickedCellColumnId: string | null,
   ): void {
@@ -363,6 +405,13 @@ export class SubtopicTableComponent {
       clickedNodeId === this.editingCellNodeId() &&
       clickedCellColumnId === this.editingCellColumnId()
     ) {
+      return;
+    }
+
+    const editingColumnId = this.editingCellColumnId();
+    if (editingColumnId && clickedColumnId === editingColumnId) {
+      event.preventDefault();
+      event.stopPropagation();
       return;
     }
 

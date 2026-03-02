@@ -184,14 +184,32 @@ export class TreeTableStoreService {
 
   setCellRaw(nodeId: NodeId, columnId: ColumnId, raw: string): void {
     this.mutate((state) => {
+      const nextIsFormula = raw.trim().startsWith('=');
+      let targetChild: TreeSubtopic | null = null;
       for (const topic of state.topics) {
         const child = topic.children.find((candidate) => candidate.id === nodeId);
-        if (!child) {
-          continue;
+        if (child) {
+          targetChild = child;
+          break;
         }
-        child.cells[columnId] = this.withRaw(child.cells[columnId], raw);
+      }
+
+      if (!targetChild) {
         return;
       }
+
+      const prevRaw = targetChild.cells[columnId]?.raw ?? '';
+      const wasFormula = prevRaw.trim().startsWith('=');
+      if (nextIsFormula || wasFormula) {
+        for (const topic of state.topics) {
+          for (const child of topic.children) {
+            child.cells[columnId] = this.withRaw(child.cells[columnId], raw);
+          }
+        }
+        return;
+      }
+
+      targetChild.cells[columnId] = this.withRaw(targetChild.cells[columnId], raw);
     });
   }
 

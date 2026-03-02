@@ -9,8 +9,8 @@ const COLUMNS: TableColumn[] = [
   { id: '$Value', name: 'Value', type: 'number' },
 ];
 
-function buildRows(valueRaw = '=$Amount*$Rate'): VisibleSubtopicRow[] {
-  return [
+function buildRows(valueRaw = '=$Amount*$Rate', includeSecondRow = false): VisibleSubtopicRow[] {
+  const rows: VisibleSubtopicRow[] = [
     {
       topicId: 'topic_1',
       topicLabel: 'Topic 1',
@@ -26,6 +26,25 @@ function buildRows(valueRaw = '=$Amount*$Rate'): VisibleSubtopicRow[] {
       },
     },
   ];
+
+  if (includeSecondRow) {
+    rows.push({
+      topicId: 'topic_1',
+      topicLabel: 'Topic 1',
+      subtopic: {
+        id: 'subtopic_2',
+        topicId: 'topic_1',
+        label: 'Subtopic 2',
+        cells: {
+          $Amount: { raw: '250', value: 250, error: null },
+          $Rate: { raw: '0.2', value: 0.2, error: null },
+          $Value: { raw: valueRaw, value: 50, error: null },
+        },
+      },
+    });
+  }
+
+  return rows;
 }
 
 describe('SubtopicTableComponent', () => {
@@ -37,7 +56,7 @@ describe('SubtopicTableComponent', () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }
 
-  async function setup(valueRaw = '=$Amount*$Rate'): Promise<{
+  async function setup(valueRaw = '=$Amount*$Rate', includeSecondRow = false): Promise<{
     fixture: ComponentFixture<SubtopicTableComponent>;
     component: SubtopicTableComponent;
     setCellEvents: Array<{ nodeId: string; columnId: string; raw: string }>;
@@ -50,7 +69,7 @@ describe('SubtopicTableComponent', () => {
 
     const fixture = TestBed.createComponent(SubtopicTableComponent);
     fixture.componentRef.setInput('columns', COLUMNS);
-    fixture.componentRef.setInput('rows', buildRows(valueRaw));
+    fixture.componentRef.setInput('rows', buildRows(valueRaw, includeSecondRow));
     fixture.componentRef.setInput('selectedNodeId', null);
 
     const component = fixture.componentInstance;
@@ -142,6 +161,45 @@ describe('SubtopicTableComponent', () => {
     expect(valueInput.value).toBe('=$Rate+$Rate');
     expect(valueInput.selectionStart).toBe('=$Rate'.length);
     expect(valueInput.selectionEnd).toBe('=$Rate'.length);
+  });
+
+  it('clicking same column header during formula edit does nothing and keeps current cell editing', async () => {
+    const { fixture, component } = await setup('=$Amount+$Rate');
+    const valueInput = getCellInput(fixture, 'subtopic_1', '$Value');
+    focusInput(fixture, valueInput);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const valueHeader = fixture.nativeElement.querySelectorAll('thead th')[2] as HTMLElement | null;
+    valueHeader?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    valueHeader?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(valueInput.value).toBe('=$Amount+$Rate');
+    expect(component.isEditingCell('subtopic_1', '$Value')).toBe(true);
+  });
+
+  it('clicking another row in same column commits current formula and starts editing clicked cell', async () => {
+    const { fixture, component, setCellEvents } = await setup('=$Amount+$Rate', true);
+    const firstValueInput = getCellInput(fixture, 'subtopic_1', '$Value');
+    const secondValueInput = getCellInput(fixture, 'subtopic_2', '$Value');
+
+    focusInput(fixture, firstValueInput);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    firstValueInput.value = '=$Amount*3';
+    firstValueInput.dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+
+    secondValueInput.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    secondValueInput.dispatchEvent(new FocusEvent('focus'));
+    fixture.detectChanges();
+
+    expect(setCellEvents).toContainEqual({ nodeId: 'subtopic_1', columnId: '$Value', raw: '=$Amount*3' });
+    expect(component.isEditingCell('subtopic_1', '$Value')).toBe(false);
+    expect(component.isEditingCell('subtopic_2', '$Value')).toBe(true);
   });
 
   it('commits once on Enter and exits editing', async () => {

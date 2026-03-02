@@ -123,4 +123,41 @@ describe('TreeTableStoreService', () => {
     store.redo();
     expect(store.title()).toBe('My Plan');
   });
+
+  it('applies formulas to the whole column while keeping literal values row-local', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const rows = store.visibleSubtopicRows();
+    const firstRow = rows[0];
+    const secondRow = rows[1];
+    if (!firstRow || !secondRow) {
+      throw new Error('Expected at least two rows');
+    }
+
+    store.setCellRaw(firstRow.subtopic.id, '$Value', '=$Amount*$Rate');
+    const afterFormulaRows = store.visibleSubtopicRows();
+    expect(afterFormulaRows[0]?.subtopic.cells['$Value']?.raw).toBe('=$Amount*$Rate');
+    expect(afterFormulaRows[1]?.subtopic.cells['$Value']?.raw).toBe('=$Amount*$Rate');
+
+    store.setCellRaw(firstRow.subtopic.id, '$Amount', '777');
+    const afterLiteralRows = store.visibleSubtopicRows();
+    expect(afterLiteralRows[0]?.subtopic.cells['$Amount']?.raw).toBe('777');
+    expect(afterLiteralRows[1]?.subtopic.cells['$Amount']?.raw).not.toBe('777');
+  });
+
+  it('removing a formula from a column applies to all rows in that column', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const rows = store.visibleSubtopicRows();
+    const firstRow = rows[0];
+    const secondRow = rows[1];
+    if (!firstRow || !secondRow) {
+      throw new Error('Expected at least two rows');
+    }
+
+    store.setCellRaw(firstRow.subtopic.id, '$Value', '=$Amount*$Rate');
+    store.setCellRaw(firstRow.subtopic.id, '$Value', '');
+
+    const afterRemove = store.visibleSubtopicRows();
+    expect(afterRemove[0]?.subtopic.cells['$Value']?.raw).toBe('');
+    expect(afterRemove[1]?.subtopic.cells['$Value']?.raw).toBe('');
+  });
 });
