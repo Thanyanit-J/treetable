@@ -401,13 +401,7 @@ describe('SubtopicTableComponent', () => {
     ] satisfies VisibleSubtopicRow[]);
     fixture.detectChanges();
 
-    const topicLabels = Array.from(fixture.nativeElement.querySelectorAll('section > div.mb-2')).map((el) =>
-      (el as HTMLElement).textContent?.trim(),
-    );
     const tableCount = fixture.nativeElement.querySelectorAll('table').length;
-
-    expect(topicLabels).toContain('Topic One');
-    expect(topicLabels).toContain('Topic Two');
     expect(tableCount).toBe(2);
   });
 });

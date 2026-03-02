@@ -20,9 +20,6 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
         } @else {
           @for (group of topicTableGroups(); track group.topicId) {
             <section class="mb-4 last:mb-0">
-              <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {{ group.topicLabel }}
-              </div>
               <table class="min-w-full border-collapse text-sm">
                 <thead>
                   <tr>
