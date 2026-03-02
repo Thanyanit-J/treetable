@@ -225,9 +225,6 @@ export class SubtopicTableComponent {
     this.editingCellDraft.set(raw);
     this.formulaEditingMode.set(raw.trim().startsWith('='));
     this.activeReferencedColumnId.set(null);
-
-    const cellKey = this.makeCellKey(nodeId, columnId);
-    this.scheduleCaretPosition(cellKey, raw.length);
   }
 
   commitEditingCell(): void {
