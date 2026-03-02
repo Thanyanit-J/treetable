@@ -77,7 +77,7 @@ export class TreeTableStoreService {
             id: subtopicId,
             topicId,
             label: 'New Subtopic',
-            cells: createEmptyCells(state.columns),
+            cells: this.buildNewSubtopicCells(state),
           },
         ],
       };
@@ -106,7 +106,7 @@ export class TreeTableStoreService {
         id: subtopicId,
         topicId,
         label,
-        cells: createEmptyCells(state.columns),
+        cells: this.buildNewSubtopicCells(state),
       };
       topic.children.push(newSubtopic);
       state.selectedNodeId = subtopicId;
@@ -380,6 +380,29 @@ export class TreeTableStoreService {
       value: existing?.value ?? null,
       error: existing?.error ?? null,
     };
+  }
+
+  private buildNewSubtopicCells(state: TreeTableStateV1): Record<ColumnId, CellData> {
+    const cells = createEmptyCells(state.columns);
+    for (const column of state.columns) {
+      const formulaRaw = this.findColumnFormulaRaw(state, column.id);
+      if (formulaRaw !== null) {
+        cells[column.id] = createCellData(formulaRaw);
+      }
+    }
+    return cells;
+  }
+
+  private findColumnFormulaRaw(state: TreeTableStateV1, columnId: ColumnId): string | null {
+    for (const topic of state.topics) {
+      for (const child of topic.children) {
+        const raw = child.cells[columnId]?.raw ?? '';
+        if (raw.trim().startsWith('=')) {
+          return raw;
+        }
+      }
+    }
+    return null;
   }
 
   private buildUniqueColumn(

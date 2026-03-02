@@ -26,6 +26,38 @@ describe('TreeTableStoreService', () => {
     expect(store.selectedNodeId()).toBe(created?.children[0]?.id ?? null);
   });
 
+  it('new subtopic inherits active column formulas', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const topic = store.topics()[0];
+    const existingRow = store.visibleSubtopicRows()[0];
+    if (!topic || !existingRow) {
+      throw new Error('Expected starter data');
+    }
+
+    store.setCellRaw(existingRow.subtopic.id, '$Value', '=$Amount*$Rate');
+    store.addSubtopic(topic.id, 'Auto Formula Child');
+
+    const created = store.topics().find((candidate) => candidate.id === topic.id)?.children.at(-1);
+    expect(created?.label).toBe('Auto Formula Child');
+    expect(created?.cells['$Value']?.raw).toBe('=$Amount*$Rate');
+  });
+
+  it('default subtopic of new topic inherits active column formulas', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const existingRow = store.visibleSubtopicRows()[0];
+    if (!existingRow) {
+      throw new Error('Expected starter row');
+    }
+
+    store.setCellRaw(existingRow.subtopic.id, '$Value', '=$Amount+$Rate');
+    store.addTopic('Formula Topic');
+
+    const createdTopic = store.topics().at(-1);
+    const createdSubtopic = createdTopic?.children[0];
+    expect(createdTopic?.label).toBe('Formula Topic');
+    expect(createdSubtopic?.cells['$Value']?.raw).toBe('=$Amount+$Rate');
+  });
+
   it('deleting subtopic removes table row and supports undo', () => {
     const store = TestBed.inject(TreeTableStoreService);
     const topic = store.topics()[0];
