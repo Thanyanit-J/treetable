@@ -12,10 +12,10 @@ import {
   selector: 'app-column-context-menu',
   host: {
     '(document:keydown.escape)': 'onEscape()',
+    '(document:mousedown)': 'onDocumentMouseDown($event)',
   },
   template: `
     @if (open()) {
-      <div class="fixed inset-0 z-40" (click)="close.emit()" aria-hidden="true"></div>
       <section
         #menu
         class="fixed z-50 w-52 rounded-lg border border-slate-200 bg-white p-1 shadow-xl"
@@ -89,5 +89,19 @@ export class ColumnContextMenuComponent {
     if (this.open()) {
       this.close.emit();
     }
+  }
+
+  onDocumentMouseDown(event: MouseEvent): void {
+    if (!this.open()) {
+      return;
+    }
+
+    const menu = this.menuRef()?.nativeElement;
+    const target = event.target as Node | null;
+    if (!menu || !target || menu.contains(target)) {
+      return;
+    }
+
+    this.close.emit();
   }
 }

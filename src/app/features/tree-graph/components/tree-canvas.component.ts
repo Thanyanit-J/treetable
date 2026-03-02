@@ -110,8 +110,8 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
       </div>
 
       @if (menuOpen()) {
-        <div class="fixed inset-0 z-40" (click)="closeNodeMenu()" aria-hidden="true"></div>
         <section
+          #nodeMenu
           class="fixed z-50 w-52 rounded-lg border border-slate-200 bg-white p-1 shadow-xl"
           [style.left.px]="menuX()"
           [style.top.px]="menuY()"
@@ -180,6 +180,7 @@ export class TreeCanvasComponent {
   protected readonly editingNodeId = signal<string | null>(null);
   protected readonly editingNodeLabel = signal('');
   private readonly canvasRootRef = viewChild<ElementRef<HTMLElement>>('canvasRoot');
+  private readonly nodeMenuRef = viewChild<ElementRef<HTMLElement>>('nodeMenu');
 
   onTopicDrop(event: CdkDragDrop<TreeTopic[]>): void {
     if (event.previousIndex === event.currentIndex) {
@@ -330,6 +331,14 @@ export class TreeCanvasComponent {
   }
 
   protected onDocumentMouseDown(event: MouseEvent): void {
+    if (this.menuOpen()) {
+      const menu = this.nodeMenuRef()?.nativeElement;
+      const target = event.target as Node | null;
+      if (!menu || !target || !menu.contains(target)) {
+        this.closeNodeMenu();
+      }
+    }
+
     const root = this.canvasRootRef()?.nativeElement;
     const target = event.target as Node | null;
     if (!root || !target || root.contains(target)) {
