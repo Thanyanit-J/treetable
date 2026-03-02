@@ -25,6 +25,7 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
                   [class.border-sky-400]="activeReferencedColumnId() === column.id"
                   (contextmenu)="openMenu($event, column.id)"
                   (mousedown)="onColumnAssistMouseDown($event, column.id, null, null)"
+                  (click)="onColumnAssistClick($event, column.id, null, null)"
                 >
                   <div class="flex items-center gap-2">
                     @if (editingColumnId() === column.id) {
@@ -74,35 +75,31 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
                     [class.border-sky-400]="activeReferencedColumnId() === column.id"
                     (contextmenu)="openMenu($event, column.id)"
                     (mousedown)="onColumnAssistMouseDown($event, column.id, row.subtopic.id, column.id)"
+                    (click)="onColumnAssistClick($event, column.id, row.subtopic.id, column.id)"
                   >
-                    @if (isEditingCell(row.subtopic.id, column.id)) {
-                      <input
-                        #formulaInput
-                        [attr.data-cell-key]="makeCellKey(row.subtopic.id, column.id)"
-                        [ngModel]="editingCellDraft()"
-                        (focus)="selectNode.emit(row.subtopic.id)"
-                        (blur)="onEditingBlur()"
-                        (click)="onFormulaCursorChange($event)"
-                        (keyup)="onFormulaCursorChange($event)"
-                        (input)="onFormulaCursorChange($event)"
-                        (keydown.enter)="commitEditingCell()"
-                        (keydown.escape)="cancelEditingCell($event)"
-                        (ngModelChange)="onEditingDraftChange($event)"
-                        [attr.aria-invalid]="cell?.error ? 'true' : 'false'"
-                        class="block min-h-[44px] min-w-0 w-full overflow-x-auto whitespace-nowrap rounded-none border-0 px-2 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
-                        [class.border-rose-300]="!!cell?.error"
-                        [class.border-slate-300]="!cell?.error"
-                      />
-                    } @else {
-                      <button
-                        (click)="onViewCellClick($event, row.subtopic.id, column.id)"
-                        [attr.aria-label]="'Edit cell ' + column.name"
-                        class="block min-h-[44px] w-full truncate rounded-none border-0 px-2 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
-                        type="button"
-                      >
-                        {{ displayCellValue(cell?.raw ?? '', cell?.value ?? null, cell?.error ?? null) }}
-                      </button>
-                    }
+                    <input
+                      [attr.data-cell-key]="makeCellKey(row.subtopic.id, column.id)"
+                      [ngModel]="
+                        cellInputValue(
+                          row.subtopic.id,
+                          column.id,
+                          cell?.raw ?? '',
+                          cell?.value ?? null,
+                          cell?.error ?? null
+                        )
+                      "
+                      (focus)="onCellFocus(row.subtopic.id, column.id)"
+                      (blur)="onCellBlur(row.subtopic.id, column.id)"
+                      (click)="onFormulaCursorChange(row.subtopic.id, column.id, $event)"
+                      (keyup)="onFormulaCursorChange(row.subtopic.id, column.id, $event)"
+                      (input)="onFormulaCursorChange(row.subtopic.id, column.id, $event)"
+                      (keydown.enter)="onCellEnter($event)"
+                      (keydown.escape)="onCellEscape($event)"
+                      (ngModelChange)="onCellModelChange(row.subtopic.id, column.id, $event)"
+                      [attr.aria-label]="'Edit cell ' + column.name"
+                      [attr.aria-invalid]="cell?.error ? 'true' : 'false'"
+                      class="block min-h-[44px] min-w-0 w-full overflow-x-auto whitespace-nowrap rounded-none border-0 px-2 py-2 text-sm text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
+                    />
                   </td>
                 }
               </tr>
@@ -155,11 +152,8 @@ export class SubtopicTableComponent {
   protected readonly editingCellDraft = signal('');
   protected readonly formulaEditingMode = signal(false);
   protected readonly activeReferencedColumnId = signal<string | null>(null);
-  protected readonly keepEditingOnNextBlur = signal(false);
-  private blurGuardTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly tableContainerRef = viewChild<ElementRef<HTMLElement>>('tableContainer');
-  private readonly formulaInputRef = viewChild<ElementRef<HTMLInputElement>>('formulaInput');
 
   openMenu(event: MouseEvent, columnId: string): void {
     event.preventDefault();
@@ -217,28 +211,20 @@ export class SubtopicTableComponent {
   }
 
   startEditingCell(nodeId: string, columnId: string): void {
-    const row = this.rows().find((candidate) => candidate.subtopic.id === nodeId);
-    const raw = row?.subtopic.cells[columnId]?.raw ?? '';
+    if (this.isEditingCell(nodeId, columnId)) {
+      return;
+    }
+
+    const raw = this.getCellRaw(nodeId, columnId);
     this.editingCellKey.set(this.makeCellKey(nodeId, columnId));
     this.editingCellNodeId.set(nodeId);
     this.editingCellColumnId.set(columnId);
     this.editingCellDraft.set(raw);
     this.formulaEditingMode.set(raw.trim().startsWith('='));
     this.activeReferencedColumnId.set(null);
+
     const cellKey = this.makeCellKey(nodeId, columnId);
-    this.focusEditingInput(cellKey);
-  }
-
-  onEditingBlur(): void {
-    if (this.keepEditingOnNextBlur()) {
-      this.keepEditingOnNextBlur.set(false);
-      queueMicrotask(() => {
-        this.formulaInputRef()?.nativeElement.focus();
-      });
-      return;
-    }
-
-    this.commitEditingCell();
+    this.scheduleCaretPosition(cellKey, raw.length);
   }
 
   commitEditingCell(): void {
@@ -252,26 +238,22 @@ export class SubtopicTableComponent {
       });
     }
 
-    this.editingCellKey.set(null);
-    this.editingCellNodeId.set(null);
-    this.editingCellColumnId.set(null);
-    this.editingCellDraft.set('');
-    this.formulaEditingMode.set(false);
-    this.activeReferencedColumnId.set(null);
+    this.resetEditingState();
   }
 
   cancelEditingCell(event?: Event): void {
+    const nodeId = this.editingCellNodeId();
+    const columnId = this.editingCellColumnId();
+
     if (event) {
       event.preventDefault();
       event.stopPropagation();
     }
 
-    this.editingCellKey.set(null);
-    this.editingCellNodeId.set(null);
-    this.editingCellColumnId.set(null);
-    this.editingCellDraft.set('');
-    this.formulaEditingMode.set(false);
-    this.activeReferencedColumnId.set(null);
+    this.resetEditingState();
+    if (nodeId && columnId) {
+      this.syncDisplayValue(nodeId, columnId);
+    }
   }
 
   isEditingCell(nodeId: string, columnId: string): boolean {
@@ -325,31 +307,83 @@ export class SubtopicTableComponent {
       return;
     }
 
-    this.keepEditingOnNextBlur.set(true);
-    if (this.blurGuardTimer) {
-      clearTimeout(this.blurGuardTimer);
-    }
-    this.blurGuardTimer = setTimeout(() => {
-      this.keepEditingOnNextBlur.set(false);
-      this.blurGuardTimer = null;
-    }, 0);
     event.preventDefault();
     event.stopPropagation();
     this.insertColumnReference(clickedColumnId);
   }
 
-  protected onViewCellClick(event: MouseEvent, nodeId: string, columnId: string): void {
-    if (this.formulaEditingMode()) {
-      event.preventDefault();
-      event.stopPropagation();
-      this.insertColumnReference(columnId);
+  protected onCellFocus(nodeId: string, columnId: string): void {
+    this.selectNode.emit(nodeId);
+    if (this.isEditingCell(nodeId, columnId)) {
       return;
     }
 
     this.startEditingCell(nodeId, columnId);
   }
 
-  protected onFormulaCursorChange(event: Event): void {
+  protected onColumnAssistClick(
+    event: MouseEvent,
+    _clickedColumnId: string,
+    clickedNodeId: string | null,
+    clickedCellColumnId: string | null,
+  ): void {
+    if (!this.formulaEditingMode()) {
+      return;
+    }
+
+    if (
+      clickedNodeId === this.editingCellNodeId() &&
+      clickedCellColumnId === this.editingCellColumnId()
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  protected onCellBlur(nodeId: string, columnId: string): void {
+    if (!this.isEditingCell(nodeId, columnId)) {
+      return;
+    }
+
+    this.commitEditingCell();
+  }
+
+  protected onCellEnter(event: Event): void {
+    event.preventDefault();
+    if (!this.isEditingAnyCell()) {
+      return;
+    }
+
+    this.commitEditingCell();
+    const input = event.target as HTMLInputElement | null;
+    input?.blur();
+  }
+
+  protected onCellEscape(event: Event): void {
+    this.cancelEditingCell(event);
+    const input = event.target as HTMLInputElement | null;
+    input?.blur();
+  }
+
+  protected onCellModelChange(nodeId: string, columnId: string, raw: string): void {
+    if (!this.isEditingCell(nodeId, columnId)) {
+      return;
+    }
+
+    this.editingCellDraft.set(raw);
+    this.formulaEditingMode.set(raw.trim().startsWith('='));
+    if (!raw.trim().startsWith('=')) {
+      this.activeReferencedColumnId.set(null);
+    }
+  }
+
+  protected onFormulaCursorChange(nodeId: string, columnId: string, event: Event): void {
+    if (!this.isEditingCell(nodeId, columnId)) {
+      return;
+    }
+
     if (!this.formulaEditingMode()) {
       this.activeReferencedColumnId.set(null);
       return;
@@ -359,14 +393,6 @@ export class SubtopicTableComponent {
     const raw = input.value;
     const cursor = input.selectionStart ?? raw.length;
     this.activeReferencedColumnId.set(this.findReferencedColumnAtCursor(raw, cursor));
-  }
-
-  protected onEditingDraftChange(raw: string): void {
-    this.editingCellDraft.set(raw);
-    this.formulaEditingMode.set(raw.trim().startsWith('='));
-    if (!raw.trim().startsWith('=')) {
-      this.activeReferencedColumnId.set(null);
-    }
   }
 
   protected onDocumentMouseDown(event: MouseEvent): void {
@@ -384,6 +410,20 @@ export class SubtopicTableComponent {
     if (!table.contains(target)) {
       this.commitEditingCell();
     }
+  }
+
+  protected cellInputValue(
+    nodeId: string,
+    columnId: string,
+    raw: string,
+    value: number | string | null,
+    error: string | null,
+  ): string {
+    if (this.isEditingCell(nodeId, columnId)) {
+      return this.editingCellDraft();
+    }
+
+    return this.displayCellValue(raw, value, error);
   }
 
   protected makeCellKey(nodeId: string, columnId: string): string {
@@ -404,11 +444,30 @@ export class SubtopicTableComponent {
     return this.editingCellKey() !== null;
   }
 
+  private resetEditingState(): void {
+    this.editingCellKey.set(null);
+    this.editingCellNodeId.set(null);
+    this.editingCellColumnId.set(null);
+    this.editingCellDraft.set('');
+    this.formulaEditingMode.set(false);
+    this.activeReferencedColumnId.set(null);
+  }
+
+  private getCellRaw(nodeId: string, columnId: string): string {
+    const row = this.rows().find((candidate) => candidate.subtopic.id === nodeId);
+    return row?.subtopic.cells[columnId]?.raw ?? '';
+  }
+
   private insertColumnReference(columnId: string): void {
     const nodeId = this.editingCellNodeId();
     const editingColumnId = this.editingCellColumnId();
-    const input = this.formulaInputRef()?.nativeElement;
-    if (!nodeId || !editingColumnId || !input) {
+    if (!nodeId || !editingColumnId) {
+      return;
+    }
+
+    const cellKey = this.makeCellKey(nodeId, editingColumnId);
+    const input = this.getInputElement(cellKey);
+    if (!input) {
       return;
     }
 
@@ -423,9 +482,8 @@ export class SubtopicTableComponent {
     this.editingCellDraft.set(inserted);
     this.formulaEditingMode.set(true);
 
-    const cellKey = this.makeCellKey(nodeId, editingColumnId);
     const nextCursor = replaceStart + columnId.length;
-    this.restoreCaretAfterUpdate(cellKey, inserted, nextCursor);
+    this.scheduleCaretPosition(cellKey, nextCursor);
     this.activeReferencedColumnId.set(columnId);
   }
 
@@ -467,62 +525,43 @@ export class SubtopicTableComponent {
     return null;
   }
 
-  private restoreCaretAfterUpdate(cellKey: string, expectedRaw: string, nextCursor: number): void {
-    let attempts = 0;
-    const maxAttempts = 6;
+  private setCaretPosition(cellKey: string, nextCursor: number): void {
+    const input = this.getInputElement(cellKey);
+    if (!input) {
+      return;
+    }
 
-    const applySelection = (): void => {
-      attempts += 1;
-      const tableRoot = this.tableContainerRef()?.nativeElement;
-      const liveInput =
-        tableRoot?.querySelector<HTMLInputElement>(`input[data-cell-key=\"${cellKey}\"]`) ??
-        this.formulaInputRef()?.nativeElement;
+    input.focus();
+    input.setSelectionRange(nextCursor, nextCursor);
 
-      if (!liveInput) {
-        if (attempts < maxAttempts) {
-          requestAnimationFrame(applySelection);
-        }
-        return;
-      }
-
-      liveInput.focus();
-      liveInput.setSelectionRange(nextCursor, nextCursor);
-
-      // Force horizontal scroll so the caret stays in view near insertion point.
-      const textWidthFactor = 8;
-      const targetScroll = Math.max(0, nextCursor * textWidthFactor - liveInput.clientWidth / 2);
-      liveInput.scrollLeft = targetScroll;
-
-      if (liveInput.value !== expectedRaw && attempts < maxAttempts) {
-        requestAnimationFrame(applySelection);
-      }
-    };
-
-    requestAnimationFrame(applySelection);
+    const textWidthFactor = 8;
+    const targetScroll = Math.max(0, nextCursor * textWidthFactor - input.clientWidth / 2);
+    input.scrollLeft = targetScroll;
   }
 
-  private focusEditingInput(cellKey: string): void {
-    let attempts = 0;
-    const maxAttempts = 6;
+  private scheduleCaretPosition(cellKey: string, nextCursor: number): void {
+    requestAnimationFrame(() => {
+      this.setCaretPosition(cellKey, nextCursor);
+    });
+    setTimeout(() => {
+      this.setCaretPosition(cellKey, nextCursor);
+    }, 0);
+  }
 
-    const tryFocus = (): void => {
-      attempts += 1;
-      const tableRoot = this.tableContainerRef()?.nativeElement;
-      const liveInput =
-        tableRoot?.querySelector<HTMLInputElement>(`input[data-cell-key=\"${cellKey}\"]`) ??
-        this.formulaInputRef()?.nativeElement;
-      if (!liveInput) {
-        if (attempts < maxAttempts) {
-          requestAnimationFrame(tryFocus);
-        }
-        return;
-      }
+  private getInputElement(cellKey: string): HTMLInputElement | null {
+    const tableRoot = this.tableContainerRef()?.nativeElement;
+    return tableRoot?.querySelector<HTMLInputElement>(`input[data-cell-key="${cellKey}"]`) ?? null;
+  }
 
-      liveInput.focus();
-      const cursor = liveInput.value.length;
-      liveInput.setSelectionRange(cursor, cursor);
-    };
+  private syncDisplayValue(nodeId: string, columnId: string): void {
+    const cellKey = this.makeCellKey(nodeId, columnId);
+    const input = this.getInputElement(cellKey);
+    if (!input) {
+      return;
+    }
 
-    requestAnimationFrame(tryFocus);
+    const row = this.rows().find((candidate) => candidate.subtopic.id === nodeId);
+    const cell = row?.subtopic.cells[columnId];
+    input.value = this.displayCellValue(cell?.raw ?? '', cell?.value ?? null, cell?.error ?? null);
   }
 }
