@@ -12,8 +12,6 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
   },
   template: `
     <section #tableSection class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm" aria-label="Subtopic table">
-      <div class="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Subtopic Table</div>
-
       <div #tableContainer class="overflow-auto">
         <table class="min-w-full border-collapse text-sm">
           <thead>

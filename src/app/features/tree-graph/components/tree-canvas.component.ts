@@ -29,8 +29,6 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
       class="rounded-2xl border border-slate-200 bg-white/70 p-4 shadow-sm"
       aria-label="Tree graph canvas"
     >
-      <div class="mb-3 px-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Tree Graph</div>
-
       <div
         cdkDropList
         [cdkDropListData]="topics()"

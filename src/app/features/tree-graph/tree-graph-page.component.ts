@@ -27,9 +27,6 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Graph + Table Tree</h1>
-            <p class="text-sm text-slate-600">
-              Graph on the left and shared table rows for subtopics on the right.
-            </p>
           </div>
           <div class="flex flex-wrap gap-2">
             <button
