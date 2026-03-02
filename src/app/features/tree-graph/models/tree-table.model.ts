@@ -24,7 +24,6 @@ export interface TreeTopic {
   id: NodeId;
   label: string;
   expanded: boolean;
-  cells: Record<ColumnId, CellData>;
   children: TreeSubtopic[];
 }
 
@@ -105,11 +104,6 @@ export const STARTER_STATE: TreeTableStateV1 = {
       id: 'topic_wealth',
       label: 'Wealth',
       expanded: true,
-      cells: {
-        amount: createCellData('=SUM(children.amount)'),
-        rate: createCellData(''),
-        value: createCellData('=SUM(children.value)'),
-      },
       children: [
         {
           id: 'subtopic_bankA',
@@ -137,11 +131,6 @@ export const STARTER_STATE: TreeTableStateV1 = {
       id: 'topic_business',
       label: 'Business',
       expanded: true,
-      cells: {
-        amount: createCellData('=SUM(children.amount)'),
-        rate: createCellData(''),
-        value: createCellData('=SUM(children.value)'),
-      },
       children: [
         {
           id: 'subtopic_dividend',

@@ -7,24 +7,16 @@ describe('TreeTableStoreService', () => {
     TestBed.configureTestingModule({});
   });
 
-  it('adds and removes topics', () => {
+  it('creates topics without topic-level cells', () => {
     const store = TestBed.inject(TreeTableStoreService);
-    const initialCount = store.topics().length;
 
-    store.addTopic('Test Topic');
-    expect(store.topics().length).toBe(initialCount + 1);
-
+    store.addTopic('No Topic Cells');
     const created = store.topics().at(-1);
-    expect(created?.label).toBe('Test Topic');
-    if (!created) {
-      throw new Error('Created topic should exist');
-    }
-
-    store.removeTopic(created.id);
-    expect(store.topics().length).toBe(initialCount);
+    expect(created?.label).toBe('No Topic Cells');
+    expect(created && 'cells' in created).toBe(false);
   });
 
-  it('deleting subtopic removes child row and supports undo', () => {
+  it('deleting subtopic removes table row and supports undo', () => {
     const store = TestBed.inject(TreeTableStoreService);
     const topic = store.topics()[0];
     if (!topic) {
@@ -35,40 +27,61 @@ describe('TreeTableStoreService', () => {
       throw new Error('Expected starter subtopic');
     }
 
-    const before = topic.children.length;
+    const beforeRows = store.visibleSubtopicRows().length;
     store.removeSubtopic(topic.id, child.id);
-    expect(store.topics()[0]?.children.length).toBe(before - 1);
+    expect(store.visibleSubtopicRows().length).toBe(beforeRows - 1);
 
     store.undo();
-    expect(store.topics()[0]?.children.length).toBe(before);
+    expect(store.visibleSubtopicRows().length).toBe(beforeRows);
   });
 
-  it('renames and removes columns', () => {
+  it('inserts columns to left/right and deletes across subtopic cells', () => {
     const store = TestBed.inject(TreeTableStoreService);
-    store.addColumn('Profit %', 'number');
-    const created = store.columns().at(-1);
-    if (!created) {
-      throw new Error('Expected created column');
+    const firstColumn = store.columns()[0];
+    if (!firstColumn) {
+      throw new Error('Expected first column');
     }
 
-    expect(created.id).toMatch(/^[A-Za-z_][A-Za-z0-9_]*$/);
+    store.insertColumn(firstColumn.id, 'right');
+    const rightColumn = store.columns()[1];
+    expect(rightColumn).toBeDefined();
 
-    store.renameColumn(created.id, 'Profit Ratio');
-    const renamed = store.columns().find((column) => column.id === created.id);
-    expect(renamed?.name).toBe('Profit Ratio');
+    store.insertColumn(firstColumn.id, 'left');
+    const leftColumn = store.columns()[0];
+    expect(leftColumn?.id).not.toBe(firstColumn.id);
 
-    store.removeColumn(created.id);
-    expect(store.columns().find((column) => column.id === created.id)).toBeUndefined();
+    if (!rightColumn) {
+      throw new Error('Expected inserted right column');
+    }
+
+    store.deleteColumn(rightColumn.id);
+    expect(store.columns().find((column) => column.id === rightColumn.id)).toBeUndefined();
+
+    const row = store.visibleSubtopicRows()[0];
+    if (!row) {
+      throw new Error('Expected at least one row');
+    }
+    expect(row.subtopic.cells[rightColumn.id]).toBeUndefined();
   });
 
-  it('imports exported state', () => {
+  it('prevents deleting the last remaining column', () => {
     const store = TestBed.inject(TreeTableStoreService);
-    store.addTopic('Import Me');
-    const exported = store.exportState();
 
-    const store2 = TestBed.inject(TreeTableStoreService);
-    const result = store2.importState(exported);
-    expect(result.ok).toBe(true);
-    expect(store2.topics().some((topic) => topic.label === 'Import Me')).toBe(true);
+    while (store.columns().length > 1) {
+      const column = store.columns()[store.columns().length - 1];
+      if (!column) {
+        break;
+      }
+      store.deleteColumn(column.id);
+    }
+
+    const onlyColumn = store.columns()[0];
+    if (!onlyColumn) {
+      throw new Error('Expected one column');
+    }
+
+    const result = store.deleteColumn(onlyColumn.id);
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain('At least one column');
   });
 });

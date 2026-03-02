@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { ColumnManagerComponent } from './components/column-manager.component';
 import { ConfirmDialogComponent } from './components/confirm-dialog.component';
+import { SubtopicTableComponent } from './components/subtopic-table.component';
 import { TreeCanvasComponent } from './components/tree-canvas.component';
 import { ImportResult } from './models/tree-table.model';
 import { TreeTableStoreService } from './services/tree-table-store.service';
@@ -20,15 +20,15 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
 
 @Component({
   selector: 'app-tree-graph-page',
-  imports: [ColumnManagerComponent, TreeCanvasComponent, ConfirmDialogComponent],
+  imports: [TreeCanvasComponent, SubtopicTableComponent, ConfirmDialogComponent],
   template: `
-    <main class="mx-auto max-w-[1220px] p-4 sm:p-6 lg:p-8">
+    <main class="mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8">
       <section class="mb-4 rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Graph-First TreeTable</h1>
+            <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Graph + Table Tree</h1>
             <p class="text-sm text-slate-600">
-              Visual topic tree with attached editable row cards and formula support.
+              Graph on the left and shared table rows for subtopics on the right.
             </p>
           </div>
           <div class="flex flex-wrap gap-2">
@@ -69,41 +69,44 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
           </div>
         </div>
 
-        @if (importFeedback()) {
+        @if (statusMessage()) {
           <p
             class="mt-3 rounded-lg px-3 py-2 text-sm"
-            [class.bg-emerald-50]="importFeedback()?.ok"
-            [class.text-emerald-800]="importFeedback()?.ok"
-            [class.bg-rose-50]="!importFeedback()?.ok"
-            [class.text-rose-700]="!importFeedback()?.ok"
+            [class.bg-emerald-50]="statusMessage()?.ok"
+            [class.text-emerald-800]="statusMessage()?.ok"
+            [class.bg-rose-50]="!statusMessage()?.ok"
+            [class.text-rose-700]="!statusMessage()?.ok"
             aria-live="polite"
           >
-            {{ importFeedback()?.ok ? 'Import successful.' : importFeedback()?.error }}
+            {{ statusMessage()?.ok ? 'Done.' : statusMessage()?.error }}
           </p>
         }
       </section>
 
-      <div class="grid gap-4 lg:grid-cols-[1fr_360px]">
+      <div class="grid gap-4 xl:grid-cols-[560px_1fr]">
         <app-tree-canvas
           [topics]="store.topics()"
-          [columns]="store.columns()"
           [selectedNodeId]="store.selectedNodeId()"
           (addSubtopic)="store.addSubtopic($event)"
           (renameNode)="store.renameNode($event.nodeId, $event.label)"
           (toggleExpand)="store.toggleExpand($event)"
           (requestDeleteTopic)="queueTopicDelete($event)"
           (requestDeleteSubtopic)="queueSubtopicDelete($event.topicId, $event.subtopicId)"
-          (setCell)="store.setCellRaw($event.nodeId, $event.columnId, $event.raw)"
           (selectNode)="store.selectNode($event)"
           (moveTopic)="store.moveTopic($event.topicId, $event.toIndex)"
           (moveSubtopic)="store.moveSubtopic($event.topicId, $event.subtopicId, $event.toIndex)"
         />
 
-        <app-column-manager
+        <app-subtopic-table
           [columns]="store.columns()"
-          (add)="store.addColumn($event.name, $event.type)"
-          (rename)="store.renameColumn($event.columnId, $event.name)"
-          (remove)="store.removeColumn($event)"
+          [rows]="store.visibleSubtopicRows()"
+          [selectedNodeId]="store.selectedNodeId()"
+          (renameNode)="store.renameNode($event.nodeId, $event.label)"
+          (setCell)="store.setCellRaw($event.nodeId, $event.columnId, $event.raw)"
+          (selectNode)="store.selectNode($event)"
+          (insertColumn)="store.insertColumn($event.referenceColumnId, $event.side)"
+          (deleteColumn)="onDeleteColumn($event.columnId)"
+          (renameColumn)="store.renameColumn($event.columnId, $event.name)"
         />
       </div>
     </main>
@@ -122,7 +125,7 @@ export class TreeGraphPageComponent {
   readonly store = inject(TreeTableStoreService);
 
   protected readonly pendingDelete = signal<PendingDelete | null>(null);
-  protected readonly importFeedback = signal<ImportResult | null>(null);
+  protected readonly statusMessage = signal<ImportResult | null>(null);
 
   protected readonly isDeleteDialogOpen = computed(() => this.pendingDelete() !== null);
   protected readonly deleteMessage = computed(() => {
@@ -132,10 +135,10 @@ export class TreeGraphPageComponent {
     }
 
     if (pending.type === 'topic') {
-      return 'Deleting a topic removes all its subtopics and row cards.';
+      return 'Deleting a topic removes all its subtopics and table rows.';
     }
 
-    return 'Deleting a subtopic removes its node and attached row card.';
+    return 'Deleting a subtopic removes its table row.';
   });
 
   queueTopicDelete(topicId: string): void {
@@ -172,7 +175,7 @@ export class TreeGraphPageComponent {
     reader.onload = () => {
       const text = typeof reader.result === 'string' ? reader.result : '';
       const result = this.store.importState(text);
-      this.importFeedback.set(result);
+      this.statusMessage.set(result);
       input.value = '';
     };
     reader.readAsText(file);
@@ -187,5 +190,12 @@ export class TreeGraphPageComponent {
     link.download = 'treetable.json';
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  onDeleteColumn(columnId: string): void {
+    const result = this.store.deleteColumn(columnId);
+    if (result) {
+      this.statusMessage.set(result);
+    }
   }
 }

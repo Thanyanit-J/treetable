@@ -1,21 +1,33 @@
 import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { TableColumn, TreeSubtopic, TreeTopic } from '../models/tree-table.model';
-import { NodeRowCardComponent } from './node-row-card.component';
+import { TreeSubtopic, TreeTopic } from '../models/tree-table.model';
+
+interface TopicMenuTarget {
+  kind: 'topic';
+  topicId: string;
+}
+
+interface SubtopicMenuTarget {
+  kind: 'subtopic';
+  topicId: string;
+  subtopicId: string;
+}
+
+type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
 
 @Component({
   selector: 'app-tree-canvas',
-  imports: [DragDropModule, FormsModule, NodeRowCardComponent],
+  imports: [DragDropModule, FormsModule],
+  host: {
+    '(document:keydown.escape)': 'closeNodeMenu()',
+  },
   template: `
     <section
       class="rounded-2xl border border-slate-200 bg-white/70 p-4 shadow-sm"
       aria-label="Tree graph canvas"
     >
-      <div class="mb-3 grid grid-cols-[18rem_1fr] gap-4 px-1 text-xs font-semibold uppercase tracking-wider text-slate-500">
-        <div>Tree Graph</div>
-        <div>Attached Row Cards</div>
-      </div>
+      <div class="mb-3 px-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Tree Graph</div>
 
       <div
         cdkDropList
@@ -23,90 +35,43 @@ import { NodeRowCardComponent } from './node-row-card.component';
         (cdkDropListDropped)="onTopicDrop($event)"
         class="space-y-4"
       >
-        @for (topic of topics(); track topic.id; let topicIndex = $index) {
+        @for (topic of topics(); track topic.id) {
           <article cdkDrag [cdkDragData]="topic" class="space-y-3">
-            <div class="grid grid-cols-[18rem_1fr] items-start gap-4">
-              <div class="relative flex items-center gap-2">
-                <button
-                  class="drag-handle cursor-grab rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600"
-                  cdkDragHandle
-                  aria-label="Drag topic"
-                  type="button"
-                >
-                  ↕
-                </button>
+            <div class="relative flex items-center gap-2">
+              <button
+                class="cursor-grab rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600"
+                cdkDragHandle
+                aria-label="Drag topic"
+                type="button"
+              >
+                ↕
+              </button>
 
-                <div
-                  class="relative min-w-0 flex-1 rounded-full border border-sky-300 bg-sky-100 px-3 py-2"
-                  [class.ring-2]="selectedNodeId() === topic.id"
-                  [class.ring-sky-400]="selectedNodeId() === topic.id"
-                >
-                  <div class="flex items-center gap-2">
-                    <button
-                      (click)="toggleExpand.emit(topic.id)"
-                      class="rounded border border-sky-300 bg-white px-1.5 py-0.5 text-xs"
-                      [attr.aria-expanded]="topic.expanded"
-                      [attr.aria-label]="topic.expanded ? 'Collapse topic' : 'Expand topic'"
-                      type="button"
-                    >
-                      {{ topic.expanded ? '−' : '+' }}
-                    </button>
-                    <input
-                      [ngModel]="topic.label"
-                      (focus)="selectNode.emit(topic.id)"
-                      (ngModelChange)="renameNode.emit({ nodeId: topic.id, label: $event })"
-                      class="min-w-0 flex-1 border-0 bg-transparent text-sm font-semibold text-slate-800 focus-visible:outline-none"
-                      [attr.aria-label]="'Topic label: ' + topic.label"
-                    />
-                  </div>
-                  <div class="pointer-events-none absolute -right-4 top-1/2 h-px w-4 -translate-y-1/2 bg-slate-400"></div>
-                </div>
-
-                <div class="flex flex-col gap-1">
+              <div
+                class="relative min-w-0 flex-1 rounded-full border border-sky-300 bg-sky-100 px-3 py-2"
+                [class.ring-2]="selectedNodeId() === topic.id"
+                [class.ring-sky-400]="selectedNodeId() === topic.id"
+                (contextmenu)="openTopicMenu($event, topic.id)"
+              >
+                <div class="flex items-center gap-2">
                   <button
-                    (click)="addSubtopic.emit(topic.id)"
-                    class="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700"
+                    (click)="toggleExpand.emit(topic.id)"
+                    class="rounded border border-sky-300 bg-white px-1.5 py-0.5 text-xs"
+                    [attr.aria-expanded]="topic.expanded"
+                    [attr.aria-label]="topic.expanded ? 'Collapse topic' : 'Expand topic'"
                     type="button"
                   >
-                    + child
+                    {{ topic.expanded ? '−' : '+' }}
                   </button>
-                  <button
-                    (click)="requestDeleteTopic.emit(topic.id)"
-                    class="rounded border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700"
-                    type="button"
-                  >
-                    Delete
-                  </button>
-                  <div class="flex gap-1">
-                    <button
-                      (click)="moveTopic.emit({ topicId: topic.id, toIndex: topicIndex - 1 })"
-                      class="rounded border border-slate-300 px-2 py-1 text-xs"
-                      [disabled]="topicIndex === 0"
-                      type="button"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      (click)="moveTopic.emit({ topicId: topic.id, toIndex: topicIndex + 1 })"
-                      class="rounded border border-slate-300 px-2 py-1 text-xs"
-                      [disabled]="topicIndex === topics().length - 1"
-                      type="button"
-                    >
-                      ↓
-                    </button>
-                  </div>
+                  <input
+                    [ngModel]="topic.label"
+                    (focus)="selectNode.emit(topic.id)"
+                    (ngModelChange)="renameNode.emit({ nodeId: topic.id, label: $event })"
+                    class="min-w-0 flex-1 border-0 bg-transparent text-sm font-semibold text-slate-800 focus-visible:outline-none"
+                    [attr.aria-label]="'Topic label: ' + topic.label"
+                  />
                 </div>
               </div>
-
-              <app-node-row-card
-                [nodeId]="topic.id"
-                [label]="topic.label"
-                kind="topic"
-                [selected]="selectedNodeId() === topic.id"
-                [columns]="columns()"
-                [cells]="topic.cells"
-                (setCell)="setCell.emit($event)"
-              />
             </div>
 
             @if (topic.expanded) {
@@ -117,72 +82,32 @@ import { NodeRowCardComponent } from './node-row-card.component';
                 class="space-y-3 pl-10"
                 [attr.aria-label]="'Subtopics for ' + topic.label"
               >
-                @for (subtopic of topic.children; track subtopic.id; let childIndex = $index) {
-                  <div cdkDrag [cdkDragData]="subtopic" class="grid grid-cols-[18rem_1fr] items-start gap-4">
-                    <div class="relative flex items-center gap-2">
-                      <div class="absolute -left-5 top-1/2 h-px w-5 -translate-y-1/2 bg-slate-300"></div>
-                      <button
-                        cdkDragHandle
-                        class="cursor-grab rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600"
-                        aria-label="Drag subtopic"
-                        type="button"
-                      >
-                        ↕
-                      </button>
+                @for (subtopic of topic.children; track subtopic.id) {
+                  <div cdkDrag [cdkDragData]="subtopic" class="relative flex items-center gap-2">
+                    <div class="absolute -left-5 top-1/2 h-px w-5 -translate-y-1/2 bg-slate-300"></div>
+                    <button
+                      cdkDragHandle
+                      class="cursor-grab rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600"
+                      aria-label="Drag subtopic"
+                      type="button"
+                    >
+                      ↕
+                    </button>
 
-                      <div
-                        class="relative min-w-0 flex-1 rounded-xl border border-amber-300 bg-amber-100 px-3 py-2"
-                        [class.ring-2]="selectedNodeId() === subtopic.id"
-                        [class.ring-amber-400]="selectedNodeId() === subtopic.id"
-                      >
-                        <input
-                          [ngModel]="subtopic.label"
-                          (focus)="selectNode.emit(subtopic.id)"
-                          (ngModelChange)="renameNode.emit({ nodeId: subtopic.id, label: $event })"
-                          class="w-full border-0 bg-transparent text-sm font-medium text-slate-800 focus-visible:outline-none"
-                          [attr.aria-label]="'Subtopic label: ' + subtopic.label"
-                        />
-                        <div class="pointer-events-none absolute -right-4 top-1/2 h-px w-4 -translate-y-1/2 bg-slate-400"></div>
-                      </div>
-
-                      <div class="flex flex-col gap-1">
-                        <button
-                          (click)="requestDeleteSubtopic.emit({ topicId: topic.id, subtopicId: subtopic.id })"
-                          class="rounded border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700"
-                          type="button"
-                        >
-                          Delete
-                        </button>
-                        <div class="flex gap-1">
-                          <button
-                            (click)="moveSubtopic.emit({ topicId: topic.id, subtopicId: subtopic.id, toIndex: childIndex - 1 })"
-                            class="rounded border border-slate-300 px-2 py-1 text-xs"
-                            [disabled]="childIndex === 0"
-                            type="button"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            (click)="moveSubtopic.emit({ topicId: topic.id, subtopicId: subtopic.id, toIndex: childIndex + 1 })"
-                            class="rounded border border-slate-300 px-2 py-1 text-xs"
-                            [disabled]="childIndex === topic.children.length - 1"
-                            type="button"
-                          >
-                            ↓
-                          </button>
-                        </div>
-                      </div>
+                    <div
+                      class="min-w-0 flex-1 rounded-xl border border-amber-300 bg-amber-100 px-3 py-2"
+                      [class.ring-2]="selectedNodeId() === subtopic.id"
+                      [class.ring-amber-400]="selectedNodeId() === subtopic.id"
+                      (contextmenu)="openSubtopicMenu($event, topic.id, subtopic.id)"
+                    >
+                      <input
+                        [ngModel]="subtopic.label"
+                        (focus)="selectNode.emit(subtopic.id)"
+                        (ngModelChange)="renameNode.emit({ nodeId: subtopic.id, label: $event })"
+                        class="w-full border-0 bg-transparent text-sm font-medium text-slate-800 focus-visible:outline-none"
+                        [attr.aria-label]="'Subtopic label: ' + subtopic.label"
+                      />
                     </div>
-
-                    <app-node-row-card
-                      [nodeId]="subtopic.id"
-                      [label]="subtopic.label"
-                      kind="subtopic"
-                      [selected]="selectedNodeId() === subtopic.id"
-                      [columns]="columns()"
-                      [cells]="subtopic.cells"
-                      (setCell)="setCell.emit($event)"
-                    />
                   </div>
                 }
               </div>
@@ -190,18 +115,61 @@ import { NodeRowCardComponent } from './node-row-card.component';
           </article>
         }
       </div>
+
+      @if (menuOpen()) {
+        <div class="fixed inset-0 z-40" (click)="closeNodeMenu()" aria-hidden="true"></div>
+        <section
+          class="fixed z-50 w-52 rounded-lg border border-slate-200 bg-white p-1 shadow-xl"
+          [style.left.px]="menuX()"
+          [style.top.px]="menuY()"
+          role="menu"
+          aria-label="Node actions"
+        >
+          @if (menuTarget()?.kind === 'topic') {
+            <button
+              (click)="onTopicMenuAction('addSubtopic')"
+              class="block w-full rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+              role="menuitem"
+              type="button"
+            >
+              Add subtopic
+            </button>
+            <button
+              (click)="onTopicMenuAction('deleteTopic')"
+              class="block w-full rounded px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50"
+              role="menuitem"
+              type="button"
+            >
+              Delete topic
+            </button>
+          }
+
+          @if (menuTarget()?.kind === 'subtopic') {
+            <button
+              (click)="onSubtopicMenuAction('focusRow')"
+              class="block w-full rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+              role="menuitem"
+              type="button"
+            >
+              Focus row
+            </button>
+            <button
+              (click)="onSubtopicMenuAction('deleteSubtopic')"
+              class="block w-full rounded px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50"
+              role="menuitem"
+              type="button"
+            >
+              Delete subtopic
+            </button>
+          }
+        </section>
+      }
     </section>
-  `,
-  styles: `
-    :host {
-      display: block;
-    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TreeCanvasComponent {
   readonly topics = input.required<TreeTopic[]>();
-  readonly columns = input.required<TableColumn[]>();
   readonly selectedNodeId = input<string | null>(null);
 
   readonly addSubtopic = output<string>();
@@ -209,10 +177,14 @@ export class TreeCanvasComponent {
   readonly toggleExpand = output<string>();
   readonly requestDeleteTopic = output<string>();
   readonly requestDeleteSubtopic = output<{ topicId: string; subtopicId: string }>();
-  readonly setCell = output<{ nodeId: string; columnId: string; raw: string }>();
   readonly selectNode = output<string | null>();
   readonly moveTopic = output<{ topicId: string; toIndex: number }>();
   readonly moveSubtopic = output<{ topicId: string; subtopicId: string; toIndex: number }>();
+
+  protected readonly menuOpen = signal(false);
+  protected readonly menuX = signal(0);
+  protected readonly menuY = signal(0);
+  protected readonly menuTarget = signal<NodeMenuTarget | null>(null);
 
   onTopicDrop(event: CdkDragDrop<TreeTopic[]>): void {
     if (event.previousIndex === event.currentIndex) {
@@ -238,5 +210,60 @@ export class TreeCanvasComponent {
     }
 
     this.moveSubtopic.emit({ topicId, subtopicId: moved.id, toIndex: event.currentIndex });
+  }
+
+  openTopicMenu(event: MouseEvent, topicId: string): void {
+    event.preventDefault();
+    this.menuTarget.set({ kind: 'topic', topicId });
+    this.menuX.set(event.clientX);
+    this.menuY.set(event.clientY);
+    this.menuOpen.set(true);
+  }
+
+  openSubtopicMenu(event: MouseEvent, topicId: string, subtopicId: string): void {
+    event.preventDefault();
+    this.menuTarget.set({ kind: 'subtopic', topicId, subtopicId });
+    this.menuX.set(event.clientX);
+    this.menuY.set(event.clientY);
+    this.menuOpen.set(true);
+  }
+
+  closeNodeMenu(): void {
+    this.menuOpen.set(false);
+  }
+
+  onTopicMenuAction(action: 'addSubtopic' | 'deleteTopic'): void {
+    const target = this.menuTarget();
+    if (!target || target.kind !== 'topic') {
+      this.closeNodeMenu();
+      return;
+    }
+
+    if (action === 'addSubtopic') {
+      this.addSubtopic.emit(target.topicId);
+    } else {
+      this.requestDeleteTopic.emit(target.topicId);
+    }
+
+    this.closeNodeMenu();
+  }
+
+  onSubtopicMenuAction(action: 'focusRow' | 'deleteSubtopic'): void {
+    const target = this.menuTarget();
+    if (!target || target.kind !== 'subtopic') {
+      this.closeNodeMenu();
+      return;
+    }
+
+    if (action === 'focusRow') {
+      this.selectNode.emit(target.subtopicId);
+    } else {
+      this.requestDeleteSubtopic.emit({
+        topicId: target.topicId,
+        subtopicId: target.subtopicId,
+      });
+    }
+
+    this.closeNodeMenu();
   }
 }

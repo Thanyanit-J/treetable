@@ -17,21 +17,19 @@ describe('FormulaEngineService', () => {
       value: createCellData('=amount*rate'),
     };
 
-    const result = service.evaluateRow(columns, row, []);
+    const result = service.evaluateRow(columns, row);
     expect(result['value']?.value).toBe(50);
     expect(result['value']?.error).toBeNull();
   });
 
-  it('supports children aggregate functions', () => {
+  it('rejects children.* formulas in subtopic-only mode', () => {
     const service = TestBed.inject(FormulaEngineService);
     const columns = [{ id: 'amount', name: 'Amount', type: 'number' as const }];
 
-    const topicRow = { amount: createCellData('=AVG(children.amount)') };
-    const childRows = [{ amount: createCellData('20') }, { amount: createCellData('40') }];
-    const evalChildren = childRows.map((row) => service.evaluateRow(columns, row, []));
+    const row = { amount: createCellData('=SUM(children.amount)') };
+    const result = service.evaluateRow(columns, row);
 
-    const result = service.evaluateRow(columns, topicRow, evalChildren);
-    expect(result['amount']?.value).toBe(30);
+    expect(result['amount']?.error).toContain('children.* is not supported');
   });
 
   it('returns error on circular references', () => {
@@ -46,7 +44,7 @@ describe('FormulaEngineService', () => {
       b: createCellData('=a'),
     };
 
-    const result = service.evaluateRow(columns, row, []);
+    const result = service.evaluateRow(columns, row);
     expect(result['a']?.error).toContain('Circular');
     expect(result['b']?.error).toContain('Circular');
   });

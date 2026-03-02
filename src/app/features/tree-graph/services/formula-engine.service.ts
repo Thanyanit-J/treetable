@@ -32,7 +32,6 @@ interface Token {
 
 interface EvalContext {
   resolveColumn: (columnId: ColumnId) => FormulaResult;
-  resolveChildrenColumn: (columnId: ColumnId) => number[];
 }
 
 type FunctionArgumentResult =
@@ -41,11 +40,7 @@ type FunctionArgumentResult =
 
 @Injectable({ providedIn: 'root' })
 export class FormulaEngineService {
-  evaluateRow(
-    columns: TableColumn[],
-    cells: Record<ColumnId, CellData>,
-    childRows: Array<Record<ColumnId, CellData>> = [],
-  ): Record<ColumnId, CellData> {
+  evaluateRow(columns: TableColumn[], cells: Record<ColumnId, CellData>): Record<ColumnId, CellData> {
     const next: Record<ColumnId, CellData> = structuredClone(cells);
     const cache = new Map<ColumnId, FormulaResult>();
     const stack = new Set<ColumnId>();
@@ -68,16 +63,6 @@ export class FormulaEngineService {
       stack.add(columnId);
       const result = this.evaluateRawCell(cell.raw, {
         resolveColumn,
-        resolveChildrenColumn: (childrenColumnId) =>
-          childRows
-            .map((row) => {
-              const childCell = row[childrenColumnId];
-              if (!childCell || typeof childCell.value !== 'number') {
-                return null;
-              }
-              return childCell.value;
-            })
-            .filter((value): value is number => value !== null),
       });
       stack.delete(columnId);
 
@@ -225,13 +210,9 @@ export class FormulaEngineService {
         }
 
         if (firstIdentifier === 'children' && match('dot')) {
-          const secondIdentifier = expect('identifier', 'Expected children column id');
-          if ('error' in secondIdentifier) {
-            return secondIdentifier;
-          }
           return {
-            value: this.aggregateValues(context.resolveChildrenColumn(secondIdentifier.lexeme)),
-            error: null,
+            value: null,
+            error: 'children.* is not supported in subtopic-only table mode',
           };
         }
 
@@ -255,16 +236,10 @@ export class FormulaEngineService {
 
     const parseFunctionArg = (): FunctionArgumentResult => {
       if (peek()?.type === 'identifier' && peek()?.lexeme === 'children') {
-        cursor += 1;
-        const dot = expect('dot', 'Expected dot after children');
-        if ('error' in dot) {
-          return { ok: false, error: dot.error };
-        }
-        const childColumn = expect('identifier', 'Expected children column id');
-        if ('error' in childColumn) {
-          return { ok: false, error: childColumn.error };
-        }
-        return { ok: true, value: context.resolveChildrenColumn(childColumn.lexeme) };
+        return {
+          ok: false,
+          error: 'children.* is not supported in subtopic-only table mode',
+        };
       }
       const parsed = parseExpression();
       if (parsed.error) {
@@ -283,13 +258,6 @@ export class FormulaEngineService {
     }
 
     return result;
-  }
-
-  private aggregateValues(values: number[]): number {
-    if (values.length === 0) {
-      return 0;
-    }
-    return values.reduce((sum, value) => sum + value, 0);
   }
 
   private runFunction(name: string, args: Array<number | number[]>): FormulaResult {

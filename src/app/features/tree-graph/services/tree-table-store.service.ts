@@ -19,6 +19,12 @@ import {
 import { FormulaEngineService } from './formula-engine.service';
 import { PersistenceService } from './persistence.service';
 
+export interface VisibleSubtopicRow {
+  topicId: NodeId;
+  topicLabel: string;
+  subtopic: TreeSubtopic;
+}
+
 @Injectable({ providedIn: 'root' })
 export class TreeTableStoreService {
   private readonly persistence = inject(PersistenceService);
@@ -34,6 +40,18 @@ export class TreeTableStoreService {
   readonly selectedNodeId = computed(() => this.stateSignal().selectedNodeId);
   readonly canUndo = computed(() => this.past().length > 0);
   readonly canRedo = computed(() => this.future().length > 0);
+  readonly visibleSubtopicRows = computed<VisibleSubtopicRow[]>(() => {
+    const rows: VisibleSubtopicRow[] = [];
+    for (const topic of this.stateSignal().topics) {
+      if (!topic.expanded) {
+        continue;
+      }
+      for (const subtopic of topic.children) {
+        rows.push({ topicId: topic.id, topicLabel: topic.label, subtopic });
+      }
+    }
+    return rows;
+  });
 
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -56,7 +74,6 @@ export class TreeTableStoreService {
         id: topicId,
         label,
         expanded: true,
-        cells: createEmptyCells(state.columns),
         children: [],
       };
       state.topics.push(newTopic);
@@ -175,37 +192,43 @@ export class TreeTableStoreService {
   setCellRaw(nodeId: NodeId, columnId: ColumnId, raw: string): void {
     this.mutate((state) => {
       for (const topic of state.topics) {
-        if (topic.id === nodeId) {
-          topic.cells[columnId] = this.withRaw(topic.cells[columnId], raw);
-          return;
-        }
         const child = topic.children.find((candidate) => candidate.id === nodeId);
-        if (child) {
-          child.cells[columnId] = this.withRaw(child.cells[columnId], raw);
-          return;
+        if (!child) {
+          continue;
         }
+        child.cells[columnId] = this.withRaw(child.cells[columnId], raw);
+        return;
       }
     });
   }
 
   addColumn(name: string, type: 'number' | 'text'): void {
     this.mutate((state) => {
-      const base = slugToColumnId(name);
-      let candidate = base;
-      let suffix = 2;
-      const existing = new Set(state.columns.map((column) => column.id));
-      while (!isValidColumnId(candidate) || existing.has(candidate)) {
-        candidate = `${base}_${suffix}`;
-        suffix += 1;
-      }
-
-      const column: TableColumn = { id: candidate, name: name.trim() || 'New Column', type };
+      const column = this.buildUniqueColumn(state.columns, name, type);
       state.columns.push(column);
 
       for (const topic of state.topics) {
-        topic.cells[candidate] = createCellData('');
         for (const child of topic.children) {
-          child.cells[candidate] = createCellData('');
+          child.cells[column.id] = createCellData('');
+        }
+      }
+    });
+  }
+
+  insertColumn(referenceColumnId: ColumnId, side: 'left' | 'right'): void {
+    this.mutate((state) => {
+      const refIndex = state.columns.findIndex((column) => column.id === referenceColumnId);
+      if (refIndex < 0) {
+        return;
+      }
+
+      const column = this.buildUniqueColumn(state.columns, 'New Column', 'number');
+      const insertionIndex = side === 'left' ? refIndex : refIndex + 1;
+      state.columns.splice(insertionIndex, 0, column);
+
+      for (const topic of state.topics) {
+        for (const child of topic.children) {
+          child.cells[column.id] = createCellData('');
         }
       }
     });
@@ -221,16 +244,21 @@ export class TreeTableStoreService {
     });
   }
 
-  removeColumn(columnId: ColumnId): void {
+  deleteColumn(columnId: ColumnId): ImportResult | void {
+    if (this.columns().length <= 1) {
+      return { ok: false, error: 'At least one column is required.' };
+    }
+
     this.mutate((state) => {
       state.columns = state.columns.filter((column) => column.id !== columnId);
       for (const topic of state.topics) {
-        delete topic.cells[columnId];
         for (const child of topic.children) {
           delete child.cells[columnId];
         }
       }
     });
+
+    return undefined;
   }
 
   importState(json: string): ImportResult {
@@ -297,13 +325,14 @@ export class TreeTableStoreService {
   private recalculate(state: TreeTableState): TreeTableStateV1 {
     const next = cloneState(state);
 
+    if (next.columns.length === 0) {
+      next.columns.push({ id: 'value', name: 'Value', type: 'number' });
+    }
+
     for (const topic of next.topics) {
       for (const child of topic.children) {
-        child.cells = this.formulaEngine.evaluateRow(next.columns, child.cells, []);
+        child.cells = this.formulaEngine.evaluateRow(next.columns, child.cells);
       }
-
-      const childCells = topic.children.map((child) => child.cells);
-      topic.cells = this.formulaEngine.evaluateRow(next.columns, topic.cells, childCells);
     }
 
     return next;
@@ -314,6 +343,28 @@ export class TreeTableStoreService {
       raw,
       value: existing?.value ?? null,
       error: existing?.error ?? null,
+    };
+  }
+
+  private buildUniqueColumn(
+    existingColumns: TableColumn[],
+    name: string,
+    type: 'number' | 'text',
+  ): TableColumn {
+    const base = slugToColumnId(name);
+    let candidate = base;
+    let suffix = 2;
+    const existing = new Set(existingColumns.map((column) => column.id));
+
+    while (!isValidColumnId(candidate) || existing.has(candidate)) {
+      candidate = `${base}_${suffix}`;
+      suffix += 1;
+    }
+
+    return {
+      id: candidate,
+      name: name.trim() || 'New Column',
+      type,
     };
   }
 }
