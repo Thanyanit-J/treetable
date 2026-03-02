@@ -366,4 +366,48 @@ describe('SubtopicTableComponent', () => {
 
     expect(selectNodeEvents).toContain(null);
   });
+
+  it('renders separate tables for different topics', async () => {
+    const { fixture } = await setup();
+    fixture.componentRef.setInput('rows', [
+      {
+        topicId: 'topic_1',
+        topicLabel: 'Topic One',
+        subtopic: {
+          id: 'subtopic_1',
+          topicId: 'topic_1',
+          label: 'A',
+          cells: {
+            $Amount: { raw: '1', value: 1, error: null },
+            $Rate: { raw: '1', value: 1, error: null },
+            $Value: { raw: '1', value: 1, error: null },
+          },
+        },
+      },
+      {
+        topicId: 'topic_2',
+        topicLabel: 'Topic Two',
+        subtopic: {
+          id: 'subtopic_2',
+          topicId: 'topic_2',
+          label: 'B',
+          cells: {
+            $Amount: { raw: '2', value: 2, error: null },
+            $Rate: { raw: '2', value: 2, error: null },
+            $Value: { raw: '2', value: 2, error: null },
+          },
+        },
+      },
+    ] satisfies VisibleSubtopicRow[]);
+    fixture.detectChanges();
+
+    const topicLabels = Array.from(fixture.nativeElement.querySelectorAll('section > div.mb-2')).map((el) =>
+      (el as HTMLElement).textContent?.trim(),
+    );
+    const tableCount = fixture.nativeElement.querySelectorAll('table').length;
+
+    expect(topicLabels).toContain('Topic One');
+    expect(topicLabels).toContain('Topic Two');
+    expect(tableCount).toBe(2);
+  });
 });

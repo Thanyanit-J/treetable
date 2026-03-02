@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, computed, input, output, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TableColumn } from '../models/tree-table.model';
 import { VisibleSubtopicRow } from '../services/tree-table-store.service';
@@ -13,109 +13,113 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
   template: `
     <section #tableSection class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm" aria-label="Subtopic table">
       <div #tableContainer class="overflow-auto">
-        <table class="min-w-full border-collapse text-sm">
-          <thead>
-            <tr>
-              @for (column of columns(); track column.id) {
-                <th
-                  scope="col"
-                  class="min-w-40 border border-slate-200 bg-slate-100 px-2 py-2 text-left font-semibold text-slate-700"
-                  [class.border-sky-400]="activeReferencedColumnId() === column.id"
-                  (contextmenu)="openMenu($event, column.id)"
-                  (mousedown)="onColumnAssistMouseDown($event, column.id, null, null)"
-                  (click)="onColumnAssistClick($event, column.id, null, null)"
-                >
-                  <div class="flex items-center gap-2">
-                    @if (editingColumnId() === column.id) {
-                      <input
-                        [attr.data-column-rename-id]="column.id"
-                        [ngModel]="editingColumnName()"
-                        (ngModelChange)="editingColumnName.set($event)"
-                        (blur)="onColumnRenameBlur(column.id)"
-                        (keydown.enter)="onColumnRenameEnter($event, column.id)"
-                        (keydown.escape)="onColumnRenameEscape($event, column.id)"
-                        class="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm"
-                        [attr.aria-label]="'Rename column ' + column.name"
-                      />
-                    } @else {
-                      <button
-                        (dblclick)="startColumnRename(column.id, column.name)"
-                        (mousedown)="onHeaderLabelMouseDown($event, column.id)"
-                        (click)="onHeaderLabelClick($event, column.id)"
-                        class="truncate text-left"
-                        type="button"
+        @if (topicTableGroups().length === 0) {
+          <div class="rounded-lg border border-slate-200 px-3 py-6 text-center text-sm text-slate-500">
+            No visible subtopics. Add subtopics in the tree graph.
+          </div>
+        } @else {
+          @for (group of topicTableGroups(); track group.topicId) {
+            <section class="mb-4 last:mb-0">
+              <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {{ group.topicLabel }}
+              </div>
+              <table class="min-w-full border-collapse text-sm">
+                <thead>
+                  <tr>
+                    @for (column of columns(); track column.id) {
+                      <th
+                        scope="col"
+                        class="min-w-40 border border-slate-200 bg-slate-100 px-2 py-2 text-left font-semibold text-slate-700"
+                        [class.border-sky-400]="activeReferencedColumnId() === column.id"
+                        (contextmenu)="openMenu($event, column.id)"
+                        (mousedown)="onColumnAssistMouseDown($event, column.id, null, null)"
+                        (click)="onColumnAssistClick($event, column.id, null, null)"
                       >
-                        {{ formulaEditingMode() ? column.id : column.name }}
-                      </button>
+                        <div class="flex items-center gap-2">
+                          @if (editingColumnId() === column.id) {
+                            <input
+                              [attr.data-column-rename-id]="column.id"
+                              [ngModel]="editingColumnName()"
+                              (ngModelChange)="editingColumnName.set($event)"
+                              (blur)="onColumnRenameBlur(column.id)"
+                              (keydown.enter)="onColumnRenameEnter($event, column.id)"
+                              (keydown.escape)="onColumnRenameEscape($event, column.id)"
+                              class="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm"
+                              [attr.aria-label]="'Rename column ' + column.name"
+                            />
+                          } @else {
+                            <button
+                              (dblclick)="startColumnRename(column.id, column.name)"
+                              (mousedown)="onHeaderLabelMouseDown($event, column.id)"
+                              (click)="onHeaderLabelClick($event, column.id)"
+                              class="truncate text-left"
+                              type="button"
+                            >
+                              {{ formulaEditingMode() ? column.id : column.name }}
+                            </button>
+                          }
+                          <button
+                            (click)="openMenuFromButton($event, column.id)"
+                            class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs"
+                            [attr.aria-label]="'Open actions for column ' + column.name"
+                            type="button"
+                          >
+                            ⋯
+                          </button>
+                        </div>
+                      </th>
                     }
-                    <button
-                      (click)="openMenuFromButton($event, column.id)"
-                      class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs"
-                      [attr.aria-label]="'Open actions for column ' + column.name"
-                      type="button"
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of group.rows; track row.subtopic.id) {
+                    <tr
+                      [class.bg-sky-50]="selectedNodeId() === row.subtopic.id"
+                      [class.outline]="selectedNodeId() === row.subtopic.id"
+                      [class.outline-2]="selectedNodeId() === row.subtopic.id"
+                      [class.outline-sky-300]="selectedNodeId() === row.subtopic.id"
                     >
-                      ⋯
-                    </button>
-                  </div>
-                </th>
-              }
-            </tr>
-          </thead>
-          <tbody>
-            @for (row of rows(); track row.subtopic.id) {
-              <tr
-                [class.bg-sky-50]="selectedNodeId() === row.subtopic.id"
-                [class.outline]="selectedNodeId() === row.subtopic.id"
-                [class.outline-2]="selectedNodeId() === row.subtopic.id"
-                [class.outline-sky-300]="selectedNodeId() === row.subtopic.id"
-              >
-                @for (column of columns(); track column.id) {
-                  @let cell = row.subtopic.cells[column.id];
-                  <td
-                    class="border border-slate-200 p-0 align-top"
-                    [class.border-sky-400]="activeReferencedColumnId() === column.id"
-                    (contextmenu)="openMenu($event, column.id)"
-                    (mousedown)="onColumnAssistMouseDown($event, column.id, row.subtopic.id, column.id)"
-                    (click)="onColumnAssistClick($event, column.id, row.subtopic.id, column.id)"
-                  >
-                    <input
-                      [attr.data-cell-key]="makeCellKey(row.subtopic.id, column.id)"
-                      [ngModel]="
-                        cellInputValue(
-                          row.subtopic.id,
-                          column.id,
-                          cell?.raw ?? '',
-                          cell?.value ?? null,
-                          cell?.error ?? null
-                        )
-                      "
-                      (focus)="onCellFocus(row.subtopic.id, column.id)"
-                      (blur)="onCellBlur($event, row.subtopic.id, column.id)"
-                      (click)="onFormulaCursorChange(row.subtopic.id, column.id, $event)"
-                      (keyup)="onFormulaCursorChange(row.subtopic.id, column.id, $event)"
-                      (input)="onFormulaCursorChange(row.subtopic.id, column.id, $event)"
-                      (keydown.enter)="onCellEnter($event)"
-                      (keydown.escape)="onCellEscape($event)"
-                      (ngModelChange)="onCellModelChange(row.subtopic.id, column.id, $event)"
-                      [attr.aria-label]="'Edit cell ' + column.name"
-                      [attr.aria-invalid]="cell?.error ? 'true' : 'false'"
-                      class="block min-h-[44px] min-w-0 w-full overflow-x-auto whitespace-nowrap rounded-none border-0 px-2 py-2 text-sm text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
-                    />
-                  </td>
-                }
-              </tr>
-            } @empty {
-              <tr>
-                <td
-                  [attr.colspan]="columns().length"
-                  class="border border-slate-200 px-3 py-6 text-center text-sm text-slate-500"
-                >
-                  No visible subtopics. Add subtopics in the tree graph.
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
+                      @for (column of columns(); track column.id) {
+                        @let cell = row.subtopic.cells[column.id];
+                        <td
+                          class="border border-slate-200 p-0 align-top"
+                          [class.border-sky-400]="activeReferencedColumnId() === column.id"
+                          (contextmenu)="openMenu($event, column.id)"
+                          (mousedown)="onColumnAssistMouseDown($event, column.id, row.subtopic.id, column.id)"
+                          (click)="onColumnAssistClick($event, column.id, row.subtopic.id, column.id)"
+                        >
+                          <input
+                            [attr.data-cell-key]="makeCellKey(row.subtopic.id, column.id)"
+                            [ngModel]="
+                              cellInputValue(
+                                row.subtopic.id,
+                                column.id,
+                                cell?.raw ?? '',
+                                cell?.value ?? null,
+                                cell?.error ?? null
+                              )
+                            "
+                            (focus)="onCellFocus(row.subtopic.id, column.id)"
+                            (blur)="onCellBlur($event, row.subtopic.id, column.id)"
+                            (click)="onFormulaCursorChange(row.subtopic.id, column.id, $event)"
+                            (keyup)="onFormulaCursorChange(row.subtopic.id, column.id, $event)"
+                            (input)="onFormulaCursorChange(row.subtopic.id, column.id, $event)"
+                            (keydown.enter)="onCellEnter($event)"
+                            (keydown.escape)="onCellEscape($event)"
+                            (ngModelChange)="onCellModelChange(row.subtopic.id, column.id, $event)"
+                            [attr.aria-label]="'Edit cell ' + column.name"
+                            [attr.aria-invalid]="cell?.error ? 'true' : 'false'"
+                            class="block min-h-[44px] min-w-0 w-full overflow-x-auto whitespace-nowrap rounded-none border-0 px-2 py-2 text-sm text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
+                          />
+                        </td>
+                      }
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </section>
+          }
+        }
       </div>
 
       <app-column-context-menu
@@ -153,6 +157,22 @@ export class SubtopicTableComponent {
   protected readonly editingCellDraft = signal('');
   protected readonly formulaEditingMode = signal(false);
   protected readonly activeReferencedColumnId = signal<string | null>(null);
+  protected readonly topicTableGroups = computed(() => {
+    const groups = new Map<string, { topicId: string; topicLabel: string; rows: VisibleSubtopicRow[] }>();
+    for (const row of this.rows()) {
+      const existing = groups.get(row.topicId);
+      if (existing) {
+        existing.rows.push(row);
+        continue;
+      }
+      groups.set(row.topicId, {
+        topicId: row.topicId,
+        topicLabel: row.topicLabel,
+        rows: [row],
+      });
+    }
+    return [...groups.values()];
+  });
 
   private readonly tableContainerRef = viewChild<ElementRef<HTMLElement>>('tableContainer');
   private readonly tableSectionRef = viewChild<ElementRef<HTMLElement>>('tableSection');
