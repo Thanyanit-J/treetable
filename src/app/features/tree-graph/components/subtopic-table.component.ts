@@ -15,12 +15,6 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
         <table class="min-w-full border-collapse text-sm">
           <thead>
             <tr>
-              <th
-                scope="col"
-                class="sticky left-0 z-10 border border-slate-200 bg-slate-100 px-3 py-2 text-left font-semibold text-slate-700"
-              >
-                Subtopic
-              </th>
               @for (column of columns(); track column.id) {
                 <th
                   scope="col"
@@ -68,21 +62,6 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
                 [class.outline-2]="selectedNodeId() === row.subtopic.id"
                 [class.outline-sky-300]="selectedNodeId() === row.subtopic.id"
               >
-                <th
-                  scope="row"
-                  class="sticky left-0 z-[1] border border-slate-200 bg-white px-3 py-2 text-left align-top"
-                >
-                  <div class="space-y-1">
-                    <span class="block text-xs text-slate-500">{{ row.topicLabel }}</span>
-                    <input
-                      [ngModel]="row.subtopic.label"
-                      (focus)="selectNode.emit(row.subtopic.id)"
-                      (ngModelChange)="renameNode.emit({ nodeId: row.subtopic.id, label: $event })"
-                      class="w-full rounded border border-transparent bg-transparent px-1 py-0.5 font-medium text-slate-800 focus:border-slate-300 focus:bg-white"
-                    />
-                  </div>
-                </th>
-
                 @for (column of columns(); track column.id) {
                   @let cell = row.subtopic.cells[column.id];
                   <td class="border border-slate-200 px-2 py-2 align-top" (contextmenu)="openMenu($event, column.id)">
@@ -110,7 +89,7 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
             } @empty {
               <tr>
                 <td
-                  [attr.colspan]="columns().length + 1"
+                  [attr.colspan]="columns().length"
                   class="border border-slate-200 px-3 py-6 text-center text-sm text-slate-500"
                 >
                   No visible subtopics. Add subtopics in the tree graph.
@@ -138,7 +117,6 @@ export class SubtopicTableComponent {
   readonly rows = input.required<VisibleSubtopicRow[]>();
   readonly selectedNodeId = input<string | null>(null);
 
-  readonly renameNode = output<{ nodeId: string; label: string }>();
   readonly setCell = output<{ nodeId: string; columnId: string; raw: string }>();
   readonly selectNode = output<string | null>();
   readonly insertColumn = output<{ referenceColumnId: string; side: 'left' | 'right' }>();

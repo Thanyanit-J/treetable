@@ -101,7 +101,6 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
           [columns]="store.columns()"
           [rows]="store.visibleSubtopicRows()"
           [selectedNodeId]="store.selectedNodeId()"
-          (renameNode)="store.renameNode($event.nodeId, $event.label)"
           (setCell)="store.setCellRaw($event.nodeId, $event.columnId, $event.raw)"
           (selectNode)="store.selectNode($event)"
           (insertColumn)="store.insertColumn($event.referenceColumnId, $event.side)"
