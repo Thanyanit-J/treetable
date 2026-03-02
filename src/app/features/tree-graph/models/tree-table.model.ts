@@ -23,7 +23,6 @@ export interface TreeSubtopic {
 export interface TreeTopic {
   id: NodeId;
   label: string;
-  expanded: boolean;
   children: TreeSubtopic[];
 }
 
@@ -102,7 +101,6 @@ export const STARTER_STATE: TreeTableStateV1 = {
     {
       id: 'topic_wealth',
       label: 'Wealth',
-      expanded: true,
       children: [
         {
           id: 'subtopic_bankA',
@@ -129,7 +127,6 @@ export const STARTER_STATE: TreeTableStateV1 = {
     {
       id: 'topic_business',
       label: 'Business',
-      expanded: true,
       children: [
         {
           id: 'subtopic_dividend',

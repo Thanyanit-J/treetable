@@ -96,7 +96,6 @@ export class PersistenceService {
         typeof topic.label === 'string' && topic.label.trim().length > 0
           ? topic.label
           : `Topic ${topicIndex + 1}`;
-      const topicExpanded = typeof topic.expanded === 'boolean' ? topic.expanded : true;
       const children = Array.isArray(topic.children) ? topic.children : [];
 
       const normalizedChildren = children.map((child, childIndex) => {
@@ -125,7 +124,6 @@ export class PersistenceService {
       return {
         id: topicId,
         label: topicLabel,
-        expanded: topicExpanded,
         children: normalizedChildren,
       };
     });

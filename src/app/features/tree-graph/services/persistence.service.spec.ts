@@ -18,7 +18,6 @@ describe('PersistenceService', () => {
         {
           id: 'topic_1',
           label: 'Legacy Topic',
-          expanded: true,
           cells: {
             old: { raw: '123', value: 123, error: null },
           },

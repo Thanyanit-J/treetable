@@ -89,7 +89,6 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
           [selectedNodeId]="store.selectedNodeId()"
           (addSubtopic)="store.addSubtopic($event)"
           (renameNode)="store.renameNode($event.nodeId, $event.label)"
-          (toggleExpand)="store.toggleExpand($event)"
           (requestDeleteTopic)="queueTopicDelete($event)"
           (requestDeleteSubtopic)="queueSubtopicDelete($event.topicId, $event.subtopicId)"
           (selectNode)="store.selectNode($event)"

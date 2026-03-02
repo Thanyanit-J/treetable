@@ -43,9 +43,6 @@ export class TreeTableStoreService {
   readonly visibleSubtopicRows = computed<VisibleSubtopicRow[]>(() => {
     const rows: VisibleSubtopicRow[] = [];
     for (const topic of this.stateSignal().topics) {
-      if (!topic.expanded) {
-        continue;
-      }
       for (const subtopic of topic.children) {
         rows.push({ topicId: topic.id, topicLabel: topic.label, subtopic });
       }
@@ -73,7 +70,6 @@ export class TreeTableStoreService {
       const newTopic: TreeTopic = {
         id: topicId,
         label,
-        expanded: true,
         children: [],
       };
       state.topics.push(newTopic);
@@ -103,7 +99,6 @@ export class TreeTableStoreService {
         label,
         cells: createEmptyCells(state.columns),
       };
-      topic.expanded = true;
       topic.children.push(newSubtopic);
       state.selectedNodeId = subtopicId;
     });
@@ -135,16 +130,6 @@ export class TreeTableStoreService {
           return;
         }
       }
-    });
-  }
-
-  toggleExpand(topicId: NodeId): void {
-    this.mutate((state) => {
-      const topic = state.topics.find((currentTopic) => currentTopic.id === topicId);
-      if (!topic) {
-        return;
-      }
-      topic.expanded = !topic.expanded;
     });
   }
 

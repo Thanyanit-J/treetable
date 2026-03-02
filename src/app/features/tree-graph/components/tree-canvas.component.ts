@@ -54,15 +54,6 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
                 (contextmenu)="openTopicMenu($event, topic.id)"
               >
                 <div class="flex items-center gap-2">
-                  <button
-                    (click)="toggleExpand.emit(topic.id)"
-                    class="rounded border border-sky-300 bg-white px-1.5 py-0.5 text-xs"
-                    [attr.aria-expanded]="topic.expanded"
-                    [attr.aria-label]="topic.expanded ? 'Collapse topic' : 'Expand topic'"
-                    type="button"
-                  >
-                    {{ topic.expanded ? '−' : '+' }}
-                  </button>
                   <input
                     [ngModel]="topic.label"
                     (focus)="selectNode.emit(topic.id)"
@@ -74,44 +65,42 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
               </div>
             </div>
 
-            @if (topic.expanded) {
-              <div
-                cdkDropList
-                [cdkDropListData]="topic.children"
-                (cdkDropListDropped)="onSubtopicDrop(topic.id, $event)"
-                class="space-y-3 pl-10"
-                [attr.aria-label]="'Subtopics for ' + topic.label"
-              >
-                @for (subtopic of topic.children; track subtopic.id) {
-                  <div cdkDrag [cdkDragData]="subtopic" class="relative flex items-center gap-2">
-                    <div class="absolute -left-5 top-1/2 h-px w-5 -translate-y-1/2 bg-slate-300"></div>
-                    <button
-                      cdkDragHandle
-                      class="cursor-grab rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600"
-                      aria-label="Drag subtopic"
-                      type="button"
-                    >
-                      ↕
-                    </button>
+            <div
+              cdkDropList
+              [cdkDropListData]="topic.children"
+              (cdkDropListDropped)="onSubtopicDrop(topic.id, $event)"
+              class="space-y-3 pl-10"
+              [attr.aria-label]="'Subtopics for ' + topic.label"
+            >
+              @for (subtopic of topic.children; track subtopic.id) {
+                <div cdkDrag [cdkDragData]="subtopic" class="relative flex items-center gap-2">
+                  <div class="absolute -left-5 top-1/2 h-px w-5 -translate-y-1/2 bg-slate-300"></div>
+                  <button
+                    cdkDragHandle
+                    class="cursor-grab rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600"
+                    aria-label="Drag subtopic"
+                    type="button"
+                  >
+                    ↕
+                  </button>
 
-                    <div
-                      class="min-w-0 flex-1 rounded-xl border border-amber-300 bg-amber-100 px-3 py-2"
-                      [class.ring-2]="selectedNodeId() === subtopic.id"
-                      [class.ring-amber-400]="selectedNodeId() === subtopic.id"
-                      (contextmenu)="openSubtopicMenu($event, topic.id, subtopic.id)"
-                    >
-                      <input
-                        [ngModel]="subtopic.label"
-                        (focus)="selectNode.emit(subtopic.id)"
-                        (ngModelChange)="renameNode.emit({ nodeId: subtopic.id, label: $event })"
-                        class="w-full border-0 bg-transparent text-sm font-medium text-slate-800 focus-visible:outline-none"
-                        [attr.aria-label]="'Subtopic label: ' + subtopic.label"
-                      />
-                    </div>
+                  <div
+                    class="min-w-0 flex-1 rounded-xl border border-amber-300 bg-amber-100 px-3 py-2"
+                    [class.ring-2]="selectedNodeId() === subtopic.id"
+                    [class.ring-amber-400]="selectedNodeId() === subtopic.id"
+                    (contextmenu)="openSubtopicMenu($event, topic.id, subtopic.id)"
+                  >
+                    <input
+                      [ngModel]="subtopic.label"
+                      (focus)="selectNode.emit(subtopic.id)"
+                      (ngModelChange)="renameNode.emit({ nodeId: subtopic.id, label: $event })"
+                      class="w-full border-0 bg-transparent text-sm font-medium text-slate-800 focus-visible:outline-none"
+                      [attr.aria-label]="'Subtopic label: ' + subtopic.label"
+                    />
                   </div>
-                }
-              </div>
-            }
+                </div>
+              }
+            </div>
           </article>
         }
       </div>
@@ -174,7 +163,6 @@ export class TreeCanvasComponent {
 
   readonly addSubtopic = output<string>();
   readonly renameNode = output<{ nodeId: string; label: string }>();
-  readonly toggleExpand = output<string>();
   readonly requestDeleteTopic = output<string>();
   readonly requestDeleteSubtopic = output<{ topicId: string; subtopicId: string }>();
   readonly selectNode = output<string | null>();
