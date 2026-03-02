@@ -1,5 +1,5 @@
 import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
-import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TreeSubtopic, TreeTopic } from '../models/tree-table.model';
 
@@ -21,9 +21,11 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
   imports: [DragDropModule, FormsModule],
   host: {
     '(document:keydown.escape)': 'closeNodeMenu()',
+    '(document:mousedown)': 'onDocumentMouseDown($event)',
   },
   template: `
     <section
+      #canvasRoot
       class="rounded-2xl border border-slate-200 bg-white/70 p-4 shadow-sm"
       aria-label="Tree graph canvas"
     >
@@ -55,9 +57,12 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
               >
                 <div class="flex items-center gap-2">
                   <input
-                    [ngModel]="topic.label"
-                    (focus)="selectNode.emit(topic.id)"
-                    (ngModelChange)="renameNode.emit({ nodeId: topic.id, label: $event })"
+                    [ngModel]="nodeInputValue(topic.id, topic.label)"
+                    (focus)="onNodeFocus(topic.id, topic.label)"
+                    (ngModelChange)="onNodeModelChange(topic.id, $event)"
+                    (blur)="onNodeBlur($event, topic.id, topic.label)"
+                    (keydown.enter)="onNodeEnter($event, topic.id, topic.label)"
+                    (keydown.escape)="onNodeEscape($event, topic.id, topic.label)"
                     class="min-w-0 flex-1 border-0 bg-transparent text-sm font-semibold text-slate-800 focus-visible:outline-none"
                     [attr.aria-label]="'Topic label: ' + topic.label"
                   />
@@ -91,9 +96,12 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
                     (contextmenu)="openSubtopicMenu($event, topic.id, subtopic.id)"
                   >
                     <input
-                      [ngModel]="subtopic.label"
-                      (focus)="selectNode.emit(subtopic.id)"
-                      (ngModelChange)="renameNode.emit({ nodeId: subtopic.id, label: $event })"
+                      [ngModel]="nodeInputValue(subtopic.id, subtopic.label)"
+                      (focus)="onNodeFocus(subtopic.id, subtopic.label)"
+                      (ngModelChange)="onNodeModelChange(subtopic.id, $event)"
+                      (blur)="onNodeBlur($event, subtopic.id, subtopic.label)"
+                      (keydown.enter)="onNodeEnter($event, subtopic.id, subtopic.label)"
+                      (keydown.escape)="onNodeEscape($event, subtopic.id, subtopic.label)"
                       class="w-full border-0 bg-transparent text-sm font-medium text-slate-800 focus-visible:outline-none"
                       [attr.aria-label]="'Subtopic label: ' + subtopic.label"
                     />
@@ -173,6 +181,9 @@ export class TreeCanvasComponent {
   protected readonly menuX = signal(0);
   protected readonly menuY = signal(0);
   protected readonly menuTarget = signal<NodeMenuTarget | null>(null);
+  protected readonly editingNodeId = signal<string | null>(null);
+  protected readonly editingNodeLabel = signal('');
+  private readonly canvasRootRef = viewChild<ElementRef<HTMLElement>>('canvasRoot');
 
   onTopicDrop(event: CdkDragDrop<TreeTopic[]>): void {
     if (event.previousIndex === event.currentIndex) {
@@ -253,5 +264,90 @@ export class TreeCanvasComponent {
     }
 
     this.closeNodeMenu();
+  }
+
+  protected onNodeFocus(nodeId: string, label: string): void {
+    this.selectNode.emit(nodeId);
+    if (this.editingNodeId() === nodeId) {
+      return;
+    }
+    this.editingNodeId.set(nodeId);
+    this.editingNodeLabel.set(label);
+  }
+
+  protected onNodeModelChange(nodeId: string, label: string): void {
+    if (this.editingNodeId() !== nodeId) {
+      return;
+    }
+    this.editingNodeLabel.set(label);
+  }
+
+  protected onNodeBlur(event: FocusEvent, nodeId: string, originalLabel: string): void {
+    if (this.editingNodeId() !== nodeId) {
+      this.clearSelectionIfFocusLeftCanvas(event);
+      return;
+    }
+    this.commitNodeRename(nodeId, originalLabel);
+    this.clearSelectionIfFocusLeftCanvas(event);
+  }
+
+  protected onNodeEnter(event: Event, nodeId: string, originalLabel: string): void {
+    event.preventDefault();
+    if (this.editingNodeId() !== nodeId) {
+      return;
+    }
+    this.commitNodeRename(nodeId, originalLabel);
+    const input = event.target as HTMLInputElement | null;
+    input?.blur();
+  }
+
+  protected onNodeEscape(event: Event, nodeId: string, originalLabel: string): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.editingNodeId() !== nodeId) {
+      return;
+    }
+
+    this.editingNodeId.set(null);
+    this.editingNodeLabel.set('');
+    const input = event.target as HTMLInputElement | null;
+    if (input) {
+      input.value = originalLabel;
+      input.blur();
+    }
+  }
+
+  protected nodeInputValue(nodeId: string, label: string): string {
+    if (this.editingNodeId() === nodeId) {
+      return this.editingNodeLabel();
+    }
+    return label;
+  }
+
+  private commitNodeRename(nodeId: string, originalLabel: string): void {
+    const nextLabel = this.editingNodeLabel();
+    if (nextLabel !== originalLabel) {
+      this.renameNode.emit({ nodeId, label: nextLabel });
+    }
+    this.editingNodeId.set(null);
+    this.editingNodeLabel.set('');
+  }
+
+  protected onDocumentMouseDown(event: MouseEvent): void {
+    const root = this.canvasRootRef()?.nativeElement;
+    const target = event.target as Node | null;
+    if (!root || !target || root.contains(target)) {
+      return;
+    }
+    this.selectNode.emit(null);
+  }
+
+  private clearSelectionIfFocusLeftCanvas(event: FocusEvent): void {
+    const root = this.canvasRootRef()?.nativeElement;
+    const relatedTarget = event.relatedTarget as Node | null;
+    if (!root || (relatedTarget && root.contains(relatedTarget))) {
+      return;
+    }
+    this.selectNode.emit(null);
   }
 }

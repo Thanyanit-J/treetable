@@ -11,7 +11,7 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
     '(document:mousedown)': 'onDocumentMouseDown($event)',
   },
   template: `
-    <section class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm" aria-label="Subtopic table">
+    <section #tableSection class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm" aria-label="Subtopic table">
       <div class="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Subtopic Table</div>
 
       <div #tableContainer class="overflow-auto">
@@ -30,10 +30,12 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
                   <div class="flex items-center gap-2">
                     @if (editingColumnId() === column.id) {
                       <input
+                        [attr.data-column-rename-id]="column.id"
                         [ngModel]="editingColumnName()"
                         (ngModelChange)="editingColumnName.set($event)"
-                        (blur)="commitColumnRename(column.id)"
-                        (keydown.enter)="commitColumnRename(column.id)"
+                        (blur)="onColumnRenameBlur(column.id)"
+                        (keydown.enter)="onColumnRenameEnter($event, column.id)"
+                        (keydown.escape)="onColumnRenameEscape($event, column.id)"
                         class="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm"
                         [attr.aria-label]="'Rename column ' + column.name"
                       />
@@ -89,7 +91,7 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
                         )
                       "
                       (focus)="onCellFocus(row.subtopic.id, column.id)"
-                      (blur)="onCellBlur(row.subtopic.id, column.id)"
+                      (blur)="onCellBlur($event, row.subtopic.id, column.id)"
                       (click)="onFormulaCursorChange(row.subtopic.id, column.id, $event)"
                       (keyup)="onFormulaCursorChange(row.subtopic.id, column.id, $event)"
                       (input)="onFormulaCursorChange(row.subtopic.id, column.id, $event)"
@@ -154,6 +156,7 @@ export class SubtopicTableComponent {
   protected readonly activeReferencedColumnId = signal<string | null>(null);
 
   private readonly tableContainerRef = viewChild<ElementRef<HTMLElement>>('tableContainer');
+  private readonly tableSectionRef = viewChild<ElementRef<HTMLElement>>('tableSection');
 
   openMenu(event: MouseEvent, columnId: string): void {
     event.preventDefault();
@@ -279,12 +282,42 @@ export class SubtopicTableComponent {
   protected startColumnRename(columnId: string, currentName: string): void {
     this.editingColumnId.set(columnId);
     this.editingColumnName.set(currentName);
+    requestAnimationFrame(() => {
+      const input = this.getColumnRenameInput(columnId);
+      if (!input) {
+        return;
+      }
+      input.focus();
+      input.select();
+    });
   }
 
   protected commitColumnRename(columnId: string): void {
+    if (this.editingColumnId() !== columnId) {
+      return;
+    }
     const nextName = this.editingColumnName().trim();
     if (nextName.length > 0) {
       this.renameColumn.emit({ columnId, name: nextName });
+    }
+    this.editingColumnId.set(null);
+    this.editingColumnName.set('');
+  }
+
+  protected onColumnRenameBlur(columnId: string): void {
+    this.commitColumnRename(columnId);
+  }
+
+  protected onColumnRenameEnter(event: Event, columnId: string): void {
+    event.preventDefault();
+    this.commitColumnRename(columnId);
+  }
+
+  protected onColumnRenameEscape(event: Event, columnId: string): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.editingColumnId() !== columnId) {
+      return;
     }
     this.editingColumnId.set(null);
     this.editingColumnName.set('');
@@ -342,12 +375,14 @@ export class SubtopicTableComponent {
     event.stopPropagation();
   }
 
-  protected onCellBlur(nodeId: string, columnId: string): void {
+  protected onCellBlur(event: FocusEvent, nodeId: string, columnId: string): void {
     if (!this.isEditingCell(nodeId, columnId)) {
+      this.clearSelectionIfFocusLeftTable(event);
       return;
     }
 
     this.commitEditingCell();
+    this.clearSelectionIfFocusLeftTable(event);
   }
 
   protected onCellEnter(event: Event): void {
@@ -396,12 +431,18 @@ export class SubtopicTableComponent {
   }
 
   protected onDocumentMouseDown(event: MouseEvent): void {
+    const section = this.tableSectionRef()?.nativeElement;
+    const target = event.target as Node | null;
+    if (section && target && !section.contains(target)) {
+      this.selectNode.emit(null);
+      this.activeReferencedColumnId.set(null);
+    }
+
     if (!this.isEditingAnyCell()) {
       return;
     }
 
     const table = this.tableContainerRef()?.nativeElement;
-    const target = event.target as Node | null;
     if (!table || !target) {
       this.commitEditingCell();
       return;
@@ -553,6 +594,13 @@ export class SubtopicTableComponent {
     return tableRoot?.querySelector<HTMLInputElement>(`input[data-cell-key="${cellKey}"]`) ?? null;
   }
 
+  private getColumnRenameInput(columnId: string): HTMLInputElement | null {
+    const tableRoot = this.tableContainerRef()?.nativeElement;
+    return (
+      tableRoot?.querySelector<HTMLInputElement>(`input[data-column-rename-id="${columnId}"]`) ?? null
+    );
+  }
+
   private syncDisplayValue(nodeId: string, columnId: string): void {
     const cellKey = this.makeCellKey(nodeId, columnId);
     const input = this.getInputElement(cellKey);
@@ -563,5 +611,15 @@ export class SubtopicTableComponent {
     const row = this.rows().find((candidate) => candidate.subtopic.id === nodeId);
     const cell = row?.subtopic.cells[columnId];
     input.value = this.displayCellValue(cell?.raw ?? '', cell?.value ?? null, cell?.error ?? null);
+  }
+
+  private clearSelectionIfFocusLeftTable(event: FocusEvent): void {
+    const section = this.tableSectionRef()?.nativeElement;
+    const relatedTarget = event.relatedTarget as Node | null;
+    if (!section || (relatedTarget && section.contains(relatedTarget))) {
+      return;
+    }
+    this.selectNode.emit(null);
+    this.activeReferencedColumnId.set(null);
   }
 }

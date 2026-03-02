@@ -33,10 +33,16 @@ describe('SubtopicTableComponent', () => {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   }
 
+  async function nextMacrotask(): Promise<void> {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+
   async function setup(valueRaw = '=$Amount*$Rate'): Promise<{
     fixture: ComponentFixture<SubtopicTableComponent>;
     component: SubtopicTableComponent;
     setCellEvents: Array<{ nodeId: string; columnId: string; raw: string }>;
+    renameColumnEvents: Array<{ columnId: string; name: string }>;
+    selectNodeEvents: Array<string | null>;
   }> {
     await TestBed.configureTestingModule({
       imports: [SubtopicTableComponent],
@@ -49,13 +55,17 @@ describe('SubtopicTableComponent', () => {
 
     const component = fixture.componentInstance;
     const setCellEvents: Array<{ nodeId: string; columnId: string; raw: string }> = [];
+    const renameColumnEvents: Array<{ columnId: string; name: string }> = [];
+    const selectNodeEvents: Array<string | null> = [];
     component.setCell.subscribe((payload) => setCellEvents.push(payload));
+    component.renameColumn.subscribe((payload) => renameColumnEvents.push(payload));
+    component.selectNode.subscribe((payload) => selectNodeEvents.push(payload));
 
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
 
-    return { fixture, component, setCellEvents };
+    return { fixture, component, setCellEvents, renameColumnEvents, selectNodeEvents };
   }
 
   function getCellInput(fixture: ComponentFixture<SubtopicTableComponent>, nodeId: string, columnId: string): HTMLInputElement {
@@ -73,6 +83,10 @@ describe('SubtopicTableComponent', () => {
   function focusInput(fixture: ComponentFixture<SubtopicTableComponent>, input: HTMLInputElement): void {
     input.dispatchEvent(new FocusEvent('focus'));
     fixture.detectChanges();
+  }
+
+  function headerRenameInput(fixture: ComponentFixture<SubtopicTableComponent>): HTMLInputElement | null {
+    return fixture.nativeElement.querySelector('thead input[data-column-rename-id]') as HTMLInputElement | null;
   }
 
   it('enters editing on first focus and shows raw formula', async () => {
@@ -121,6 +135,7 @@ describe('SubtopicTableComponent', () => {
     rateInput.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
 
     await nextFrame();
+    await nextMacrotask();
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -224,5 +239,73 @@ describe('SubtopicTableComponent', () => {
 
     const firstHeader = fixture.nativeElement.querySelector('thead th') as HTMLElement | null;
     expect(firstHeader?.className).toContain('border-sky-400');
+  });
+
+  it('focuses rename textbox immediately when column rename starts', async () => {
+    const { fixture } = await setup();
+
+    const renameTrigger = fixture.nativeElement.querySelector('th button.truncate') as HTMLButtonElement | null;
+    expect(renameTrigger).toBeTruthy();
+    renameTrigger?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+    await nextFrame();
+    fixture.detectChanges();
+
+    const renameInput = headerRenameInput(fixture);
+    expect(renameInput).toBeTruthy();
+    expect(document.activeElement).toBe(renameInput);
+  });
+
+  it('commits header rename on Enter and cancels on Escape', async () => {
+    const { fixture, renameColumnEvents } = await setup();
+
+    const renameTrigger = fixture.nativeElement.querySelector('th button.truncate') as HTMLButtonElement | null;
+    renameTrigger?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await nextFrame();
+    fixture.detectChanges();
+
+    const renameInput = headerRenameInput(fixture);
+    expect(renameInput).toBeTruthy();
+    if (!renameInput) {
+      return;
+    }
+    renameInput.value = 'Principal';
+    renameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    renameInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+
+    expect(renameColumnEvents).toHaveLength(1);
+    expect(renameColumnEvents[0]).toEqual({ columnId: '$Amount', name: 'Principal' });
+
+    const renameTrigger2 = fixture.nativeElement.querySelector('th button.truncate') as HTMLButtonElement | null;
+    renameTrigger2?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await nextFrame();
+    fixture.detectChanges();
+
+    const renameInput2 = headerRenameInput(fixture);
+    expect(renameInput2).toBeTruthy();
+    if (!renameInput2) {
+      return;
+    }
+    renameInput2.value = 'Ignored';
+    renameInput2.dispatchEvent(new Event('input', { bubbles: true }));
+    renameInput2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    renameInput2.dispatchEvent(new FocusEvent('blur'));
+    fixture.detectChanges();
+
+    expect(renameColumnEvents).toHaveLength(1);
+  });
+
+  it('clears selection highlight when focus leaves table', async () => {
+    const { fixture, selectNodeEvents } = await setup();
+    const amountInput = getCellInput(fixture, 'subtopic_1', '$Amount');
+
+    focusInput(fixture, amountInput);
+    expect(selectNodeEvents).toContain('subtopic_1');
+
+    amountInput.dispatchEvent(new FocusEvent('blur', { relatedTarget: null }));
+    fixture.detectChanges();
+
+    expect(selectNodeEvents).toContain(null);
   });
 });
