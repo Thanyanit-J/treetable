@@ -49,6 +49,7 @@ describe('TreeTableStoreService', () => {
     store.insertColumn(firstColumn.id, 'left');
     const leftColumn = store.columns()[0];
     expect(leftColumn?.id).not.toBe(firstColumn.id);
+    expect(leftColumn?.id.startsWith('$')).toBe(true);
 
     if (!rightColumn) {
       throw new Error('Expected inserted right column');
@@ -83,5 +84,29 @@ describe('TreeTableStoreService', () => {
     const result = store.deleteColumn(onlyColumn.id);
     expect(result?.ok).toBe(false);
     expect(result?.error).toContain('At least one column');
+  });
+
+  it('renaming column updates id and rewrites formula references', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const amountColumn = store.columns().find((column) => column.name === 'Amount');
+    if (!amountColumn) {
+      throw new Error('Expected amount column');
+    }
+
+    const targetRow = store.visibleSubtopicRows()[0];
+    if (!targetRow) {
+      throw new Error('Expected subtopic row');
+    }
+
+    store.setCellRaw(targetRow.subtopic.id, '$Value', '=$Amount*2');
+    store.renameColumn(amountColumn.id, 'Principal');
+
+    const renamed = store.columns().find((column) => column.name === 'Principal');
+    expect(renamed).toBeDefined();
+    expect(renamed?.id).toBe('$Principal');
+
+    const updatedRow = store.visibleSubtopicRows()[0];
+    expect(updatedRow?.subtopic.cells['$Value']?.raw).toContain('$Principal');
+    expect(updatedRow?.subtopic.cells['$Amount']).toBeUndefined();
   });
 });

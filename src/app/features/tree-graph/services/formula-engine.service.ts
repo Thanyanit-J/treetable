@@ -317,9 +317,9 @@ export class FormulaEngineService {
         continue;
       }
 
-      if (/[A-Za-z_]/.test(char)) {
+      if (/[A-Za-z_$]/.test(char)) {
         let end = index + 1;
-        while (end < expression.length && /[A-Za-z0-9_]/.test(expression[end] ?? '')) {
+        while (end < expression.length && /[A-Za-z0-9_$]/.test(expression[end] ?? '')) {
           end += 1;
         }
         tokens.push({ type: 'identifier', lexeme: expression.slice(index, end) });

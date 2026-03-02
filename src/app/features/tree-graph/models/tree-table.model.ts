@@ -42,7 +42,7 @@ export interface ImportResult {
   warnings?: string[];
 }
 
-export const RESERVED_COLUMN_IDS = new Set(['SUM', 'AVG', 'MIN', 'MAX', 'children']);
+export const RESERVED_COLUMN_BASENAMES = new Set(['SUM', 'AVG', 'MIN', 'MAX', 'children']);
 
 export function createCellData(raw = ''): CellData {
   return {
@@ -66,33 +66,32 @@ export function createEmptyCells(columns: TableColumn[]): Record<ColumnId, CellD
 export function slugToColumnId(input: string): string {
   const cleaned = input
     .trim()
-    .replace(/[^A-Za-z0-9_ ]/g, ' ')
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part, index) => {
-      const lower = part.toLowerCase();
-      if (index === 0) {
-        return lower;
-      }
-      return lower.charAt(0).toUpperCase() + lower.slice(1);
-    })
-    .join('');
+    .replace(/[^A-Za-z0-9_]/g, '');
 
-  const base = cleaned.length > 0 ? cleaned : 'column';
-  if (/^[A-Za-z_]/.test(base)) {
-    return base;
+  let base = cleaned.length > 0 ? cleaned : 'Column';
+  if (!/^[A-Za-z_]/.test(base)) {
+    base = `_${base}`;
   }
-  return `_${base}`;
+
+  if (RESERVED_COLUMN_BASENAMES.has(base)) {
+    base = `${base}_col`;
+  }
+
+  return `$${base}`;
 }
 
 export function isValidColumnId(input: string): boolean {
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(input) && !RESERVED_COLUMN_IDS.has(input);
+  if (!/^\$[A-Za-z_][A-Za-z0-9_]*$/.test(input)) {
+    return false;
+  }
+  const baseName = input.slice(1);
+  return !RESERVED_COLUMN_BASENAMES.has(baseName);
 }
 
 export const STARTER_COLUMNS: TableColumn[] = [
-  { id: 'amount', name: 'Amount', type: 'number' },
-  { id: 'rate', name: 'Rate', type: 'number' },
-  { id: 'value', name: 'Value', type: 'number' },
+  { id: '$Amount', name: 'Amount', type: 'number' },
+  { id: '$Rate', name: 'Rate', type: 'number' },
+  { id: '$Value', name: 'Value', type: 'number' },
 ];
 
 export const STARTER_STATE: TreeTableStateV1 = {
@@ -110,9 +109,9 @@ export const STARTER_STATE: TreeTableStateV1 = {
           topicId: 'topic_wealth',
           label: 'Bank A',
           cells: {
-            amount: createCellData('120000'),
-            rate: createCellData('0.03'),
-            value: createCellData('=amount*rate'),
+            $Amount: createCellData('120000'),
+            $Rate: createCellData('0.03'),
+            $Value: createCellData('=$Amount*$Rate'),
           },
         },
         {
@@ -120,9 +119,9 @@ export const STARTER_STATE: TreeTableStateV1 = {
           topicId: 'topic_wealth',
           label: 'Bank B',
           cells: {
-            amount: createCellData('90000'),
-            rate: createCellData('0.05'),
-            value: createCellData('=amount*rate'),
+            $Amount: createCellData('90000'),
+            $Rate: createCellData('0.05'),
+            $Value: createCellData('=$Amount*$Rate'),
           },
         },
       ],
@@ -137,9 +136,9 @@ export const STARTER_STATE: TreeTableStateV1 = {
           topicId: 'topic_business',
           label: 'Dividend',
           cells: {
-            amount: createCellData('30000'),
-            rate: createCellData('1'),
-            value: createCellData('=amount*rate'),
+            $Amount: createCellData('30000'),
+            $Rate: createCellData('1'),
+            $Value: createCellData('=$Amount*$Rate'),
           },
         },
         {
@@ -147,9 +146,9 @@ export const STARTER_STATE: TreeTableStateV1 = {
           topicId: 'topic_business',
           label: 'Family Company',
           cells: {
-            amount: createCellData('45000'),
-            rate: createCellData('1'),
-            value: createCellData('=amount'),
+            $Amount: createCellData('45000'),
+            $Rate: createCellData('1'),
+            $Value: createCellData('=$Amount'),
           },
         },
       ],

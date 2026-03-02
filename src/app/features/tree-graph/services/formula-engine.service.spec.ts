@@ -6,30 +6,30 @@ describe('FormulaEngineService', () => {
   it('evaluates column reference formulas', () => {
     const service = TestBed.inject(FormulaEngineService);
     const columns = [
-      { id: 'amount', name: 'Amount', type: 'number' as const },
-      { id: 'rate', name: 'Rate', type: 'number' as const },
-      { id: 'value', name: 'Value', type: 'number' as const },
+      { id: '$Amount', name: 'Amount', type: 'number' as const },
+      { id: '$Rate', name: 'Rate', type: 'number' as const },
+      { id: '$Value', name: 'Value', type: 'number' as const },
     ];
 
     const row = {
-      amount: createCellData('100'),
-      rate: createCellData('0.5'),
-      value: createCellData('=amount*rate'),
+      $Amount: createCellData('100'),
+      $Rate: createCellData('0.5'),
+      $Value: createCellData('=$Amount*$Rate'),
     };
 
     const result = service.evaluateRow(columns, row);
-    expect(result['value']?.value).toBe(50);
-    expect(result['value']?.error).toBeNull();
+    expect(result['$Value']?.value).toBe(50);
+    expect(result['$Value']?.error).toBeNull();
   });
 
   it('rejects children.* formulas in subtopic-only mode', () => {
     const service = TestBed.inject(FormulaEngineService);
-    const columns = [{ id: 'amount', name: 'Amount', type: 'number' as const }];
+    const columns = [{ id: '$Amount', name: 'Amount', type: 'number' as const }];
 
-    const row = { amount: createCellData('=SUM(children.amount)') };
+    const row = { $Amount: createCellData('=SUM(children.$Amount)') };
     const result = service.evaluateRow(columns, row);
 
-    expect(result['amount']?.error).toContain('children.* is not supported');
+    expect(result['$Amount']?.error).toContain('children.* is not supported');
   });
 
   it('returns error on circular references', () => {

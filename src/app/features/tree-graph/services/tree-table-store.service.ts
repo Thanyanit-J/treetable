@@ -236,11 +236,24 @@ export class TreeTableStoreService {
 
   renameColumn(columnId: ColumnId, name: string): void {
     this.mutate((state) => {
-      const column = state.columns.find((currentColumn) => currentColumn.id === columnId);
+      const columnIndex = state.columns.findIndex((currentColumn) => currentColumn.id === columnId);
+      const column = columnIndex >= 0 ? state.columns[columnIndex] : undefined;
       if (!column) {
         return;
       }
-      column.name = name.trim() || column.name;
+
+      const nextName = name.trim() || column.name;
+      const nextId = this.buildUniqueColumnId(
+        state.columns.filter((candidate) => candidate.id !== columnId),
+        nextName,
+      );
+      const oldId = column.id;
+      column.name = nextName;
+      column.id = nextId;
+
+      if (oldId !== nextId) {
+        this.renameColumnReferences(state, oldId, nextId);
+      }
     });
   }
 
@@ -283,7 +296,7 @@ export class TreeTableStoreService {
       return;
     }
 
-    const previous = stack[stack.length - 1];
+    const previous = stack.at(-1);
     if (!previous) {
       return;
     }
@@ -326,7 +339,7 @@ export class TreeTableStoreService {
     const next = cloneState(state);
 
     if (next.columns.length === 0) {
-      next.columns.push({ id: 'value', name: 'Value', type: 'number' });
+      next.columns.push({ id: '$Value', name: 'Value', type: 'number' });
     }
 
     for (const topic of next.topics) {
@@ -351,6 +364,14 @@ export class TreeTableStoreService {
     name: string,
     type: 'number' | 'text',
   ): TableColumn {
+    return {
+      id: this.buildUniqueColumnId(existingColumns, name),
+      name: name.trim() || 'New Column',
+      type,
+    };
+  }
+
+  private buildUniqueColumnId(existingColumns: TableColumn[], name: string): ColumnId {
     const base = slugToColumnId(name);
     let candidate = base;
     let suffix = 2;
@@ -361,10 +382,33 @@ export class TreeTableStoreService {
       suffix += 1;
     }
 
-    return {
-      id: candidate,
-      name: name.trim() || 'New Column',
-      type,
-    };
+    return candidate;
+  }
+
+  private renameColumnReferences(state: TreeTableStateV1, oldId: ColumnId, newId: ColumnId): void {
+    for (const topic of state.topics) {
+      for (const child of topic.children) {
+        const oldCell = child.cells[oldId];
+        if (oldCell) {
+          child.cells[newId] = oldCell;
+          delete child.cells[oldId];
+        } else if (!child.cells[newId]) {
+          child.cells[newId] = createCellData('');
+        }
+
+        for (const cell of Object.values(child.cells)) {
+          if (!cell.raw.trim().startsWith('=')) {
+            continue;
+          }
+          cell.raw = this.replaceFormulaToken(cell.raw, oldId, newId);
+        }
+      }
+    }
+  }
+
+  private replaceFormulaToken(formula: string, oldId: ColumnId, newId: ColumnId): string {
+    const escapedOldId = oldId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(`(?<![A-Za-z0-9_$])${escapedOldId}(?![A-Za-z0-9_])`, 'g');
+    return formula.replace(pattern, newId);
   }
 }

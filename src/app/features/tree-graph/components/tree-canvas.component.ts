@@ -234,7 +234,7 @@ export class TreeCanvasComponent {
 
   onTopicMenuAction(action: 'addSubtopic' | 'deleteTopic'): void {
     const target = this.menuTarget();
-    if (!target || target.kind !== 'topic') {
+    if (target?.kind !== 'topic') {
       this.closeNodeMenu();
       return;
     }
@@ -250,7 +250,7 @@ export class TreeCanvasComponent {
 
   onSubtopicMenuAction(action: 'focusRow' | 'deleteSubtopic'): void {
     const target = this.menuTarget();
-    if (!target || target.kind !== 'subtopic') {
+    if (target?.kind !== 'subtopic') {
       this.closeNodeMenu();
       return;
     }
