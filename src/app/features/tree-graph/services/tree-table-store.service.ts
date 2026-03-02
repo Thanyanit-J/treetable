@@ -68,13 +68,21 @@ export class TreeTableStoreService {
   addTopic(label = 'New Topic'): void {
     this.mutate((state) => {
       const topicId = makeNodeId('topic');
+      const subtopicId = makeNodeId('subtopic');
       const newTopic: TreeTopic = {
         id: topicId,
         label,
-        children: [],
+        children: [
+          {
+            id: subtopicId,
+            topicId,
+            label: 'New Subtopic',
+            cells: createEmptyCells(state.columns),
+          },
+        ],
       };
       state.topics.push(newTopic);
-      state.selectedNodeId = topicId;
+      state.selectedNodeId = subtopicId;
     });
   }
 

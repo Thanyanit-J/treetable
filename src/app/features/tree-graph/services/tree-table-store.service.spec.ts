@@ -16,6 +16,16 @@ describe('TreeTableStoreService', () => {
     expect(created && 'cells' in created).toBe(false);
   });
 
+  it('creates a default subtopic when adding a topic', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+
+    store.addTopic('Auto Child Topic');
+    const created = store.topics().at(-1);
+    expect(created?.children.length).toBe(1);
+    expect(created?.children[0]?.label).toBe('New Subtopic');
+    expect(store.selectedNodeId()).toBe(created?.children[0]?.id ?? null);
+  });
+
   it('deleting subtopic removes table row and supports undo', () => {
     const store = TestBed.inject(TreeTableStoreService);
     const topic = store.topics()[0];
