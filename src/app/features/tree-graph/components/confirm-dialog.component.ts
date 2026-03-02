@@ -5,7 +5,7 @@ import { ChangeDetectionStrategy, Component, ElementRef, effect, input, output, 
   template: `
     <dialog
       #dialog
-      class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-900/35"
+      class="fixed left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-900/35"
       (close)="onClose()"
     >
       <form method="dialog" class="space-y-4 p-6">
