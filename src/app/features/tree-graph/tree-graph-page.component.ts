@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ConfirmDialogComponent } from './components/confirm-dialog.component';
 import { SubtopicTableComponent } from './components/subtopic-table.component';
 import { TreeCanvasComponent } from './components/tree-canvas.component';
@@ -20,13 +21,26 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
 
 @Component({
   selector: 'app-tree-graph-page',
-  imports: [TreeCanvasComponent, SubtopicTableComponent, ConfirmDialogComponent],
+  imports: [FormsModule, TreeCanvasComponent, SubtopicTableComponent, ConfirmDialogComponent],
   template: `
     <main class="mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8">
       <section class="mb-4 rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Graph + Table Tree</h1>
+            <input
+              [ngModel]="titleInputValue()"
+              (focus)="onTitleFocus()"
+              (ngModelChange)="onTitleChange($event)"
+              (blur)="onTitleBlur()"
+              (keydown.enter)="onTitleEnter($event)"
+              (keydown.escape)="onTitleEscape($event)"
+              class="w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 py-1 text-2xl font-semibold tracking-tight text-slate-900 focus-visible:outline-none"
+              [class.border-sky-300]="editingTitle()"
+              [class.bg-sky-50]="editingTitle()"
+              [class.ring-2]="editingTitle()"
+              [class.ring-sky-100]="editingTitle()"
+              aria-label="Tree title"
+            />
           </div>
           <div class="flex flex-wrap gap-2">
             <button
@@ -121,6 +135,8 @@ export class TreeGraphPageComponent {
 
   protected readonly pendingDelete = signal<PendingDelete | null>(null);
   protected readonly statusMessage = signal<ImportResult | null>(null);
+  protected readonly editingTitle = signal(false);
+  protected readonly titleDraft = signal('');
 
   protected readonly isDeleteDialogOpen = computed(() => this.pendingDelete() !== null);
   protected readonly deleteMessage = computed(() => {
@@ -135,6 +151,51 @@ export class TreeGraphPageComponent {
 
     return 'Deleting a subtopic removes its table row.';
   });
+
+  protected titleInputValue(): string {
+    if (this.editingTitle()) {
+      return this.titleDraft();
+    }
+    return this.store.title();
+  }
+
+  protected onTitleFocus(): void {
+    if (this.editingTitle()) {
+      return;
+    }
+    this.editingTitle.set(true);
+    this.titleDraft.set(this.store.title());
+  }
+
+  protected onTitleChange(value: string): void {
+    if (!this.editingTitle()) {
+      return;
+    }
+    this.titleDraft.set(value);
+  }
+
+  protected onTitleBlur(): void {
+    this.commitTitle();
+  }
+
+  protected onTitleEnter(event: Event): void {
+    event.preventDefault();
+    this.commitTitle();
+    const input = event.target as HTMLInputElement | null;
+    input?.blur();
+  }
+
+  protected onTitleEscape(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.editingTitle.set(false);
+    this.titleDraft.set('');
+    const input = event.target as HTMLInputElement | null;
+    if (input) {
+      input.value = this.store.title();
+      input.blur();
+    }
+  }
 
   queueTopicDelete(topicId: string): void {
     this.pendingDelete.set({ type: 'topic', topicId });
@@ -192,5 +253,14 @@ export class TreeGraphPageComponent {
     if (result) {
       this.statusMessage.set(result);
     }
+  }
+
+  private commitTitle(): void {
+    if (!this.editingTitle()) {
+      return;
+    }
+    this.store.setTitle(this.titleDraft());
+    this.editingTitle.set(false);
+    this.titleDraft.set('');
   }
 }

@@ -109,4 +109,18 @@ describe('TreeTableStoreService', () => {
     expect(updatedRow?.subtopic.cells['$Value']?.raw).toContain('$Principal');
     expect(updatedRow?.subtopic.cells['$Amount']).toBeUndefined();
   });
+
+  it('updates title and supports undo/redo', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+
+    expect(store.title()).toBe('Untitled');
+    store.setTitle('My Plan');
+    expect(store.title()).toBe('My Plan');
+
+    store.undo();
+    expect(store.title()).toBe('Untitled');
+
+    store.redo();
+    expect(store.title()).toBe('My Plan');
+  });
 });

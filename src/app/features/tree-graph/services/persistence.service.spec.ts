@@ -38,6 +38,7 @@ describe('PersistenceService', () => {
 
     expect(loaded.columns.length).toBeGreaterThanOrEqual(1);
     expect('cells' in loaded.topics[0]!).toBe(false);
+    expect(loaded.title).toBe('Untitled');
     const firstColId = loaded.columns[0]?.id ?? '';
     expect(loaded.topics[0]?.children[0]?.cells[firstColId]).toBeDefined();
   });

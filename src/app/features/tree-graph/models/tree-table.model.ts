@@ -28,6 +28,7 @@ export interface TreeTopic {
 
 export interface TreeTableStateV1 {
   version: 1;
+  title: string;
   topics: TreeTopic[];
   columns: TableColumn[];
   selectedNodeId: NodeId | null;
@@ -95,6 +96,7 @@ export const STARTER_COLUMNS: TableColumn[] = [
 
 export const STARTER_STATE: TreeTableStateV1 = {
   version: 1,
+  title: 'Untitled',
   selectedNodeId: null,
   columns: STARTER_COLUMNS,
   topics: [

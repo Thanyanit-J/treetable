@@ -35,6 +35,7 @@ export class TreeTableStoreService {
   private readonly future = signal<TreeTableStateV1[]>([]);
 
   readonly state = this.stateSignal.asReadonly();
+  readonly title = computed(() => this.stateSignal().title);
   readonly topics = computed(() => this.stateSignal().topics);
   readonly columns = computed(() => this.stateSignal().columns);
   readonly selectedNodeId = computed(() => this.stateSignal().selectedNodeId);
@@ -130,6 +131,13 @@ export class TreeTableStoreService {
           return;
         }
       }
+    });
+  }
+
+  setTitle(title: string): void {
+    this.mutate((state) => {
+      const nextTitle = title.trim() || 'Untitled';
+      state.title = nextTitle;
     });
   }
 
@@ -322,6 +330,10 @@ export class TreeTableStoreService {
 
   private recalculate(state: TreeTableState): TreeTableStateV1 {
     const next = cloneState(state);
+
+    if (!next.title || next.title.trim().length === 0) {
+      next.title = 'Untitled';
+    }
 
     if (next.columns.length === 0) {
       next.columns.push({ id: '$Value', name: 'Value', type: 'number' });

@@ -130,6 +130,7 @@ export class PersistenceService {
 
     return {
       version: 1,
+      title: typeof candidate.title === 'string' && candidate.title.trim().length > 0 ? candidate.title : 'Untitled',
       topics,
       columns: normalizedColumns,
       selectedNodeId: typeof candidate.selectedNodeId === 'string' ? candidate.selectedNodeId : null,
