@@ -29,7 +29,7 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
     '(document:keydown.escape)': 'closeTopicCardMenu()',
   },
   template: `
-    <main class="mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8">
+    <main class="tree-graph-page mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8">
       <section class="mb-4 rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -100,6 +100,7 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
           @for (topic of store.topics(); track topic.id) {
             <article
               cdkDrag
+              cdkDragPreviewClass="drag-preview-solid"
               [cdkDragData]="topic"
               class="w-max shrink-0 rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm"
               (contextmenu)="onTopicCardContextMenu($event, topic.id)"

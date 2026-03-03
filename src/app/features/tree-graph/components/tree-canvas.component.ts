@@ -56,7 +56,12 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
           [attr.aria-label]="'Subtopics for ' + topic().label"
         >
           @for (subtopic of topic().children; track subtopic.id) {
-            <div cdkDrag [cdkDragData]="subtopic" class="relative flex items-center gap-2">
+            <div
+              cdkDrag
+              cdkDragPreviewClass="drag-preview-solid"
+              [cdkDragData]="subtopic"
+              class="relative flex items-center gap-2"
+            >
               <div class="absolute -left-5 top-1/2 h-px w-5 -translate-y-1/2 bg-slate-300"></div>
 
               <div

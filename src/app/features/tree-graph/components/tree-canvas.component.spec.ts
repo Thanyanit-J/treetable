@@ -1,4 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { CdkDrag } from '@angular/cdk/drag-drop';
 import { TreeTopic } from '../models/tree-table.model';
 import { TreeCanvasComponent } from './tree-canvas.component';
 
@@ -120,5 +122,15 @@ describe('TreeCanvasComponent', () => {
     const { fixture } = await setup();
     const topicDragButton = fixture.nativeElement.querySelector('button[aria-label="Drag topic"]');
     expect(topicDragButton).toBeNull();
+  });
+
+  it('applies solid drag preview class to subtopic drag', async () => {
+    const { fixture } = await setup();
+    const drags = fixture.debugElement.queryAll(By.directive(CdkDrag)).map((item) => item.injector.get(CdkDrag));
+    const subtopicDrag = drags.find((drag) => {
+      const data = drag.data as { id?: string } | undefined;
+      return data?.id === 'subtopic_1';
+    });
+    expect(subtopicDrag?.previewClass).toBe('drag-preview-solid');
   });
 });
