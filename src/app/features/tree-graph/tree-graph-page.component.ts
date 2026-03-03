@@ -428,7 +428,7 @@ export class TreeGraphPageComponent {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'treetable.json';
+    link.download = `${this.buildExportFileName(this.store.title())}.json`;
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -510,5 +510,16 @@ export class TreeGraphPageComponent {
       this.statusMessage.set(null);
       this.statusToastTimer = null;
     }, 2500);
+  }
+
+  private buildExportFileName(title: string): string {
+    const trimmed = title.trim();
+    const base = trimmed.length > 0 ? trimmed : 'Untitled';
+    const sanitized = base
+      .replace(/[/\\?%*:|"<>]/g, '_')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\.+$/, '');
+    return sanitized.length > 0 ? sanitized : 'Untitled';
   }
 }
