@@ -2,6 +2,7 @@ import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
 import { ChangeDetectionStrategy, Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TreeSubtopic, TreeTopic } from '../models/tree-table.model';
+import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scroll-lock';
 
 interface TopicMenuTarget {
   kind: 'topic';
@@ -22,6 +23,8 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
   host: {
     '(document:keydown.escape)': 'closeNodeMenu()',
     '(document:mousedown)': 'onDocumentMouseDown($event)',
+    '(document:contextmenu)': 'onDocumentContextMenu($event)',
+    '(document:tree-graph-menu-opened)': 'onGlobalMenuOpened($event)',
   },
   template: `
     <section #canvasRoot class="h-full p-1" aria-label="Tree graph canvas">
@@ -167,6 +170,8 @@ export class TreeCanvasComponent {
   protected readonly editingNodeLabel = signal('');
   private readonly canvasRootRef = viewChild<ElementRef<HTMLElement>>('canvasRoot');
   private readonly nodeMenuRef = viewChild<ElementRef<HTMLElement>>('nodeMenu');
+  private isScrollLocked = false;
+  private readonly menuOwnerId = `tree-canvas-${crypto.randomUUID()}`;
 
   onSubtopicDrop(topicId: string, event: CdkDragDrop<TreeSubtopic[]>): void {
     if (event.previousIndex === event.currentIndex) {
@@ -187,6 +192,8 @@ export class TreeCanvasComponent {
     this.menuX.set(event.clientX);
     this.menuY.set(event.clientY);
     this.menuOpen.set(true);
+    this.ensureScrollLock();
+    this.broadcastMenuOpened();
   }
 
   openSubtopicMenu(event: MouseEvent, topicId: string, subtopicId: string): void {
@@ -195,9 +202,12 @@ export class TreeCanvasComponent {
     this.menuX.set(event.clientX);
     this.menuY.set(event.clientY);
     this.menuOpen.set(true);
+    this.ensureScrollLock();
+    this.broadcastMenuOpened();
   }
 
   closeNodeMenu(): void {
+    this.releaseScrollLock();
     this.menuOpen.set(false);
   }
 
@@ -322,6 +332,45 @@ export class TreeCanvasComponent {
     this.selectNode.emit(null);
   }
 
+  protected onDocumentContextMenu(event: MouseEvent): void {
+    if (!this.menuOpen()) {
+      return;
+    }
+
+    const root = this.canvasRootRef()?.nativeElement;
+    const menu = this.nodeMenuRef()?.nativeElement;
+    const target = event.target as Node | null;
+    if (!target) {
+      this.closeNodeMenu();
+      return;
+    }
+
+    if (menu?.contains(target)) {
+      return;
+    }
+
+    // Keep this canvas menu active when right-clicking inside the same canvas,
+    // but close it when right-clicking another card/canvas.
+    if (root?.contains(target)) {
+      return;
+    }
+
+    this.closeNodeMenu();
+  }
+
+  protected onGlobalMenuOpened(event: Event): void {
+    if (!this.menuOpen()) {
+      return;
+    }
+
+    const ownerId = (event as CustomEvent<{ ownerId?: string }>).detail?.ownerId;
+    if (!ownerId || ownerId === this.menuOwnerId) {
+      return;
+    }
+
+    this.closeNodeMenu();
+  }
+
   private clearSelectionIfFocusLeftCanvas(event: FocusEvent): void {
     const root = this.canvasRootRef()?.nativeElement;
     const relatedTarget = event.relatedTarget as Node | null;
@@ -334,5 +383,29 @@ export class TreeCanvasComponent {
   protected nodeWidthCh(label: string): number {
     const base = Math.max(8, label.trim().length + 2);
     return Math.min(base, 40);
+  }
+
+  private broadcastMenuOpened(): void {
+    document.dispatchEvent(
+      new CustomEvent<{ ownerId: string }>('tree-graph-menu-opened', {
+        detail: { ownerId: this.menuOwnerId },
+      }),
+    );
+  }
+
+  private ensureScrollLock(): void {
+    if (this.isScrollLocked) {
+      return;
+    }
+    acquireMenuScrollLock();
+    this.isScrollLocked = true;
+  }
+
+  private releaseScrollLock(): void {
+    if (!this.isScrollLocked) {
+      return;
+    }
+    releaseMenuScrollLock();
+    this.isScrollLocked = false;
   }
 }

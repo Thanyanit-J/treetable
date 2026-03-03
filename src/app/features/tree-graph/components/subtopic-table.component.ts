@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, ElementRef, computed, input, output
 import { FormsModule } from '@angular/forms';
 import { TreeTopic } from '../models/tree-table.model';
 import { ColumnContextMenuComponent } from './column-context-menu.component';
+import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scroll-lock';
 
 @Component({
   selector: 'app-subtopic-table',
@@ -12,9 +13,10 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
     '(touchstart)': 'onHostTouchStart($event)',
     '(dragstart)': 'onHostDragStart($event)',
     '(document:mousedown)': 'onDocumentMouseDown($event)',
+    '(document:tree-graph-menu-opened)': 'onGlobalMenuOpened($event)',
   },
   template: `
-    <section #tableSection class="h-full p-1" aria-label="Subtopic table">
+    <section #tableSection class="h-fit p-0" aria-label="Subtopic table">
       <div #tableContainer class="overflow-auto">
         @if (rows().length === 0) {
           <div class="rounded-lg border border-slate-200 px-3 py-6 text-center text-sm text-slate-500">
@@ -27,7 +29,7 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
                 @for (column of columns(); track column.id) {
                   <th
                     scope="col"
-                    class="border border-slate-200 bg-slate-100 px-2 py-2 text-left font-semibold text-slate-700"
+                    class="border border-slate-200 bg-slate-100 px-2 py-2 text-center font-semibold text-slate-700"
                     [style.width.ch]="columnWidthsCh()[column.id]"
                     [style.min-width.ch]="columnWidthsCh()[column.id]"
                     [class.border-sky-400]="activeReferencedColumnId() === column.id"
@@ -35,7 +37,7 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
                     (mousedown)="onColumnAssistMouseDown($event, column.id, null, null)"
                     (click)="onColumnAssistClick($event, column.id, null, null)"
                   >
-                    <div class="flex items-center gap-2">
+                    <div>
                       @if (editingColumnId() === column.id) {
                         <input
                           [attr.data-column-rename-id]="column.id"
@@ -44,7 +46,7 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
                           (blur)="onColumnRenameBlur(column.id)"
                           (keydown.enter)="onColumnRenameEnter($event, column.id)"
                           (keydown.escape)="onColumnRenameEscape($event, column.id)"
-                          class="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm"
+                          class="w-full rounded border border-slate-300 bg-white px-2 py-1 text-center text-sm"
                           [attr.aria-label]="'Rename column ' + column.name"
                         />
                       } @else {
@@ -52,20 +54,12 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
                           (dblclick)="startColumnRename(column.id, column.name)"
                           (mousedown)="onHeaderLabelMouseDown($event, column.id)"
                           (click)="onHeaderLabelClick($event, column.id)"
-                          class="truncate text-left"
+                          class="w-full truncate text-center"
                           type="button"
                         >
                           {{ formulaEditingMode() ? column.id : column.name }}
                         </button>
                       }
-                      <button
-                        (click)="openMenuFromButton($event, column.id)"
-                        class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs"
-                        [attr.aria-label]="'Open actions for column ' + column.name"
-                        type="button"
-                      >
-                        ⋯
-                      </button>
                     </div>
                   </th>
                 }
@@ -170,6 +164,8 @@ export class SubtopicTableComponent {
 
   private readonly tableContainerRef = viewChild<ElementRef<HTMLElement>>('tableContainer');
   private readonly tableSectionRef = viewChild<ElementRef<HTMLElement>>('tableSection');
+  private readonly menuOwnerId = `subtopic-table-${crypto.randomUUID()}`;
+  private isScrollLocked = false;
 
   openMenu(event: MouseEvent, columnId: string): void {
     event.preventDefault();
@@ -177,6 +173,8 @@ export class SubtopicTableComponent {
     this.menuX.set(event.clientX);
     this.menuY.set(event.clientY);
     this.menuOpen.set(true);
+    this.ensureScrollLock();
+    this.broadcastMenuOpened();
   }
 
   openMenuFromButton(event: MouseEvent, columnId: string): void {
@@ -186,6 +184,8 @@ export class SubtopicTableComponent {
     this.menuX.set(rect.left);
     this.menuY.set(rect.bottom + 4);
     this.menuOpen.set(true);
+    this.ensureScrollLock();
+    this.broadcastMenuOpened();
   }
 
   selectColumn(columnId: string): void {
@@ -208,6 +208,10 @@ export class SubtopicTableComponent {
   }
 
   protected onHeaderLabelClick(event: MouseEvent, columnId: string): void {
+    if (this.menuOpen()) {
+      this.closeMenu();
+    }
+
     if (this.formulaEditingMode()) {
       event.preventDefault();
       event.stopPropagation();
@@ -249,6 +253,7 @@ export class SubtopicTableComponent {
   }
 
   closeMenu(): void {
+    this.releaseScrollLock();
     this.menuOpen.set(false);
   }
 
@@ -394,6 +399,10 @@ export class SubtopicTableComponent {
   }
 
   protected onCellFocus(subtopicId: string, columnId: string): void {
+    if (this.menuOpen()) {
+      this.closeMenu();
+    }
+
     this.selectNode.emit(subtopicId);
     if (this.isEditingCell(subtopicId, columnId)) {
       return;
@@ -408,6 +417,10 @@ export class SubtopicTableComponent {
     clickedSubtopicId: string | null,
     clickedCellColumnId: string | null,
   ): void {
+    if (this.menuOpen()) {
+      this.closeMenu();
+    }
+
     if (!this.formulaEditingMode()) {
       return;
     }
@@ -522,6 +535,19 @@ export class SubtopicTableComponent {
 
   protected onHostDragStart(event: DragEvent): void {
     event.stopPropagation();
+  }
+
+  protected onGlobalMenuOpened(event: Event): void {
+    if (!this.menuOpen()) {
+      return;
+    }
+
+    const ownerId = (event as CustomEvent<{ ownerId?: string }>).detail?.ownerId;
+    if (!ownerId || ownerId === this.menuOwnerId) {
+      return;
+    }
+
+    this.closeMenu();
   }
 
   protected cellInputValue(
@@ -690,5 +716,29 @@ export class SubtopicTableComponent {
     }
     this.selectNode.emit(null);
     this.activeReferencedColumnId.set(null);
+  }
+
+  private broadcastMenuOpened(): void {
+    document.dispatchEvent(
+      new CustomEvent<{ ownerId: string }>('tree-graph-menu-opened', {
+        detail: { ownerId: this.menuOwnerId },
+      }),
+    );
+  }
+
+  private ensureScrollLock(): void {
+    if (this.isScrollLocked) {
+      return;
+    }
+    acquireMenuScrollLock();
+    this.isScrollLocked = true;
+  }
+
+  private releaseScrollLock(): void {
+    if (!this.isScrollLocked) {
+      return;
+    }
+    releaseMenuScrollLock();
+    this.isScrollLocked = false;
   }
 }

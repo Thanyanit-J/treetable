@@ -6,6 +6,7 @@ import { SubtopicTableComponent } from './components/subtopic-table.component';
 import { TreeCanvasComponent } from './components/tree-canvas.component';
 import { ImportResult, TreeTopic } from './models/tree-table.model';
 import { TreeTableStoreService } from './services/tree-table-store.service';
+import { acquireMenuScrollLock, releaseMenuScrollLock } from './utils/menu-scroll-lock';
 
 interface PendingDeleteTopic {
   type: 'topic';
@@ -27,6 +28,7 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
     '(window:resize)': 'onWindowResize()',
     '(document:mousedown)': 'onDocumentMouseDown($event)',
     '(document:keydown.escape)': 'closeTopicCardMenu()',
+    '(document:tree-graph-menu-opened)': 'onGlobalMenuOpened($event)',
   },
   template: `
     <main class="tree-graph-page mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8">
@@ -237,7 +239,9 @@ export class TreeGraphPageComponent {
   protected readonly topicCardMenuTopicId = signal<string | null>(null);
   private readonly cardRailRef = viewChild<ElementRef<HTMLElement>>('cardRail');
   private readonly topicCardMenuRef = viewChild<ElementRef<HTMLElement>>('topicCardMenu');
+  private readonly menuOwnerId = `tree-graph-page-${crypto.randomUUID()}`;
   private statusToastTimer: ReturnType<typeof setTimeout> | null = null;
+  private isScrollLocked = false;
 
   protected readonly isDeleteDialogOpen = computed(() => this.pendingDelete() !== null);
   protected readonly deleteMessage = computed(() => {
@@ -337,6 +341,8 @@ export class TreeGraphPageComponent {
     this.topicCardMenuX.set(event.clientX);
     this.topicCardMenuY.set(event.clientY);
     this.topicCardMenuOpen.set(true);
+    this.ensureScrollLock();
+    this.broadcastMenuOpened();
   }
 
   protected onTopicCardMenuAction(action: 'addSubtopic' | 'deleteTopic'): void {
@@ -451,6 +457,7 @@ export class TreeGraphPageComponent {
   }
 
   protected closeTopicCardMenu(): void {
+    this.releaseScrollLock();
     this.topicCardMenuOpen.set(false);
     this.topicCardMenuTopicId.set(null);
   }
@@ -465,6 +472,19 @@ export class TreeGraphPageComponent {
     if (!menu || !target || !menu.contains(target)) {
       this.closeTopicCardMenu();
     }
+  }
+
+  protected onGlobalMenuOpened(event: Event): void {
+    if (!this.topicCardMenuOpen()) {
+      return;
+    }
+
+    const ownerId = (event as CustomEvent<{ ownerId?: string }>).detail?.ownerId;
+    if (!ownerId || ownerId === this.menuOwnerId) {
+      return;
+    }
+
+    this.closeTopicCardMenu();
   }
 
   private updateCardRailOverflow(): void {
@@ -511,6 +531,30 @@ export class TreeGraphPageComponent {
       this.statusMessage.set(null);
       this.statusToastTimer = null;
     }, 2500);
+  }
+
+  private broadcastMenuOpened(): void {
+    document.dispatchEvent(
+      new CustomEvent<{ ownerId: string }>('tree-graph-menu-opened', {
+        detail: { ownerId: this.menuOwnerId },
+      }),
+    );
+  }
+
+  private ensureScrollLock(): void {
+    if (this.isScrollLocked) {
+      return;
+    }
+    acquireMenuScrollLock();
+    this.isScrollLocked = true;
+  }
+
+  private releaseScrollLock(): void {
+    if (!this.isScrollLocked) {
+      return;
+    }
+    releaseMenuScrollLock();
+    this.isScrollLocked = false;
   }
 
   private buildExportFileName(title: string): string {
