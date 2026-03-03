@@ -100,7 +100,7 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
           @for (topic of store.topics(); track topic.id) {
             <article cdkDrag [cdkDragData]="topic" class="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
               <div class="flex flex-nowrap gap-4 overflow-x-auto">
-                <div class="w-[420px] shrink-0">
+                <div class="w-max shrink-0">
                   <app-tree-canvas
                     [topic]="topic"
                     [selectedNodeId]="store.selectedNodeId()"

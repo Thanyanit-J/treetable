@@ -28,7 +28,9 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
       <article class="space-y-3">
         <div class="relative flex items-center gap-2">
           <div
-            class="relative min-w-0 flex-1 rounded-full border border-sky-300 bg-sky-100"
+            class="relative rounded-full border border-sky-300 bg-sky-100"
+            [style.min-width.ch]="12"
+            [style.width.ch]="nodeWidthCh(topic().label)"
             [class.ring-2]="selectedNodeId() === topic().id"
             [class.ring-sky-400]="selectedNodeId() === topic().id"
             (contextmenu)="openTopicMenu($event, topic().id)"
@@ -66,7 +68,9 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
               </button>
 
               <div
-                class="min-w-0 flex-1 rounded-xl border border-amber-300 bg-amber-100"
+                class="rounded-xl border border-amber-300 bg-amber-100"
+                [style.min-width.ch]="10"
+                [style.width.ch]="nodeWidthCh(subtopic.label)"
                 [class.ring-2]="selectedNodeId() === subtopic.id"
                 [class.ring-amber-400]="selectedNodeId() === subtopic.id"
                 (contextmenu)="openSubtopicMenu($event, topic().id, subtopic.id)"
@@ -328,5 +332,10 @@ export class TreeCanvasComponent {
       return;
     }
     this.selectNode.emit(null);
+  }
+
+  protected nodeWidthCh(label: string): number {
+    const base = Math.max(10, label.trim().length + 3);
+    return Math.min(base, 44);
   }
 }
