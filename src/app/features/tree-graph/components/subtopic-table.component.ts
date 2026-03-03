@@ -1,7 +1,6 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, input, output, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { TableColumn } from '../models/tree-table.model';
-import { VisibleSubtopicRow } from '../services/tree-table-store.service';
+import { TreeTopic } from '../models/tree-table.model';
 import { ColumnContextMenuComponent } from './column-context-menu.component';
 
 @Component({
@@ -11,111 +10,101 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
     '(document:mousedown)': 'onDocumentMouseDown($event)',
   },
   template: `
-    <section #tableSection class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm" aria-label="Subtopic table">
+    <section #tableSection class="h-full p-1" aria-label="Subtopic table">
       <div #tableContainer class="overflow-auto">
-        @if (topicTableGroups().length === 0) {
+        @if (rows().length === 0) {
           <div class="rounded-lg border border-slate-200 px-3 py-6 text-center text-sm text-slate-500">
-            No visible subtopics. Add subtopics in the tree graph.
+            No subtopics yet. Add one in the tree graph.
           </div>
         } @else {
-          @for (group of topicTableGroups(); track group.topicId) {
-            <section class="mb-4 last:mb-0">
-              <table class="min-w-full border-collapse text-sm">
-                <thead>
-                  <tr>
-                    @for (column of columns(); track column.id) {
-                      <th
-                        scope="col"
-                        class="min-w-40 border border-slate-200 bg-slate-100 px-2 py-2 text-left font-semibold text-slate-700"
-                        [class.border-sky-400]="activeReferencedColumnId() === column.id"
-                        (contextmenu)="openMenu($event, column.id)"
-                        (mousedown)="onColumnAssistMouseDown($event, column.id, null, null)"
-                        (click)="onColumnAssistClick($event, column.id, null, null)"
-                      >
-                        <div class="flex items-center gap-2">
-                          @if (editingColumnId() === column.id) {
-                            <input
-                              [attr.data-column-rename-id]="column.id"
-                              [ngModel]="editingColumnName()"
-                              (ngModelChange)="editingColumnName.set($event)"
-                              (blur)="onColumnRenameBlur(column.id)"
-                              (keydown.enter)="onColumnRenameEnter($event, column.id)"
-                              (keydown.escape)="onColumnRenameEscape($event, column.id)"
-                              class="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm"
-                              [attr.aria-label]="'Rename column ' + column.name"
-                            />
-                          } @else {
-                            <button
-                              (dblclick)="startColumnRename(column.id, column.name)"
-                              (mousedown)="onHeaderLabelMouseDown($event, column.id)"
-                              (click)="onHeaderLabelClick($event, column.id)"
-                              class="truncate text-left"
-                              type="button"
-                            >
-                              {{ formulaEditingMode() ? column.id : column.name }}
-                            </button>
-                          }
-                          <button
-                            (click)="openMenuFromButton($event, column.id)"
-                            class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs"
-                            [attr.aria-label]="'Open actions for column ' + column.name"
-                            type="button"
-                          >
-                            ⋯
-                          </button>
-                        </div>
-                      </th>
-                    }
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of group.rows; track row.subtopic.id) {
-                    <tr
-                      [class.bg-sky-50]="selectedNodeId() === row.subtopic.id"
-                      [class.outline]="selectedNodeId() === row.subtopic.id"
-                      [class.outline-2]="selectedNodeId() === row.subtopic.id"
-                      [class.outline-sky-300]="selectedNodeId() === row.subtopic.id"
-                    >
-                      @for (column of columns(); track column.id) {
-                        @let cell = row.subtopic.cells[column.id];
-                        <td
-                          class="border border-slate-200 p-0 align-top"
-                          [class.border-sky-400]="activeReferencedColumnId() === column.id"
-                          (contextmenu)="openMenu($event, column.id)"
-                          (mousedown)="onColumnAssistMouseDown($event, column.id, row.subtopic.id, column.id)"
-                          (click)="onColumnAssistClick($event, column.id, row.subtopic.id, column.id)"
+          <table class="w-max border-collapse text-sm">
+            <thead>
+              <tr>
+                @for (column of columns(); track column.id) {
+                  <th
+                    scope="col"
+                    class="border border-slate-200 bg-slate-100 px-2 py-2 text-left font-semibold text-slate-700"
+                    [style.width.ch]="columnWidthsCh()[column.id]"
+                    [style.min-width.ch]="columnWidthsCh()[column.id]"
+                    [class.border-sky-400]="activeReferencedColumnId() === column.id"
+                    (contextmenu)="openMenu($event, column.id)"
+                    (mousedown)="onColumnAssistMouseDown($event, column.id, null, null)"
+                    (click)="onColumnAssistClick($event, column.id, null, null)"
+                  >
+                    <div class="flex items-center gap-2">
+                      @if (editingColumnId() === column.id) {
+                        <input
+                          [attr.data-column-rename-id]="column.id"
+                          [ngModel]="editingColumnName()"
+                          (ngModelChange)="editingColumnName.set($event)"
+                          (blur)="onColumnRenameBlur(column.id)"
+                          (keydown.enter)="onColumnRenameEnter($event, column.id)"
+                          (keydown.escape)="onColumnRenameEscape($event, column.id)"
+                          class="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm"
+                          [attr.aria-label]="'Rename column ' + column.name"
+                        />
+                      } @else {
+                        <button
+                          (dblclick)="startColumnRename(column.id, column.name)"
+                          (mousedown)="onHeaderLabelMouseDown($event, column.id)"
+                          (click)="onHeaderLabelClick($event, column.id)"
+                          class="truncate text-left"
+                          type="button"
                         >
-                          <input
-                            [attr.data-cell-key]="makeCellKey(row.subtopic.id, column.id)"
-                            [ngModel]="
-                              cellInputValue(
-                                row.subtopic.id,
-                                column.id,
-                                cell?.raw ?? '',
-                                cell?.value ?? null,
-                                cell?.error ?? null
-                              )
-                            "
-                            (focus)="onCellFocus(row.subtopic.id, column.id)"
-                            (blur)="onCellBlur($event, row.subtopic.id, column.id)"
-                            (click)="onFormulaCursorChange(row.subtopic.id, column.id, $event)"
-                            (keyup)="onFormulaCursorChange(row.subtopic.id, column.id, $event)"
-                            (input)="onFormulaCursorChange(row.subtopic.id, column.id, $event)"
-                            (keydown.enter)="onCellEnter($event)"
-                            (keydown.escape)="onCellEscape($event)"
-                            (ngModelChange)="onCellModelChange(row.subtopic.id, column.id, $event)"
-                            [attr.aria-label]="'Edit cell ' + column.name"
-                            [attr.aria-invalid]="cell?.error ? 'true' : 'false'"
-                            class="block min-h-[44px] min-w-0 w-full overflow-x-auto whitespace-nowrap rounded-none border-0 px-2 py-2 text-sm text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
-                          />
-                        </td>
+                          {{ formulaEditingMode() ? column.id : column.name }}
+                        </button>
                       }
-                    </tr>
+                      <button
+                        (click)="openMenuFromButton($event, column.id)"
+                        class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs"
+                        [attr.aria-label]="'Open actions for column ' + column.name"
+                        type="button"
+                      >
+                        ⋯
+                      </button>
+                    </div>
+                  </th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of rows(); track row.id) {
+                <tr
+                  [class.bg-sky-50]="selectedNodeId() === row.id"
+                  [class.outline]="selectedNodeId() === row.id"
+                  [class.outline-2]="selectedNodeId() === row.id"
+                  [class.outline-sky-300]="selectedNodeId() === row.id"
+                >
+                  @for (column of columns(); track column.id) {
+                    @let cell = row.cells[column.id];
+                    <td
+                      class="border border-slate-200 p-0 align-top"
+                      [class.border-sky-400]="activeReferencedColumnId() === column.id"
+                      (contextmenu)="openMenu($event, column.id)"
+                      (mousedown)="onColumnAssistMouseDown($event, column.id, row.id, column.id)"
+                      (click)="onColumnAssistClick($event, column.id, row.id, column.id)"
+                    >
+                      <input
+                        [attr.data-cell-key]="makeCellKey(row.id, column.id)"
+                        [ngModel]="cellInputValue(row.id, column.id, cell?.raw ?? '', cell?.value ?? null, cell?.error ?? null)"
+                        (focus)="onCellFocus(row.id, column.id)"
+                        (blur)="onCellBlur($event, row.id, column.id)"
+                        (click)="onFormulaCursorChange(row.id, column.id, $event)"
+                        (keyup)="onFormulaCursorChange(row.id, column.id, $event)"
+                        (input)="onFormulaCursorChange(row.id, column.id, $event)"
+                        (keydown.enter)="onCellEnter($event)"
+                        (keydown.escape)="onCellEscape($event)"
+                        (ngModelChange)="onCellModelChange(row.id, column.id, $event)"
+                        [attr.aria-label]="'Edit cell ' + column.name"
+                        [attr.aria-invalid]="cell?.error ? 'true' : 'false'"
+                        class="block min-h-[44px] min-w-0 w-full overflow-x-auto whitespace-nowrap rounded-none border-0 px-2 py-2 text-sm text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
+                      />
+                    </td>
                   }
-                </tbody>
-              </table>
-            </section>
-          }
+                </tr>
+              }
+            </tbody>
+          </table>
         }
       </div>
 
@@ -132,15 +121,14 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SubtopicTableComponent {
-  readonly columns = input.required<TableColumn[]>();
-  readonly rows = input.required<VisibleSubtopicRow[]>();
+  readonly topic = input.required<TreeTopic>();
   readonly selectedNodeId = input<string | null>(null);
 
-  readonly setCell = output<{ nodeId: string; columnId: string; raw: string }>();
+  readonly setCell = output<{ topicId: string; subtopicId: string; columnId: string; raw: string }>();
   readonly selectNode = output<string | null>();
-  readonly insertColumn = output<{ referenceColumnId: string; side: 'left' | 'right' }>();
-  readonly deleteColumn = output<{ columnId: string }>();
-  readonly renameColumn = output<{ columnId: string; name: string }>();
+  readonly insertColumn = output<{ topicId: string; referenceColumnId: string; side: 'left' | 'right' }>();
+  readonly deleteColumn = output<{ topicId: string; columnId: string }>();
+  readonly renameColumn = output<{ topicId: string; columnId: string; name: string }>();
 
   protected readonly menuOpen = signal(false);
   protected readonly menuX = signal(0);
@@ -154,21 +142,21 @@ export class SubtopicTableComponent {
   protected readonly editingCellDraft = signal('');
   protected readonly formulaEditingMode = signal(false);
   protected readonly activeReferencedColumnId = signal<string | null>(null);
-  protected readonly topicTableGroups = computed(() => {
-    const groups = new Map<string, { topicId: string; topicLabel: string; rows: VisibleSubtopicRow[] }>();
-    for (const row of this.rows()) {
-      const existing = groups.get(row.topicId);
-      if (existing) {
-        existing.rows.push(row);
-        continue;
+  protected readonly columns = computed(() => this.topic().columns);
+  protected readonly rows = computed(() => this.topic().children);
+  protected readonly columnWidthsCh = computed(() => {
+    const widths: Record<string, number> = {};
+    for (const column of this.columns()) {
+      let maxLength = Math.max(10, column.name.length + 2);
+      for (const row of this.rows()) {
+        const cell = row.cells[column.id];
+        const raw = cell?.raw ?? '';
+        const display = this.displayCellValue(raw, cell?.value ?? null, cell?.error ?? null);
+        maxLength = Math.max(maxLength, raw.length + 2, display.length + 2);
       }
-      groups.set(row.topicId, {
-        topicId: row.topicId,
-        topicLabel: row.topicLabel,
-        rows: [row],
-      });
+      widths[column.id] = Math.min(maxLength, 56);
     }
-    return [...groups.values()];
+    return widths;
   });
 
   private readonly tableContainerRef = viewChild<ElementRef<HTMLElement>>('tableContainer');
@@ -207,8 +195,6 @@ export class SubtopicTableComponent {
       return;
     }
 
-    // Keep focus on active formula input while still allowing <th> mousedown
-    // to bubble and insert reference for different columns.
     event.preventDefault();
   }
 
@@ -229,20 +215,21 @@ export class SubtopicTableComponent {
       return;
     }
 
+    const topicId = this.topic().id;
     if (action === 'insertLeft') {
-      this.insertColumn.emit({ referenceColumnId: columnId, side: 'left' });
+      this.insertColumn.emit({ topicId, referenceColumnId: columnId, side: 'left' });
       this.closeMenu();
       return;
     }
 
     if (action === 'insertRight') {
-      this.insertColumn.emit({ referenceColumnId: columnId, side: 'right' });
+      this.insertColumn.emit({ topicId, referenceColumnId: columnId, side: 'right' });
       this.closeMenu();
       return;
     }
 
     if (action === 'delete') {
-      this.deleteColumn.emit({ columnId });
+      this.deleteColumn.emit({ topicId, columnId });
       this.closeMenu();
       return;
     }
@@ -256,14 +243,14 @@ export class SubtopicTableComponent {
     this.menuOpen.set(false);
   }
 
-  startEditingCell(nodeId: string, columnId: string): void {
-    if (this.isEditingCell(nodeId, columnId)) {
+  startEditingCell(subtopicId: string, columnId: string): void {
+    if (this.isEditingCell(subtopicId, columnId)) {
       return;
     }
 
-    const raw = this.getCellRaw(nodeId, columnId);
-    this.editingCellKey.set(this.makeCellKey(nodeId, columnId));
-    this.editingCellNodeId.set(nodeId);
+    const raw = this.getCellRaw(subtopicId, columnId);
+    this.editingCellKey.set(this.makeCellKey(subtopicId, columnId));
+    this.editingCellNodeId.set(subtopicId);
     this.editingCellColumnId.set(columnId);
     this.editingCellDraft.set(raw);
     this.formulaEditingMode.set(raw.trim().startsWith('='));
@@ -271,11 +258,12 @@ export class SubtopicTableComponent {
   }
 
   commitEditingCell(): void {
-    const nodeId = this.editingCellNodeId();
+    const subtopicId = this.editingCellNodeId();
     const columnId = this.editingCellColumnId();
-    if (nodeId && columnId) {
+    if (subtopicId && columnId) {
       this.setCell.emit({
-        nodeId,
+        topicId: this.topic().id,
+        subtopicId,
         columnId,
         raw: this.editingCellDraft(),
       });
@@ -285,7 +273,7 @@ export class SubtopicTableComponent {
   }
 
   cancelEditingCell(event?: Event): void {
-    const nodeId = this.editingCellNodeId();
+    const subtopicId = this.editingCellNodeId();
     const columnId = this.editingCellColumnId();
 
     if (event) {
@@ -294,13 +282,13 @@ export class SubtopicTableComponent {
     }
 
     this.resetEditingState();
-    if (nodeId && columnId) {
-      this.syncDisplayValue(nodeId, columnId);
+    if (subtopicId && columnId) {
+      this.syncDisplayValue(subtopicId, columnId);
     }
   }
 
-  isEditingCell(nodeId: string, columnId: string): boolean {
-    return this.editingCellKey() === this.makeCellKey(nodeId, columnId);
+  isEditingCell(subtopicId: string, columnId: string): boolean {
+    return this.editingCellKey() === this.makeCellKey(subtopicId, columnId);
   }
 
   displayCellValue(raw: string, value: number | string | null, error: string | null): string {
@@ -338,7 +326,7 @@ export class SubtopicTableComponent {
     }
     const nextName = this.editingColumnName().trim();
     if (nextName.length > 0) {
-      this.renameColumn.emit({ columnId, name: nextName });
+      this.renameColumn.emit({ topicId: this.topic().id, columnId, name: nextName });
     }
     this.editingColumnId.set(null);
     this.editingColumnName.set('');
@@ -366,7 +354,7 @@ export class SubtopicTableComponent {
   protected onColumnAssistMouseDown(
     event: MouseEvent,
     clickedColumnId: string,
-    clickedNodeId: string | null,
+    clickedSubtopicId: string | null,
     clickedCellColumnId: string | null,
   ): void {
     if (!this.formulaEditingMode()) {
@@ -374,7 +362,7 @@ export class SubtopicTableComponent {
     }
 
     if (
-      clickedNodeId === this.editingCellNodeId() &&
+      clickedSubtopicId === this.editingCellNodeId() &&
       clickedCellColumnId === this.editingCellColumnId()
     ) {
       return;
@@ -382,13 +370,10 @@ export class SubtopicTableComponent {
 
     const editingColumnId = this.editingCellColumnId();
     if (editingColumnId && clickedColumnId === editingColumnId) {
-      // Same-column clicks should never auto insert/replace.
-      if (clickedNodeId && clickedNodeId !== this.editingCellNodeId()) {
-        // Treat as Enter, then let browser move focus to clicked cell.
+      if (clickedSubtopicId && clickedSubtopicId !== this.editingCellNodeId()) {
         this.commitEditingCell();
         return;
       }
-      // Header click in same column: keep current formula edit active.
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -399,19 +384,19 @@ export class SubtopicTableComponent {
     this.insertColumnReference(clickedColumnId);
   }
 
-  protected onCellFocus(nodeId: string, columnId: string): void {
-    this.selectNode.emit(nodeId);
-    if (this.isEditingCell(nodeId, columnId)) {
+  protected onCellFocus(subtopicId: string, columnId: string): void {
+    this.selectNode.emit(subtopicId);
+    if (this.isEditingCell(subtopicId, columnId)) {
       return;
     }
 
-    this.startEditingCell(nodeId, columnId);
+    this.startEditingCell(subtopicId, columnId);
   }
 
   protected onColumnAssistClick(
     event: MouseEvent,
     clickedColumnId: string,
-    clickedNodeId: string | null,
+    clickedSubtopicId: string | null,
     clickedCellColumnId: string | null,
   ): void {
     if (!this.formulaEditingMode()) {
@@ -419,7 +404,7 @@ export class SubtopicTableComponent {
     }
 
     if (
-      clickedNodeId === this.editingCellNodeId() &&
+      clickedSubtopicId === this.editingCellNodeId() &&
       clickedCellColumnId === this.editingCellColumnId()
     ) {
       return;
@@ -436,8 +421,8 @@ export class SubtopicTableComponent {
     event.stopPropagation();
   }
 
-  protected onCellBlur(event: FocusEvent, nodeId: string, columnId: string): void {
-    if (!this.isEditingCell(nodeId, columnId)) {
+  protected onCellBlur(event: FocusEvent, subtopicId: string, columnId: string): void {
+    if (!this.isEditingCell(subtopicId, columnId)) {
       this.clearSelectionIfFocusLeftTable(event);
       return;
     }
@@ -463,8 +448,8 @@ export class SubtopicTableComponent {
     input?.blur();
   }
 
-  protected onCellModelChange(nodeId: string, columnId: string, raw: string): void {
-    if (!this.isEditingCell(nodeId, columnId)) {
+  protected onCellModelChange(subtopicId: string, columnId: string, raw: string): void {
+    if (!this.isEditingCell(subtopicId, columnId)) {
       return;
     }
 
@@ -475,8 +460,8 @@ export class SubtopicTableComponent {
     }
   }
 
-  protected onFormulaCursorChange(nodeId: string, columnId: string, event: Event): void {
-    if (!this.isEditingCell(nodeId, columnId)) {
+  protected onFormulaCursorChange(subtopicId: string, columnId: string, event: Event): void {
+    if (!this.isEditingCell(subtopicId, columnId)) {
       return;
     }
 
@@ -515,21 +500,21 @@ export class SubtopicTableComponent {
   }
 
   protected cellInputValue(
-    nodeId: string,
+    subtopicId: string,
     columnId: string,
     raw: string,
     value: number | string | null,
     error: string | null,
   ): string {
-    if (this.isEditingCell(nodeId, columnId)) {
+    if (this.isEditingCell(subtopicId, columnId)) {
       return this.editingCellDraft();
     }
 
     return this.displayCellValue(raw, value, error);
   }
 
-  protected makeCellKey(nodeId: string, columnId: string): string {
-    return `${nodeId}:${columnId}`;
+  protected makeCellKey(subtopicId: string, columnId: string): string {
+    return `${subtopicId}:${columnId}`;
   }
 
   private formatValue(value: number | string | null): string {
@@ -555,19 +540,19 @@ export class SubtopicTableComponent {
     this.activeReferencedColumnId.set(null);
   }
 
-  private getCellRaw(nodeId: string, columnId: string): string {
-    const row = this.rows().find((candidate) => candidate.subtopic.id === nodeId);
-    return row?.subtopic.cells[columnId]?.raw ?? '';
+  private getCellRaw(subtopicId: string, columnId: string): string {
+    const row = this.rows().find((candidate) => candidate.id === subtopicId);
+    return row?.cells[columnId]?.raw ?? '';
   }
 
   private insertColumnReference(columnId: string): void {
-    const nodeId = this.editingCellNodeId();
+    const subtopicId = this.editingCellNodeId();
     const editingColumnId = this.editingCellColumnId();
-    if (!nodeId || !editingColumnId) {
+    if (!subtopicId || !editingColumnId) {
       return;
     }
 
-    const cellKey = this.makeCellKey(nodeId, editingColumnId);
+    const cellKey = this.makeCellKey(subtopicId, editingColumnId);
     const input = this.getInputElement(cellKey);
     if (!input) {
       return;
@@ -657,20 +642,18 @@ export class SubtopicTableComponent {
 
   private getColumnRenameInput(columnId: string): HTMLInputElement | null {
     const tableRoot = this.tableContainerRef()?.nativeElement;
-    return (
-      tableRoot?.querySelector<HTMLInputElement>(`input[data-column-rename-id="${columnId}"]`) ?? null
-    );
+    return tableRoot?.querySelector<HTMLInputElement>(`input[data-column-rename-id="${columnId}"]`) ?? null;
   }
 
-  private syncDisplayValue(nodeId: string, columnId: string): void {
-    const cellKey = this.makeCellKey(nodeId, columnId);
+  private syncDisplayValue(subtopicId: string, columnId: string): void {
+    const cellKey = this.makeCellKey(subtopicId, columnId);
     const input = this.getInputElement(cellKey);
     if (!input) {
       return;
     }
 
-    const row = this.rows().find((candidate) => candidate.subtopic.id === nodeId);
-    const cell = row?.subtopic.cells[columnId];
+    const row = this.rows().find((candidate) => candidate.id === subtopicId);
+    const cell = row?.cells[columnId];
     input.value = this.displayCellValue(cell?.raw ?? '', cell?.value ?? null, cell?.error ?? null);
   }
 

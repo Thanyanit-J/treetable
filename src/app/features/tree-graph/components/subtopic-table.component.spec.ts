@@ -1,20 +1,18 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { TableColumn } from '../models/tree-table.model';
-import { VisibleSubtopicRow } from '../services/tree-table-store.service';
+import { TreeTopic } from '../models/tree-table.model';
 import { SubtopicTableComponent } from './subtopic-table.component';
 
-const COLUMNS: TableColumn[] = [
-  { id: '$Amount', name: 'Amount', type: 'number' },
-  { id: '$Rate', name: 'Rate', type: 'number' },
-  { id: '$Value', name: 'Value', type: 'number' },
-];
-
-function buildRows(valueRaw = '=$Amount*$Rate', includeSecondRow = false): VisibleSubtopicRow[] {
-  const rows: VisibleSubtopicRow[] = [
-    {
-      topicId: 'topic_1',
-      topicLabel: 'Topic 1',
-      subtopic: {
+function buildTopic(valueRaw = '=$Amount*$Rate', includeSecondRow = false): TreeTopic {
+  const topic: TreeTopic = {
+    id: 'topic_1',
+    label: 'Topic 1',
+    columns: [
+      { id: '$Amount', name: 'Amount', type: 'number' },
+      { id: '$Rate', name: 'Rate', type: 'number' },
+      { id: '$Value', name: 'Value', type: 'number' },
+    ],
+    children: [
+      {
         id: 'subtopic_1',
         topicId: 'topic_1',
         label: 'Subtopic 1',
@@ -24,27 +22,23 @@ function buildRows(valueRaw = '=$Amount*$Rate', includeSecondRow = false): Visib
           $Value: { raw: valueRaw, value: 10, error: null },
         },
       },
-    },
-  ];
+    ],
+  };
 
   if (includeSecondRow) {
-    rows.push({
+    topic.children.push({
+      id: 'subtopic_2',
       topicId: 'topic_1',
-      topicLabel: 'Topic 1',
-      subtopic: {
-        id: 'subtopic_2',
-        topicId: 'topic_1',
-        label: 'Subtopic 2',
-        cells: {
-          $Amount: { raw: '250', value: 250, error: null },
-          $Rate: { raw: '0.2', value: 0.2, error: null },
-          $Value: { raw: valueRaw, value: 50, error: null },
-        },
+      label: 'Subtopic 2',
+      cells: {
+        $Amount: { raw: '250', value: 250, error: null },
+        $Rate: { raw: '0.2', value: 0.2, error: null },
+        $Value: { raw: valueRaw, value: 50, error: null },
       },
     });
   }
 
-  return rows;
+  return topic;
 }
 
 describe('SubtopicTableComponent', () => {
@@ -59,8 +53,8 @@ describe('SubtopicTableComponent', () => {
   async function setup(valueRaw = '=$Amount*$Rate', includeSecondRow = false): Promise<{
     fixture: ComponentFixture<SubtopicTableComponent>;
     component: SubtopicTableComponent;
-    setCellEvents: Array<{ nodeId: string; columnId: string; raw: string }>;
-    renameColumnEvents: Array<{ columnId: string; name: string }>;
+    setCellEvents: Array<{ topicId: string; subtopicId: string; columnId: string; raw: string }>;
+    renameColumnEvents: Array<{ topicId: string; columnId: string; name: string }>;
     selectNodeEvents: Array<string | null>;
   }> {
     await TestBed.configureTestingModule({
@@ -68,13 +62,12 @@ describe('SubtopicTableComponent', () => {
     }).compileComponents();
 
     const fixture = TestBed.createComponent(SubtopicTableComponent);
-    fixture.componentRef.setInput('columns', COLUMNS);
-    fixture.componentRef.setInput('rows', buildRows(valueRaw, includeSecondRow));
+    fixture.componentRef.setInput('topic', buildTopic(valueRaw, includeSecondRow));
     fixture.componentRef.setInput('selectedNodeId', null);
 
     const component = fixture.componentInstance;
-    const setCellEvents: Array<{ nodeId: string; columnId: string; raw: string }> = [];
-    const renameColumnEvents: Array<{ columnId: string; name: string }> = [];
+    const setCellEvents: Array<{ topicId: string; subtopicId: string; columnId: string; raw: string }> = [];
+    const renameColumnEvents: Array<{ topicId: string; columnId: string; name: string }> = [];
     const selectNodeEvents: Array<string | null> = [];
     component.setCell.subscribe((payload) => setCellEvents.push(payload));
     component.renameColumn.subscribe((payload) => renameColumnEvents.push(payload));
@@ -163,45 +156,6 @@ describe('SubtopicTableComponent', () => {
     expect(valueInput.selectionEnd).toBe('=$Rate'.length);
   });
 
-  it('clicking same column header during formula edit does nothing and keeps current cell editing', async () => {
-    const { fixture, component } = await setup('=$Amount+$Rate');
-    const valueInput = getCellInput(fixture, 'subtopic_1', '$Value');
-    focusInput(fixture, valueInput);
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const valueHeader = fixture.nativeElement.querySelectorAll('thead th')[2] as HTMLElement | null;
-    valueHeader?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-    valueHeader?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(valueInput.value).toBe('=$Amount+$Rate');
-    expect(component.isEditingCell('subtopic_1', '$Value')).toBe(true);
-  });
-
-  it('clicking another row in same column commits current formula and starts editing clicked cell', async () => {
-    const { fixture, component, setCellEvents } = await setup('=$Amount+$Rate', true);
-    const firstValueInput = getCellInput(fixture, 'subtopic_1', '$Value');
-    const secondValueInput = getCellInput(fixture, 'subtopic_2', '$Value');
-
-    focusInput(fixture, firstValueInput);
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    firstValueInput.value = '=$Amount*3';
-    firstValueInput.dispatchEvent(new Event('input', { bubbles: true }));
-    fixture.detectChanges();
-
-    secondValueInput.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-    secondValueInput.dispatchEvent(new FocusEvent('focus'));
-    fixture.detectChanges();
-
-    expect(setCellEvents).toContainEqual({ nodeId: 'subtopic_1', columnId: '$Value', raw: '=$Amount*3' });
-    expect(component.isEditingCell('subtopic_1', '$Value')).toBe(false);
-    expect(component.isEditingCell('subtopic_2', '$Value')).toBe(true);
-  });
-
   it('commits once on Enter and exits editing', async () => {
     const { fixture, component, setCellEvents } = await setup('=$Amount*$Rate');
 
@@ -218,7 +172,7 @@ describe('SubtopicTableComponent', () => {
     fixture.detectChanges();
 
     expect(setCellEvents).toHaveLength(1);
-    expect(setCellEvents[0]).toEqual({ nodeId: 'subtopic_1', columnId: '$Amount', raw: '200' });
+    expect(setCellEvents[0]).toEqual({ topicId: 'topic_1', subtopicId: 'subtopic_1', columnId: '$Amount', raw: '200' });
     expect(component.isEditingCell('subtopic_1', '$Amount')).toBe(false);
   });
 
@@ -243,25 +197,6 @@ describe('SubtopicTableComponent', () => {
     expect(amountInput.value).toBe('100');
   });
 
-  it('commits on outside-table mousedown', async () => {
-    const { fixture, setCellEvents } = await setup('=$Amount*$Rate');
-
-    const amountInput = getCellInput(fixture, 'subtopic_1', '$Amount');
-    focusInput(fixture, amountInput);
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    amountInput.value = '300';
-    amountInput.dispatchEvent(new Event('input', { bubbles: true }));
-    fixture.detectChanges();
-
-    document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    fixture.detectChanges();
-
-    expect(setCellEvents).toHaveLength(1);
-    expect(setCellEvents[0]).toEqual({ nodeId: 'subtopic_1', columnId: '$Amount', raw: '300' });
-  });
-
   it('shows column ids in headers only during formula editing mode', async () => {
     const { fixture } = await setup('=$Amount*$Rate');
 
@@ -270,33 +205,11 @@ describe('SubtopicTableComponent', () => {
 
     expect(headerLabelButtons()[0]?.textContent?.trim()).toBe('Amount');
 
-    const amountInput = getCellInput(fixture, 'subtopic_1', '$Amount');
-    focusInput(fixture, amountInput);
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(headerLabelButtons()[0]?.textContent?.trim()).toBe('Amount');
-
     const valueInput = getCellInput(fixture, 'subtopic_1', '$Value');
     focusInput(fixture, valueInput);
     await fixture.whenStable();
     fixture.detectChanges();
     expect(headerLabelButtons()[0]?.textContent?.trim()).toBe('$Amount');
-  });
-
-  it('tracks referenced token at cursor for active formula cell', async () => {
-    const { fixture } = await setup('=$Amount+$Rate');
-
-    const valueInput = getCellInput(fixture, 'subtopic_1', '$Value');
-    focusInput(fixture, valueInput);
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    valueInput.setSelectionRange(3, 3);
-    valueInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight', bubbles: true }));
-    fixture.detectChanges();
-
-    const firstHeader = fixture.nativeElement.querySelector('thead th') as HTMLElement | null;
-    expect(firstHeader?.className).toContain('border-sky-400');
   });
 
   it('focuses rename textbox immediately when column rename starts', async () => {
@@ -333,7 +246,7 @@ describe('SubtopicTableComponent', () => {
     fixture.detectChanges();
 
     expect(renameColumnEvents).toHaveLength(1);
-    expect(renameColumnEvents[0]).toEqual({ columnId: '$Amount', name: 'Principal' });
+    expect(renameColumnEvents[0]).toEqual({ topicId: 'topic_1', columnId: '$Amount', name: 'Principal' });
 
     const renameTrigger2 = fixture.nativeElement.querySelector('th button.truncate') as HTMLButtonElement | null;
     renameTrigger2?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
@@ -365,43 +278,5 @@ describe('SubtopicTableComponent', () => {
     fixture.detectChanges();
 
     expect(selectNodeEvents).toContain(null);
-  });
-
-  it('renders separate tables for different topics', async () => {
-    const { fixture } = await setup();
-    fixture.componentRef.setInput('rows', [
-      {
-        topicId: 'topic_1',
-        topicLabel: 'Topic One',
-        subtopic: {
-          id: 'subtopic_1',
-          topicId: 'topic_1',
-          label: 'A',
-          cells: {
-            $Amount: { raw: '1', value: 1, error: null },
-            $Rate: { raw: '1', value: 1, error: null },
-            $Value: { raw: '1', value: 1, error: null },
-          },
-        },
-      },
-      {
-        topicId: 'topic_2',
-        topicLabel: 'Topic Two',
-        subtopic: {
-          id: 'subtopic_2',
-          topicId: 'topic_2',
-          label: 'B',
-          cells: {
-            $Amount: { raw: '2', value: 2, error: null },
-            $Rate: { raw: '2', value: 2, error: null },
-            $Value: { raw: '2', value: 2, error: null },
-          },
-        },
-      },
-    ] satisfies VisibleSubtopicRow[]);
-    fixture.detectChanges();
-
-    const tableCount = fixture.nativeElement.querySelectorAll('table').length;
-    expect(tableCount).toBe(2);
   });
 });

@@ -2,20 +2,22 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { TreeTopic } from '../models/tree-table.model';
 import { TreeCanvasComponent } from './tree-canvas.component';
 
-const TOPICS: TreeTopic[] = [
-  {
-    id: 'topic_1',
-    label: 'Topic 1',
-    children: [
-      {
-        id: 'subtopic_1',
-        topicId: 'topic_1',
-        label: 'Subtopic 1',
-        cells: {},
-      },
-    ],
-  },
-];
+const TOPIC: TreeTopic = {
+  id: 'topic_1',
+  label: 'Topic 1',
+  columns: [
+    { id: '$A', name: 'A', type: 'number' },
+    { id: '$B', name: 'B', type: 'number' },
+  ],
+  children: [
+    {
+      id: 'subtopic_1',
+      topicId: 'topic_1',
+      label: 'Subtopic 1',
+      cells: {},
+    },
+  ],
+};
 
 describe('TreeCanvasComponent', () => {
   async function setup(): Promise<{
@@ -28,7 +30,7 @@ describe('TreeCanvasComponent', () => {
     }).compileComponents();
 
     const fixture = TestBed.createComponent(TreeCanvasComponent);
-    fixture.componentRef.setInput('topics', TOPICS);
+    fixture.componentRef.setInput('topic', TOPIC);
     fixture.componentRef.setInput('selectedNodeId', null);
 
     const renameEvents: Array<{ nodeId: string; label: string }> = [];
@@ -112,5 +114,11 @@ describe('TreeCanvasComponent', () => {
     fixture.detectChanges();
 
     expect(selectEvents).toContain(null);
+  });
+
+  it('does not render topic drag handle', async () => {
+    const { fixture } = await setup();
+    const topicDragButton = fixture.nativeElement.querySelector('button[aria-label="Drag topic"]');
+    expect(topicDragButton).toBeNull();
   });
 });

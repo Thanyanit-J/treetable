@@ -7,26 +7,27 @@ describe('PersistenceService', () => {
     TestBed.configureTestingModule({});
   });
 
-  it('migrates legacy topic cells and ensures at least one column', () => {
+  it('migrates legacy global columns into topic columns and ensures A/B fallback', () => {
     const service = TestBed.inject(PersistenceService);
 
     const legacy = {
       version: 1,
       selectedNodeId: null,
-      columns: [],
+      columns: [
+        { id: '$Amount', name: 'Amount', type: 'number' },
+      ],
       topics: [
         {
           id: 'topic_1',
           label: 'Legacy Topic',
-          cells: {
-            old: { raw: '123', value: 123, error: null },
-          },
           children: [
             {
               id: 'sub_1',
               topicId: 'topic_1',
               label: 'Legacy Child',
-              cells: {},
+              cells: {
+                $Amount: { raw: '123', value: 123, error: null },
+              },
             },
           ],
         },
@@ -36,10 +37,32 @@ describe('PersistenceService', () => {
     localStorage.setItem('treetable.v1.state', JSON.stringify(legacy));
     const loaded = service.load();
 
-    expect(loaded.columns.length).toBeGreaterThanOrEqual(1);
-    expect('cells' in loaded.topics[0]!).toBe(false);
+    expect(loaded.topics[0]?.columns.length).toBeGreaterThanOrEqual(1);
+    expect((loaded as { columns?: unknown }).columns).toBeUndefined();
     expect(loaded.title).toBe('Untitled');
-    const firstColId = loaded.columns[0]?.id ?? '';
+    const firstColId = loaded.topics[0]?.columns[0]?.id ?? '';
     expect(loaded.topics[0]?.children[0]?.cells[firstColId]).toBeDefined();
+  });
+
+  it('preserves topic-scoped columns and row cells in export/import roundtrip', () => {
+    const service = TestBed.inject(PersistenceService);
+    const state = service.load();
+    const firstTopic = state.topics[0];
+    if (!firstTopic) {
+      throw new Error('Expected starter topic');
+    }
+
+    firstTopic.columns = [
+      { id: '$A', name: 'A', type: 'number' },
+      { id: '$B', name: 'B', type: 'number' },
+      { id: '$C', name: 'C', type: 'number' },
+    ];
+    firstTopic.children[0]!.cells['$C'] = { raw: '=$A+$B', value: null, error: null };
+
+    const json = service.export(state);
+    const imported = service.import(json);
+    expect(imported.result.ok).toBe(true);
+    expect(imported.state?.topics[0]?.columns.map((column) => column.id)).toEqual(['$A', '$B', '$C']);
+    expect(imported.state?.topics[0]?.children[0]?.cells['$C']?.raw).toBe('=$A+$B');
   });
 });

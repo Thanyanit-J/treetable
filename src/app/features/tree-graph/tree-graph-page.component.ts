@@ -1,9 +1,10 @@
+import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ConfirmDialogComponent } from './components/confirm-dialog.component';
 import { SubtopicTableComponent } from './components/subtopic-table.component';
 import { TreeCanvasComponent } from './components/tree-canvas.component';
-import { ImportResult } from './models/tree-table.model';
+import { ImportResult, TreeTopic } from './models/tree-table.model';
 import { TreeTableStoreService } from './services/tree-table-store.service';
 
 interface PendingDeleteTopic {
@@ -21,7 +22,7 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
 
 @Component({
   selector: 'app-tree-graph-page',
-  imports: [FormsModule, TreeCanvasComponent, SubtopicTableComponent, ConfirmDialogComponent],
+  imports: [FormsModule, DragDropModule, TreeCanvasComponent, SubtopicTableComponent, ConfirmDialogComponent],
   template: `
     <main class="mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8">
       <section class="mb-4 rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
@@ -94,29 +95,39 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
         }
       </section>
 
-      <div class="grid gap-4 xl:grid-cols-[560px_1fr]">
-        <app-tree-canvas
-          [topics]="store.topics()"
-          [selectedNodeId]="store.selectedNodeId()"
-          (addSubtopic)="store.addSubtopic($event)"
-          (renameNode)="store.renameNode($event.nodeId, $event.label)"
-          (requestDeleteTopic)="queueTopicDelete($event)"
-          (requestDeleteSubtopic)="queueSubtopicDelete($event.topicId, $event.subtopicId)"
-          (selectNode)="store.selectNode($event)"
-          (moveTopic)="store.moveTopic($event.topicId, $event.toIndex)"
-          (moveSubtopic)="store.moveSubtopic($event.topicId, $event.subtopicId, $event.toIndex)"
-        />
+      <div class="overflow-x-auto">
+        <div cdkDropList [cdkDropListData]="store.topics()" (cdkDropListDropped)="onTopicCardDrop($event)" class="space-y-4">
+          @for (topic of store.topics(); track topic.id) {
+            <article cdkDrag [cdkDragData]="topic" class="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
+              <div class="flex flex-nowrap gap-4 overflow-x-auto">
+                <div class="w-[420px] shrink-0">
+                  <app-tree-canvas
+                    [topic]="topic"
+                    [selectedNodeId]="store.selectedNodeId()"
+                    (addSubtopic)="store.addSubtopic($event)"
+                    (renameNode)="store.renameNode($event.nodeId, $event.label)"
+                    (requestDeleteTopic)="queueTopicDelete($event)"
+                    (requestDeleteSubtopic)="queueSubtopicDelete($event.topicId, $event.subtopicId)"
+                    (selectNode)="store.selectNode($event)"
+                    (moveSubtopic)="store.moveSubtopic($event.topicId, $event.subtopicId, $event.toIndex)"
+                  />
+                </div>
 
-        <app-subtopic-table
-          [columns]="store.columns()"
-          [rows]="store.visibleSubtopicRows()"
-          [selectedNodeId]="store.selectedNodeId()"
-          (setCell)="store.setCellRaw($event.nodeId, $event.columnId, $event.raw)"
-          (selectNode)="store.selectNode($event)"
-          (insertColumn)="store.insertColumn($event.referenceColumnId, $event.side)"
-          (deleteColumn)="onDeleteColumn($event.columnId)"
-          (renameColumn)="store.renameColumn($event.columnId, $event.name)"
-        />
+                <div class="w-[560px] shrink-0">
+                  <app-subtopic-table
+                    [topic]="topic"
+                    [selectedNodeId]="store.selectedNodeId()"
+                    (setCell)="store.setCellRaw($event.topicId, $event.subtopicId, $event.columnId, $event.raw)"
+                    (selectNode)="store.selectNode($event)"
+                    (insertColumn)="store.insertColumn($event.topicId, $event.referenceColumnId, $event.side)"
+                    (deleteColumn)="onDeleteColumn($event.topicId, $event.columnId)"
+                    (renameColumn)="store.renameColumn($event.topicId, $event.columnId, $event.name)"
+                  />
+                </div>
+              </div>
+            </article>
+          }
+        </div>
       </div>
     </main>
 
@@ -197,6 +208,19 @@ export class TreeGraphPageComponent {
     }
   }
 
+  protected onTopicCardDrop(event: CdkDragDrop<TreeTopic[]>): void {
+    if (event.previousIndex === event.currentIndex) {
+      return;
+    }
+
+    const movedTopic = event.container.data[event.previousIndex];
+    if (!movedTopic) {
+      return;
+    }
+
+    this.store.moveTopicCard(movedTopic.id, event.currentIndex);
+  }
+
   queueTopicDelete(topicId: string): void {
     this.pendingDelete.set({ type: 'topic', topicId });
   }
@@ -248,8 +272,8 @@ export class TreeGraphPageComponent {
     URL.revokeObjectURL(url);
   }
 
-  onDeleteColumn(columnId: string): void {
-    const result = this.store.deleteColumn(columnId);
+  onDeleteColumn(topicId: string, columnId: string): void {
+    const result = this.store.deleteColumn(topicId, columnId);
     if (result) {
       this.statusMessage.set(result);
     }

@@ -23,6 +23,7 @@ export interface TreeSubtopic {
 export interface TreeTopic {
   id: NodeId;
   label: string;
+  columns: TableColumn[];
   children: TreeSubtopic[];
 }
 
@@ -30,7 +31,6 @@ export interface TreeTableStateV1 {
   version: 1;
   title: string;
   topics: TreeTopic[];
-  columns: TableColumn[];
   selectedNodeId: NodeId | null;
 }
 
@@ -88,30 +88,28 @@ export function isValidColumnId(input: string): boolean {
   return !RESERVED_COLUMN_BASENAMES.has(baseName);
 }
 
-export const STARTER_COLUMNS: TableColumn[] = [
-  { id: '$Amount', name: 'Amount', type: 'number' },
-  { id: '$Rate', name: 'Rate', type: 'number' },
-  { id: '$Value', name: 'Value', type: 'number' },
+export const DEFAULT_TOPIC_COLUMNS: TableColumn[] = [
+  { id: '$A', name: 'A', type: 'number' },
+  { id: '$B', name: 'B', type: 'number' },
 ];
 
 export const STARTER_STATE: TreeTableStateV1 = {
   version: 1,
   title: 'Untitled',
   selectedNodeId: null,
-  columns: STARTER_COLUMNS,
   topics: [
     {
       id: 'topic_wealth',
       label: 'Wealth',
+      columns: structuredClone(DEFAULT_TOPIC_COLUMNS),
       children: [
         {
           id: 'subtopic_bankA',
           topicId: 'topic_wealth',
           label: 'Bank A',
           cells: {
-            $Amount: createCellData('120000'),
-            $Rate: createCellData('0.03'),
-            $Value: createCellData('=$Amount*$Rate'),
+            $A: createCellData('120000'),
+            $B: createCellData('0.03'),
           },
         },
         {
@@ -119,9 +117,8 @@ export const STARTER_STATE: TreeTableStateV1 = {
           topicId: 'topic_wealth',
           label: 'Bank B',
           cells: {
-            $Amount: createCellData('90000'),
-            $Rate: createCellData('0.05'),
-            $Value: createCellData('=$Amount*$Rate'),
+            $A: createCellData('90000'),
+            $B: createCellData('0.05'),
           },
         },
       ],
@@ -129,15 +126,15 @@ export const STARTER_STATE: TreeTableStateV1 = {
     {
       id: 'topic_business',
       label: 'Business',
+      columns: structuredClone(DEFAULT_TOPIC_COLUMNS),
       children: [
         {
           id: 'subtopic_dividend',
           topicId: 'topic_business',
           label: 'Dividend',
           cells: {
-            $Amount: createCellData('30000'),
-            $Rate: createCellData('1'),
-            $Value: createCellData('=$Amount*$Rate'),
+            $A: createCellData('30000'),
+            $B: createCellData('1'),
           },
         },
         {
@@ -145,9 +142,8 @@ export const STARTER_STATE: TreeTableStateV1 = {
           topicId: 'topic_business',
           label: 'Family Company',
           cells: {
-            $Amount: createCellData('45000'),
-            $Rate: createCellData('1'),
-            $Value: createCellData('=$Amount'),
+            $A: createCellData('45000'),
+            $B: createCellData('1'),
           },
         },
       ],

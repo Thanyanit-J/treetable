@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import {
-  STARTER_COLUMNS,
+  DEFAULT_TOPIC_COLUMNS,
   ImportResult,
   STARTER_STATE,
   TableColumn,
@@ -70,8 +70,10 @@ export class PersistenceService {
     }
 
     const candidate = input as Partial<TreeTableStateV1> & {
+      columns?: unknown;
       topics?: Array<
         Partial<TreeTableStateV1['topics'][number]> & {
+          columns?: unknown;
           cells?: unknown;
           children?: Array<Partial<TreeSubtopic>>;
         }
@@ -82,13 +84,8 @@ export class PersistenceService {
       return null;
     }
 
-    const normalizedColumnMeta = this.normalizeColumns(candidate.columns);
-    const normalizedColumns = normalizedColumnMeta.map((item) => item.column);
-    const formulaReplacements = new Map<string, string>(
-      normalizedColumnMeta
-        .filter((item) => item.sourceId !== item.column.id && item.sourceId.length > 0)
-        .map((item) => [item.sourceId, item.column.id]),
-    );
+    const legacyGlobalColumns = this.normalizeColumns(candidate.columns, structuredClone(DEFAULT_TOPIC_COLUMNS));
+
     const topics = candidate.topics.map((topic, topicIndex) => {
       const topicId =
         typeof topic.id === 'string' && topic.id.length > 0 ? topic.id : `topic_migrated_${topicIndex}`;
@@ -97,6 +94,14 @@ export class PersistenceService {
           ? topic.label
           : `Topic ${topicIndex + 1}`;
       const children = Array.isArray(topic.children) ? topic.children : [];
+
+      const normalizedColumnMeta = this.normalizeColumns(topic.columns, legacyGlobalColumns.map((item) => item.column));
+      const normalizedColumns = normalizedColumnMeta.map((item) => item.column);
+      const formulaReplacements = new Map<string, string>(
+        normalizedColumnMeta
+          .filter((item) => item.sourceId !== item.column.id && item.sourceId.length > 0)
+          .map((item) => [item.sourceId, item.column.id]),
+      );
 
       const normalizedChildren = children.map((child, childIndex) => {
         const childId =
@@ -124,6 +129,7 @@ export class PersistenceService {
       return {
         id: topicId,
         label: topicLabel,
+        columns: normalizedColumns,
         children: normalizedChildren,
       };
     });
@@ -132,18 +138,18 @@ export class PersistenceService {
       version: 1,
       title: typeof candidate.title === 'string' && candidate.title.trim().length > 0 ? candidate.title : 'Untitled',
       topics,
-      columns: normalizedColumns,
       selectedNodeId: typeof candidate.selectedNodeId === 'string' ? candidate.selectedNodeId : null,
     };
   }
 
-  private normalizeColumns(columns: unknown): Array<{ column: TableColumn; sourceId: string }> {
-    if (!Array.isArray(columns) || columns.length === 0) {
-      return [{ column: structuredClone(STARTER_COLUMNS[0]), sourceId: STARTER_COLUMNS[0]!.id }];
-    }
+  private normalizeColumns(
+    columns: unknown,
+    fallbackColumns: TableColumn[],
+  ): Array<{ column: TableColumn; sourceId: string }> {
+    const rawColumns = Array.isArray(columns) && columns.length > 0 ? columns : fallbackColumns;
 
     const seen = new Set<string>();
-    const normalized = columns
+    const normalized = rawColumns
       .map((column, index) => {
         if (!column || typeof column !== 'object') {
           return null;
@@ -177,7 +183,7 @@ export class PersistenceService {
       .filter((column): column is { column: TableColumn; sourceId: string } => column !== null);
 
     if (normalized.length === 0) {
-      return [{ column: structuredClone(STARTER_COLUMNS[0]), sourceId: STARTER_COLUMNS[0]!.id }];
+      return structuredClone(DEFAULT_TOPIC_COLUMNS).map((column) => ({ column, sourceId: column.id }));
     }
 
     return normalized;

@@ -2,6 +2,7 @@ import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import {
   CellData,
   ColumnId,
+  DEFAULT_TOPIC_COLUMNS,
   ImportResult,
   NodeId,
   TableColumn,
@@ -19,12 +20,6 @@ import {
 import { FormulaEngineService } from './formula-engine.service';
 import { PersistenceService } from './persistence.service';
 
-export interface VisibleSubtopicRow {
-  topicId: NodeId;
-  topicLabel: string;
-  subtopic: TreeSubtopic;
-}
-
 @Injectable({ providedIn: 'root' })
 export class TreeTableStoreService {
   private readonly persistence = inject(PersistenceService);
@@ -37,19 +32,9 @@ export class TreeTableStoreService {
   readonly state = this.stateSignal.asReadonly();
   readonly title = computed(() => this.stateSignal().title);
   readonly topics = computed(() => this.stateSignal().topics);
-  readonly columns = computed(() => this.stateSignal().columns);
   readonly selectedNodeId = computed(() => this.stateSignal().selectedNodeId);
   readonly canUndo = computed(() => this.past().length > 0);
   readonly canRedo = computed(() => this.future().length > 0);
-  readonly visibleSubtopicRows = computed<VisibleSubtopicRow[]>(() => {
-    const rows: VisibleSubtopicRow[] = [];
-    for (const topic of this.stateSignal().topics) {
-      for (const subtopic of topic.children) {
-        rows.push({ topicId: topic.id, topicLabel: topic.label, subtopic });
-      }
-    }
-    return rows;
-  });
 
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -68,16 +53,18 @@ export class TreeTableStoreService {
   addTopic(label = 'New Topic'): void {
     this.mutate((state) => {
       const topicId = makeNodeId('topic');
+      const columns = this.defaultTopicColumns();
       const subtopicId = makeNodeId('subtopic');
       const newTopic: TreeTopic = {
         id: topicId,
         label,
+        columns,
         children: [
           {
             id: subtopicId,
             topicId,
             label: 'New Subtopic',
-            cells: this.buildNewSubtopicCells(state),
+            cells: this.buildNewSubtopicCells(columns, []),
           },
         ],
       };
@@ -89,8 +76,13 @@ export class TreeTableStoreService {
   removeTopic(topicId: NodeId): void {
     this.mutate((state) => {
       state.topics = state.topics.filter((topic) => topic.id !== topicId);
-      if (state.selectedNodeId === topicId) {
-        state.selectedNodeId = null;
+      if (state.selectedNodeId?.startsWith('topic_') || state.selectedNodeId?.startsWith('subtopic_')) {
+        const selectedStillExists = state.topics.some(
+          (topic) => topic.id === state.selectedNodeId || topic.children.some((child) => child.id === state.selectedNodeId),
+        );
+        if (!selectedStillExists) {
+          state.selectedNodeId = null;
+        }
       }
     });
   }
@@ -106,7 +98,7 @@ export class TreeTableStoreService {
         id: subtopicId,
         topicId,
         label,
-        cells: this.buildNewSubtopicCells(state),
+        cells: this.buildNewSubtopicCells(topic.columns, topic.children),
       };
       topic.children.push(newSubtopic);
       state.selectedNodeId = subtopicId;
@@ -158,7 +150,7 @@ export class TreeTableStoreService {
     );
   }
 
-  moveTopic(topicId: NodeId, toIndex: number): void {
+  moveTopicCard(topicId: NodeId, toIndex: number): void {
     this.mutate((state) => {
       const fromIndex = state.topics.findIndex((topic) => topic.id === topicId);
       if (fromIndex < 0 || toIndex < 0 || toIndex >= state.topics.length) {
@@ -190,29 +182,24 @@ export class TreeTableStoreService {
     });
   }
 
-  setCellRaw(nodeId: NodeId, columnId: ColumnId, raw: string): void {
+  setCellRaw(topicId: NodeId, nodeId: NodeId, columnId: ColumnId, raw: string): void {
     this.mutate((state) => {
-      const nextIsFormula = raw.trim().startsWith('=');
-      let targetChild: TreeSubtopic | null = null;
-      for (const topic of state.topics) {
-        const child = topic.children.find((candidate) => candidate.id === nodeId);
-        if (child) {
-          targetChild = child;
-          break;
-        }
+      const topic = state.topics.find((candidate) => candidate.id === topicId);
+      if (!topic) {
+        return;
       }
 
+      const targetChild = topic.children.find((candidate) => candidate.id === nodeId);
       if (!targetChild) {
         return;
       }
 
       const prevRaw = targetChild.cells[columnId]?.raw ?? '';
+      const nextIsFormula = raw.trim().startsWith('=');
       const wasFormula = prevRaw.trim().startsWith('=');
       if (nextIsFormula || wasFormula) {
-        for (const topic of state.topics) {
-          for (const child of topic.children) {
-            child.cells[columnId] = this.withRaw(child.cells[columnId], raw);
-          }
+        for (const child of topic.children) {
+          child.cells[columnId] = this.withRaw(child.cells[columnId], raw);
         }
         return;
       }
@@ -221,49 +208,44 @@ export class TreeTableStoreService {
     });
   }
 
-  addColumn(name: string, type: 'number' | 'text'): void {
+  insertColumn(topicId: NodeId, referenceColumnId: ColumnId, side: 'left' | 'right'): void {
     this.mutate((state) => {
-      const column = this.buildUniqueColumn(state.columns, name, type);
-      state.columns.push(column);
-
-      for (const topic of state.topics) {
-        for (const child of topic.children) {
-          child.cells[column.id] = createCellData('');
-        }
+      const topic = state.topics.find((candidate) => candidate.id === topicId);
+      if (!topic) {
+        return;
       }
-    });
-  }
 
-  insertColumn(referenceColumnId: ColumnId, side: 'left' | 'right'): void {
-    this.mutate((state) => {
-      const refIndex = state.columns.findIndex((column) => column.id === referenceColumnId);
+      const refIndex = topic.columns.findIndex((column) => column.id === referenceColumnId);
       if (refIndex < 0) {
         return;
       }
 
-      const column = this.buildUniqueColumn(state.columns, 'New Column', 'number');
+      const column = this.buildUniqueColumn(topic.columns, 'New Column', 'number');
       const insertionIndex = side === 'left' ? refIndex : refIndex + 1;
-      state.columns.splice(insertionIndex, 0, column);
+      topic.columns.splice(insertionIndex, 0, column);
 
-      for (const topic of state.topics) {
-        for (const child of topic.children) {
-          child.cells[column.id] = createCellData('');
-        }
+      for (const child of topic.children) {
+        child.cells[column.id] = createCellData('');
       }
     });
   }
 
-  renameColumn(columnId: ColumnId, name: string): void {
+  renameColumn(topicId: NodeId, columnId: ColumnId, name: string): void {
     this.mutate((state) => {
-      const columnIndex = state.columns.findIndex((currentColumn) => currentColumn.id === columnId);
-      const column = columnIndex >= 0 ? state.columns[columnIndex] : undefined;
+      const topic = state.topics.find((candidate) => candidate.id === topicId);
+      if (!topic) {
+        return;
+      }
+
+      const columnIndex = topic.columns.findIndex((currentColumn) => currentColumn.id === columnId);
+      const column = columnIndex >= 0 ? topic.columns[columnIndex] : undefined;
       if (!column) {
         return;
       }
 
       const nextName = name.trim() || column.name;
       const nextId = this.buildUniqueColumnId(
-        state.columns.filter((candidate) => candidate.id !== columnId),
+        topic.columns.filter((candidate) => candidate.id !== columnId),
         nextName,
       );
       const oldId = column.id;
@@ -271,22 +253,29 @@ export class TreeTableStoreService {
       column.id = nextId;
 
       if (oldId !== nextId) {
-        this.renameColumnReferences(state, oldId, nextId);
+        this.renameColumnReferences(topic, oldId, nextId);
       }
     });
   }
 
-  deleteColumn(columnId: ColumnId): ImportResult | void {
-    if (this.columns().length <= 1) {
+  deleteColumn(topicId: NodeId, columnId: ColumnId): ImportResult | void {
+    const topic = this.topics().find((candidate) => candidate.id === topicId);
+    if (!topic) {
+      return { ok: false, error: 'Topic not found.' };
+    }
+
+    if (topic.columns.length <= 1) {
       return { ok: false, error: 'At least one column is required.' };
     }
 
     this.mutate((state) => {
-      state.columns = state.columns.filter((column) => column.id !== columnId);
-      for (const topic of state.topics) {
-        for (const child of topic.children) {
-          delete child.cells[columnId];
-        }
+      const mutableTopic = state.topics.find((candidate) => candidate.id === topicId);
+      if (!mutableTopic) {
+        return;
+      }
+      mutableTopic.columns = mutableTopic.columns.filter((column) => column.id !== columnId);
+      for (const child of mutableTopic.children) {
+        delete child.cells[columnId];
       }
     });
 
@@ -361,17 +350,76 @@ export class TreeTableStoreService {
       next.title = 'Untitled';
     }
 
-    if (next.columns.length === 0) {
-      next.columns.push({ id: '$Value', name: 'Value', type: 'number' });
-    }
-
     for (const topic of next.topics) {
+      if (!Array.isArray(topic.columns) || topic.columns.length === 0) {
+        topic.columns = this.defaultTopicColumns();
+      }
+
+      this.normalizeTopicColumns(topic);
+
       for (const child of topic.children) {
-        child.cells = this.formulaEngine.evaluateRow(next.columns, child.cells);
+        child.topicId = topic.id;
+        for (const column of topic.columns) {
+          if (!child.cells[column.id]) {
+            child.cells[column.id] = createCellData('');
+          }
+        }
+        child.cells = this.formulaEngine.evaluateRow(topic.columns, child.cells);
       }
     }
 
     return next;
+  }
+
+  private normalizeTopicColumns(topic: TreeTopic): void {
+    const seen = new Set<string>();
+    const replacements = new Map<string, string>();
+
+    topic.columns = topic.columns.map((column, index) => {
+      const nextName = column.name.trim() || `Column ${index + 1}`;
+      let nextId = isValidColumnId(column.id) ? column.id : slugToColumnId(nextName);
+
+      if (seen.has(nextId)) {
+        let suffix = 2;
+        const baseId = nextId;
+        while (seen.has(nextId)) {
+          nextId = `${baseId}_${suffix}`;
+          suffix += 1;
+        }
+      }
+
+      seen.add(nextId);
+      if (column.id !== nextId) {
+        replacements.set(column.id, nextId);
+      }
+
+      return {
+        id: nextId,
+        name: nextName,
+        type: column.type === 'text' ? 'text' : 'number',
+      };
+    });
+
+    if (replacements.size > 0) {
+      for (const child of topic.children) {
+        for (const [oldId, newId] of replacements.entries()) {
+          const oldCell = child.cells[oldId];
+          if (oldCell) {
+            child.cells[newId] = oldCell;
+            delete child.cells[oldId];
+          }
+        }
+
+        for (const cell of Object.values(child.cells)) {
+          if (!cell.raw.trim().startsWith('=')) {
+            continue;
+          }
+          for (const [oldId, newId] of replacements.entries()) {
+            cell.raw = this.replaceFormulaToken(cell.raw, oldId, newId);
+          }
+        }
+      }
+    }
   }
 
   private withRaw(existing: CellData | undefined, raw: string): CellData {
@@ -382,10 +430,10 @@ export class TreeTableStoreService {
     };
   }
 
-  private buildNewSubtopicCells(state: TreeTableStateV1): Record<ColumnId, CellData> {
-    const cells = createEmptyCells(state.columns);
-    for (const column of state.columns) {
-      const formulaRaw = this.findColumnFormulaRaw(state, column.id);
+  private buildNewSubtopicCells(columns: TableColumn[], existingChildren: TreeSubtopic[]): Record<ColumnId, CellData> {
+    const cells = createEmptyCells(columns);
+    for (const column of columns) {
+      const formulaRaw = this.findColumnFormulaRaw(existingChildren, column.id);
       if (formulaRaw !== null) {
         cells[column.id] = createCellData(formulaRaw);
       }
@@ -393,13 +441,11 @@ export class TreeTableStoreService {
     return cells;
   }
 
-  private findColumnFormulaRaw(state: TreeTableStateV1, columnId: ColumnId): string | null {
-    for (const topic of state.topics) {
-      for (const child of topic.children) {
-        const raw = child.cells[columnId]?.raw ?? '';
-        if (raw.trim().startsWith('=')) {
-          return raw;
-        }
+  private findColumnFormulaRaw(children: TreeSubtopic[], columnId: ColumnId): string | null {
+    for (const child of children) {
+      const raw = child.cells[columnId]?.raw ?? '';
+      if (raw.trim().startsWith('=')) {
+        return raw;
       }
     }
     return null;
@@ -431,23 +477,21 @@ export class TreeTableStoreService {
     return candidate;
   }
 
-  private renameColumnReferences(state: TreeTableStateV1, oldId: ColumnId, newId: ColumnId): void {
-    for (const topic of state.topics) {
-      for (const child of topic.children) {
-        const oldCell = child.cells[oldId];
-        if (oldCell) {
-          child.cells[newId] = oldCell;
-          delete child.cells[oldId];
-        } else if (!child.cells[newId]) {
-          child.cells[newId] = createCellData('');
-        }
+  private renameColumnReferences(topic: TreeTopic, oldId: ColumnId, newId: ColumnId): void {
+    for (const child of topic.children) {
+      const oldCell = child.cells[oldId];
+      if (oldCell) {
+        child.cells[newId] = oldCell;
+        delete child.cells[oldId];
+      } else if (!child.cells[newId]) {
+        child.cells[newId] = createCellData('');
+      }
 
-        for (const cell of Object.values(child.cells)) {
-          if (!cell.raw.trim().startsWith('=')) {
-            continue;
-          }
-          cell.raw = this.replaceFormulaToken(cell.raw, oldId, newId);
+      for (const cell of Object.values(child.cells)) {
+        if (!cell.raw.trim().startsWith('=')) {
+          continue;
         }
+        cell.raw = this.replaceFormulaToken(cell.raw, oldId, newId);
       }
     }
   }
@@ -456,5 +500,9 @@ export class TreeTableStoreService {
     const escapedOldId = oldId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const pattern = new RegExp(`(?<![A-Za-z0-9_$])${escapedOldId}(?![A-Za-z0-9_])`, 'g');
     return formula.replace(pattern, newId);
+  }
+
+  private defaultTopicColumns(): TableColumn[] {
+    return structuredClone(DEFAULT_TOPIC_COLUMNS);
   }
 }
