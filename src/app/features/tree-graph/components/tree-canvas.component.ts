@@ -1,4 +1,4 @@
-import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
+import { CdkDragDrop, CdkDragEnd, CdkDragStart, DragDropModule } from '@angular/cdk/drag-drop';
 import { ChangeDetectionStrategy, Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TreeSubtopic, TreeTopic } from '../models/tree-table.model';
@@ -63,6 +63,8 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
               cdkDrag
               cdkDragPreviewClass="drag-preview-solid"
               [cdkDragData]="subtopic"
+              (cdkDragStarted)="onSubtopicDragStarted($event)"
+              (cdkDragEnded)="onSubtopicDragEnded($event)"
               class="relative flex items-center gap-2"
             >
               <div class="absolute -left-5 top-1/2 h-px w-5 -translate-y-1/2 bg-slate-300"></div>
@@ -171,6 +173,8 @@ export class TreeCanvasComponent {
   private readonly canvasRootRef = viewChild<ElementRef<HTMLElement>>('canvasRoot');
   private readonly nodeMenuRef = viewChild<ElementRef<HTMLElement>>('nodeMenu');
   private isScrollLocked = false;
+  private isDraggingSubtopic = false;
+  private suppressNodeFocusUntil = 0;
   private readonly menuOwnerId = `tree-canvas-${crypto.randomUUID()}`;
 
   onSubtopicDrop(topicId: string, event: CdkDragDrop<TreeSubtopic[]>): void {
@@ -249,6 +253,10 @@ export class TreeCanvasComponent {
   }
 
   protected onNodeFocus(nodeId: string, label: string): void {
+    if (this.isDraggingSubtopic || Date.now() < this.suppressNodeFocusUntil) {
+      return;
+    }
+
     this.selectNode.emit(nodeId);
     if (this.editingNodeId() === nodeId) {
       return;
@@ -304,6 +312,22 @@ export class TreeCanvasComponent {
       return this.editingNodeLabel();
     }
     return label;
+  }
+
+  protected onSubtopicDragStarted(_event: CdkDragStart<TreeSubtopic>): void {
+    this.isDraggingSubtopic = true;
+    this.editingNodeId.set(null);
+    this.editingNodeLabel.set('');
+    const activeInput = document.activeElement as HTMLInputElement | null;
+    if (activeInput?.tagName === 'INPUT') {
+      activeInput.blur();
+    }
+  }
+
+  protected onSubtopicDragEnded(_event: CdkDragEnd<TreeSubtopic>): void {
+    this.isDraggingSubtopic = false;
+    // Ignore synthetic focus/click transfer immediately after dropping.
+    this.suppressNodeFocusUntil = Date.now() + 180;
   }
 
   private commitNodeRename(nodeId: string, originalLabel: string): void {
