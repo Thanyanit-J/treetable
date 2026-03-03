@@ -381,10 +381,6 @@ export class SubtopicTableComponent {
 
     this.editingColumnId.set(columnId);
     this.editingColumnName.set(currentName);
-    queueMicrotask(() => {
-      const input = event.target as HTMLInputElement | null;
-      input?.select();
-    });
   }
 
   protected onHeaderInputChange(columnId: string, value: string): void {
