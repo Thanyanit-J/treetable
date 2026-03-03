@@ -42,11 +42,8 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
               (blur)="onTitleBlur()"
               (keydown.enter)="onTitleEnter($event)"
               (keydown.escape)="onTitleEscape($event)"
-              class="w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 py-1 text-2xl font-semibold tracking-tight text-slate-900 focus-visible:outline-none"
+              class="w-full min-w-0 cursor-text rounded-md border border-transparent bg-transparent px-2 py-1 text-2xl font-semibold tracking-tight text-slate-900 transition hover:border-sky-200 focus:border-sky-300 focus-visible:outline-none"
               [class.border-sky-300]="editingTitle()"
-              [class.bg-sky-50]="editingTitle()"
-              [class.ring-2]="editingTitle()"
-              [class.ring-sky-100]="editingTitle()"
               aria-label="Tree title"
             />
           </div>
