@@ -1,5 +1,5 @@
 import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ConfirmDialogComponent } from './components/confirm-dialog.component';
 import { SubtopicTableComponent } from './components/subtopic-table.component';
@@ -23,6 +23,9 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
 @Component({
   selector: 'app-tree-graph-page',
   imports: [FormsModule, DragDropModule, TreeCanvasComponent, SubtopicTableComponent, ConfirmDialogComponent],
+  host: {
+    '(window:resize)': 'onWindowResize()',
+  },
   template: `
     <main class="mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8">
       <section class="mb-4 rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
@@ -95,10 +98,17 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
         }
       </section>
 
-      <div class="overflow-x-auto">
-        <div cdkDropList [cdkDropListData]="store.topics()" (cdkDropListDropped)="onTopicCardDrop($event)" class="space-y-4">
+      <div class="relative">
+        <div #cardRail class="hide-native-scrollbar overflow-x-scroll" (scroll)="onCardRailScroll()">
+        <div
+          cdkDropList
+          cdkDropListOrientation="horizontal"
+          [cdkDropListData]="store.topics()"
+          (cdkDropListDropped)="onTopicCardDrop($event)"
+          class="flex w-max flex-nowrap items-start gap-4"
+        >
           @for (topic of store.topics(); track topic.id) {
-            <article cdkDrag [cdkDragData]="topic" class="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
+            <article cdkDrag [cdkDragData]="topic" class="w-max shrink-0 rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
               <div class="flex flex-nowrap gap-4 overflow-x-auto">
                 <div class="w-max shrink-0">
                   <app-tree-canvas
@@ -113,7 +123,7 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
                   />
                 </div>
 
-                <div class="w-[560px] shrink-0">
+                <div class="w-max shrink-0">
                   <app-subtopic-table
                     [topic]="topic"
                     [selectedNodeId]="store.selectedNodeId()"
@@ -128,7 +138,31 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
             </article>
           }
         </div>
+        </div>
+        @if (showLeftOverflowShadow()) {
+          <div class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-slate-700/35 to-transparent"></div>
+        }
+        @if (showRightOverflowShadow()) {
+          <div class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-slate-700/35 to-transparent"></div>
+        }
       </div>
+      @if (showCustomScrollbar()) {
+        <div
+          class="relative mt-2 h-2 rounded-full bg-slate-200/85"
+          role="scrollbar"
+          aria-label="Topic card horizontal scroll"
+          [attr.aria-valuemin]="0"
+          [attr.aria-valuemax]="100"
+          [attr.aria-valuenow]="roundedScrollbarThumbLeft()"
+          (mousedown)="onScrollbarTrackMouseDown($event)"
+        >
+          <div
+            class="absolute top-0 h-2 rounded-full bg-slate-500/70"
+            [style.left.%]="scrollbarThumbLeftPercent()"
+            [style.width.%]="scrollbarThumbWidthPercent()"
+          ></div>
+        </div>
+      }
     </main>
 
     <app-confirm-dialog
@@ -148,6 +182,13 @@ export class TreeGraphPageComponent {
   protected readonly statusMessage = signal<ImportResult | null>(null);
   protected readonly editingTitle = signal(false);
   protected readonly titleDraft = signal('');
+  protected readonly showLeftOverflowShadow = signal(false);
+  protected readonly showRightOverflowShadow = signal(false);
+  protected readonly showCustomScrollbar = signal(false);
+  protected readonly scrollbarThumbLeftPercent = signal(0);
+  protected readonly scrollbarThumbWidthPercent = signal(100);
+  protected readonly roundedScrollbarThumbLeft = computed(() => Math.round(this.scrollbarThumbLeftPercent()));
+  private readonly cardRailRef = viewChild<ElementRef<HTMLElement>>('cardRail');
 
   protected readonly isDeleteDialogOpen = computed(() => this.pendingDelete() !== null);
   protected readonly deleteMessage = computed(() => {
@@ -162,6 +203,13 @@ export class TreeGraphPageComponent {
 
     return 'Deleting a subtopic removes its table row.';
   });
+
+  constructor() {
+    effect(() => {
+      this.store.topics().length;
+      setTimeout(() => this.updateCardRailOverflow(), 0);
+    });
+  }
 
   protected titleInputValue(): string {
     if (this.editingTitle()) {
@@ -219,6 +267,44 @@ export class TreeGraphPageComponent {
     }
 
     this.store.moveTopicCard(movedTopic.id, event.currentIndex);
+    setTimeout(() => this.updateCardRailOverflow(), 0);
+  }
+
+  protected onCardRailScroll(): void {
+    this.updateCardRailOverflow();
+  }
+
+  protected onWindowResize(): void {
+    this.updateCardRailOverflow();
+  }
+
+  protected onScrollbarTrackMouseDown(event: MouseEvent): void {
+    const rail = this.cardRailRef()?.nativeElement;
+    if (!rail) {
+      return;
+    }
+
+    const track = event.currentTarget as HTMLElement | null;
+    if (!track) {
+      return;
+    }
+
+    const maxScrollLeft = rail.scrollWidth - rail.clientWidth;
+    if (maxScrollLeft <= 0) {
+      return;
+    }
+
+    const rect = track.getBoundingClientRect();
+    if (rect.width <= 0) {
+      return;
+    }
+
+    const clickRatio = (event.clientX - rect.left) / rect.width;
+    const thumbRatio = this.scrollbarThumbWidthPercent() / 100;
+    const centeredRatio = clickRatio - thumbRatio / 2;
+    const nextRatio = Math.max(0, Math.min(1 - thumbRatio, centeredRatio));
+    rail.scrollLeft = nextRatio * maxScrollLeft;
+    this.updateCardRailOverflow();
   }
 
   queueTopicDelete(topicId: string): void {
@@ -286,5 +372,40 @@ export class TreeGraphPageComponent {
     this.store.setTitle(this.titleDraft());
     this.editingTitle.set(false);
     this.titleDraft.set('');
+  }
+
+  private updateCardRailOverflow(): void {
+    const rail = this.cardRailRef()?.nativeElement;
+    if (!rail) {
+      this.showLeftOverflowShadow.set(false);
+      this.showRightOverflowShadow.set(false);
+      this.showCustomScrollbar.set(false);
+      this.scrollbarThumbLeftPercent.set(0);
+      this.scrollbarThumbWidthPercent.set(100);
+      return;
+    }
+
+    const hasOverflow = rail.scrollWidth > rail.clientWidth + 1;
+    if (!hasOverflow) {
+      this.showLeftOverflowShadow.set(false);
+      this.showRightOverflowShadow.set(false);
+      this.showCustomScrollbar.set(false);
+      this.scrollbarThumbLeftPercent.set(0);
+      this.scrollbarThumbWidthPercent.set(100);
+      return;
+    }
+
+    this.showCustomScrollbar.set(true);
+    const atStart = rail.scrollLeft <= 1;
+    const atEnd = rail.scrollLeft + rail.clientWidth >= rail.scrollWidth - 1;
+    this.showLeftOverflowShadow.set(!atStart);
+    this.showRightOverflowShadow.set(!atEnd);
+
+    const thumbWidth = Math.max(8, (rail.clientWidth / rail.scrollWidth) * 100);
+    const maxScrollLeft = Math.max(1, rail.scrollWidth - rail.clientWidth);
+    const maxThumbLeft = 100 - thumbWidth;
+    const thumbLeft = (rail.scrollLeft / maxScrollLeft) * maxThumbLeft;
+    this.scrollbarThumbWidthPercent.set(thumbWidth);
+    this.scrollbarThumbLeftPercent.set(Math.max(0, Math.min(maxThumbLeft, thumbLeft)));
   }
 }

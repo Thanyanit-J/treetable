@@ -150,9 +150,14 @@ export class SubtopicTableComponent {
       let maxLength = Math.max(10, column.name.length + 2);
       for (const row of this.rows()) {
         const cell = row.cells[column.id];
-        const raw = cell?.raw ?? '';
-        const display = this.displayCellValue(raw, cell?.value ?? null, cell?.error ?? null);
-        maxLength = Math.max(maxLength, raw.length + 2, display.length + 2);
+        const visible = this.cellInputValue(
+          row.id,
+          column.id,
+          cell?.raw ?? '',
+          cell?.value ?? null,
+          cell?.error ?? null,
+        );
+        maxLength = Math.max(maxLength, visible.length + 2);
       }
       widths[column.id] = Math.min(maxLength, 56);
     }
