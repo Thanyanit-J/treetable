@@ -86,18 +86,6 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
           </div>
         </div>
 
-        @if (statusMessage()) {
-          <p
-            class="mt-3 rounded-lg px-3 py-2 text-sm"
-            [class.bg-emerald-50]="statusMessage()?.ok"
-            [class.text-emerald-800]="statusMessage()?.ok"
-            [class.bg-rose-50]="!statusMessage()?.ok"
-            [class.text-rose-700]="!statusMessage()?.ok"
-            aria-live="polite"
-          >
-            {{ statusMessage()?.ok ? 'Done.' : statusMessage()?.error }}
-          </p>
-        }
       </section>
 
       <div class="relative">
@@ -198,6 +186,25 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
           </button>
         </section>
       }
+
+      @if (statusMessage()) {
+        <div
+          class="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4"
+          aria-live="polite"
+        >
+          <div
+            class="pointer-events-auto rounded-lg px-4 py-2 text-sm font-medium shadow-lg ring-1"
+            [class.bg-emerald-50]="statusMessage()?.ok"
+            [class.text-emerald-800]="statusMessage()?.ok"
+            [class.ring-emerald-200]="statusMessage()?.ok"
+            [class.bg-rose-50]="!statusMessage()?.ok"
+            [class.text-rose-700]="!statusMessage()?.ok"
+            [class.ring-rose-200]="!statusMessage()?.ok"
+          >
+            {{ statusMessage()?.ok ? 'Done.' : statusMessage()?.error }}
+          </div>
+        </div>
+      }
     </main>
 
     <app-confirm-dialog
@@ -229,6 +236,7 @@ export class TreeGraphPageComponent {
   protected readonly topicCardMenuTopicId = signal<string | null>(null);
   private readonly cardRailRef = viewChild<ElementRef<HTMLElement>>('cardRail');
   private readonly topicCardMenuRef = viewChild<ElementRef<HTMLElement>>('topicCardMenu');
+  private statusToastTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly isDeleteDialogOpen = computed(() => this.pendingDelete() !== null);
   protected readonly deleteMessage = computed(() => {
@@ -408,7 +416,7 @@ export class TreeGraphPageComponent {
     reader.onload = () => {
       const text = typeof reader.result === 'string' ? reader.result : '';
       const result = this.store.importState(text);
-      this.statusMessage.set(result);
+      this.showStatusMessage(result);
       input.value = '';
     };
     reader.readAsText(file);
@@ -428,7 +436,7 @@ export class TreeGraphPageComponent {
   onDeleteColumn(topicId: string, columnId: string): void {
     const result = this.store.deleteColumn(topicId, columnId);
     if (result) {
-      this.statusMessage.set(result);
+      this.showStatusMessage(result);
     }
   }
 
@@ -491,5 +499,16 @@ export class TreeGraphPageComponent {
     const thumbLeft = (rail.scrollLeft / maxScrollLeft) * maxThumbLeft;
     this.scrollbarThumbWidthPercent.set(thumbWidth);
     this.scrollbarThumbLeftPercent.set(Math.max(0, Math.min(maxThumbLeft, thumbLeft)));
+  }
+
+  private showStatusMessage(result: ImportResult): void {
+    this.statusMessage.set(result);
+    if (this.statusToastTimer) {
+      clearTimeout(this.statusToastTimer);
+    }
+    this.statusToastTimer = setTimeout(() => {
+      this.statusMessage.set(null);
+      this.statusToastTimer = null;
+    }, 2500);
   }
 }
