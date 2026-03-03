@@ -25,6 +25,8 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
   imports: [FormsModule, DragDropModule, TreeCanvasComponent, SubtopicTableComponent, ConfirmDialogComponent],
   host: {
     '(window:resize)': 'onWindowResize()',
+    '(document:mousedown)': 'onDocumentMouseDown($event)',
+    '(document:keydown.escape)': 'closeTopicCardMenu()',
   },
   template: `
     <main class="mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8">
@@ -108,7 +110,12 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
           class="flex w-max flex-nowrap items-start gap-4"
         >
           @for (topic of store.topics(); track topic.id) {
-            <article cdkDrag [cdkDragData]="topic" class="w-max shrink-0 rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
+            <article
+              cdkDrag
+              [cdkDragData]="topic"
+              class="w-max shrink-0 rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm"
+              (contextmenu)="onTopicCardContextMenu($event, topic.id)"
+            >
               <div class="flex flex-nowrap gap-4 overflow-x-auto">
                 <div class="w-max shrink-0">
                   <app-tree-canvas
@@ -163,6 +170,34 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
           ></div>
         </div>
       }
+
+      @if (topicCardMenuOpen()) {
+        <section
+          #topicCardMenu
+          class="fixed z-50 w-52 rounded-lg border border-slate-200 bg-white p-1 shadow-xl"
+          [style.left.px]="topicCardMenuX()"
+          [style.top.px]="topicCardMenuY()"
+          role="menu"
+          aria-label="Topic card actions"
+        >
+          <button
+            (click)="onTopicCardMenuAction('addSubtopic')"
+            class="block w-full rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+            role="menuitem"
+            type="button"
+          >
+            Add subtopic
+          </button>
+          <button
+            (click)="onTopicCardMenuAction('deleteTopic')"
+            class="block w-full rounded px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50"
+            role="menuitem"
+            type="button"
+          >
+            Delete topic
+          </button>
+        </section>
+      }
     </main>
 
     <app-confirm-dialog
@@ -188,7 +223,12 @@ export class TreeGraphPageComponent {
   protected readonly scrollbarThumbLeftPercent = signal(0);
   protected readonly scrollbarThumbWidthPercent = signal(100);
   protected readonly roundedScrollbarThumbLeft = computed(() => Math.round(this.scrollbarThumbLeftPercent()));
+  protected readonly topicCardMenuOpen = signal(false);
+  protected readonly topicCardMenuX = signal(0);
+  protected readonly topicCardMenuY = signal(0);
+  protected readonly topicCardMenuTopicId = signal<string | null>(null);
   private readonly cardRailRef = viewChild<ElementRef<HTMLElement>>('cardRail');
+  private readonly topicCardMenuRef = viewChild<ElementRef<HTMLElement>>('topicCardMenu');
 
   protected readonly isDeleteDialogOpen = computed(() => this.pendingDelete() !== null);
   protected readonly deleteMessage = computed(() => {
@@ -276,6 +316,33 @@ export class TreeGraphPageComponent {
 
   protected onWindowResize(): void {
     this.updateCardRailOverflow();
+  }
+
+  protected onTopicCardContextMenu(event: MouseEvent, topicId: string): void {
+    if (event.defaultPrevented) {
+      return;
+    }
+
+    event.preventDefault();
+    this.topicCardMenuTopicId.set(topicId);
+    this.topicCardMenuX.set(event.clientX);
+    this.topicCardMenuY.set(event.clientY);
+    this.topicCardMenuOpen.set(true);
+  }
+
+  protected onTopicCardMenuAction(action: 'addSubtopic' | 'deleteTopic'): void {
+    const topicId = this.topicCardMenuTopicId();
+    if (!topicId) {
+      this.closeTopicCardMenu();
+      return;
+    }
+
+    if (action === 'addSubtopic') {
+      this.store.addSubtopic(topicId);
+    } else {
+      this.queueTopicDelete(topicId);
+    }
+    this.closeTopicCardMenu();
   }
 
   protected onScrollbarTrackMouseDown(event: MouseEvent): void {
@@ -372,6 +439,23 @@ export class TreeGraphPageComponent {
     this.store.setTitle(this.titleDraft());
     this.editingTitle.set(false);
     this.titleDraft.set('');
+  }
+
+  protected closeTopicCardMenu(): void {
+    this.topicCardMenuOpen.set(false);
+    this.topicCardMenuTopicId.set(null);
+  }
+
+  protected onDocumentMouseDown(event: MouseEvent): void {
+    if (!this.topicCardMenuOpen()) {
+      return;
+    }
+
+    const menu = this.topicCardMenuRef()?.nativeElement;
+    const target = event.target as Node | null;
+    if (!menu || !target || !menu.contains(target)) {
+      this.closeTopicCardMenu();
+    }
   }
 
   private updateCardRailOverflow(): void {
