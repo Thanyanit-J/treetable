@@ -58,17 +58,9 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
           @for (subtopic of topic().children; track subtopic.id) {
             <div cdkDrag [cdkDragData]="subtopic" class="relative flex items-center gap-2">
               <div class="absolute -left-5 top-1/2 h-px w-5 -translate-y-1/2 bg-slate-300"></div>
-              <button
-                cdkDragHandle
-                class="cursor-grab rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600"
-                aria-label="Drag subtopic"
-                type="button"
-              >
-                ↕
-              </button>
 
               <div
-                class="rounded-xl border border-amber-300 bg-amber-100"
+                class="cursor-grab rounded-xl border border-amber-300 bg-amber-100"
                 [style.min-width.ch]="10"
                 [style.width.ch]="nodeWidthCh(subtopic.label)"
                 [class.ring-2]="selectedNodeId() === subtopic.id"

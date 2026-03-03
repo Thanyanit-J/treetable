@@ -7,6 +7,10 @@ import { ColumnContextMenuComponent } from './column-context-menu.component';
   selector: 'app-subtopic-table',
   imports: [FormsModule, ColumnContextMenuComponent],
   host: {
+    '(pointerdown)': 'onHostPointerDown($event)',
+    '(mousedown)': 'onHostMouseDown($event)',
+    '(touchstart)': 'onHostTouchStart($event)',
+    '(dragstart)': 'onHostDragStart($event)',
     '(document:mousedown)': 'onDocumentMouseDown($event)',
   },
   template: `
@@ -502,6 +506,22 @@ export class SubtopicTableComponent {
     if (!table.contains(target)) {
       this.commitEditingCell();
     }
+  }
+
+  protected onHostPointerDown(event: PointerEvent): void {
+    event.stopPropagation();
+  }
+
+  protected onHostMouseDown(event: MouseEvent): void {
+    event.stopPropagation();
+  }
+
+  protected onHostTouchStart(event: TouchEvent): void {
+    event.stopPropagation();
+  }
+
+  protected onHostDragStart(event: DragEvent): void {
+    event.stopPropagation();
   }
 
   protected cellInputValue(
