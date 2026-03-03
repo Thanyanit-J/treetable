@@ -42,7 +42,7 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
               (blur)="onNodeBlur($event, topic().id, topic().label)"
               (keydown.enter)="onNodeEnter($event, topic().id, topic().label)"
               (keydown.escape)="onNodeEscape($event, topic().id, topic().label)"
-              class="block min-h-[40px] w-full rounded-full border-0 bg-transparent px-3 py-2 text-sm font-semibold text-slate-800 focus-visible:outline-none"
+              class="block min-h-[40px] w-full rounded-full border-0 bg-transparent px-2 py-2 text-center text-sm font-semibold text-slate-800 focus-visible:outline-none"
               [attr.aria-label]="'Topic label: ' + topic().label"
             />
           </div>
@@ -82,7 +82,7 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
                   (blur)="onNodeBlur($event, subtopic.id, subtopic.label)"
                   (keydown.enter)="onNodeEnter($event, subtopic.id, subtopic.label)"
                   (keydown.escape)="onNodeEscape($event, subtopic.id, subtopic.label)"
-                  class="block min-h-[40px] w-full rounded-xl border-0 bg-transparent px-3 py-2 text-sm font-medium text-slate-800 focus-visible:outline-none"
+                  class="block min-h-[40px] w-full rounded-xl border-0 bg-transparent px-2 py-2 text-center text-sm font-medium text-slate-800 focus-visible:outline-none"
                   [attr.aria-label]="'Subtopic label: ' + subtopic.label"
                 />
               </div>
@@ -335,7 +335,7 @@ export class TreeCanvasComponent {
   }
 
   protected nodeWidthCh(label: string): number {
-    const base = Math.max(10, label.trim().length + 3);
-    return Math.min(base, 44);
+    const base = Math.max(8, label.trim().length + 2);
+    return Math.min(base, 40);
   }
 }
