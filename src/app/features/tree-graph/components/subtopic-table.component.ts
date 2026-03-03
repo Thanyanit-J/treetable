@@ -29,7 +29,7 @@ import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scro
                 @for (column of columns(); track column.id) {
                   <th
                     scope="col"
-                    class="border border-slate-200 bg-slate-100 px-2 py-2 text-center font-semibold text-slate-700"
+                    class="border border-slate-200 bg-slate-100 p-0 text-center font-semibold text-slate-700"
                     [style.width.ch]="columnWidthsCh()[column.id]"
                     [style.min-width.ch]="columnWidthsCh()[column.id]"
                     [class.border-sky-400]="activeReferencedColumnId() === column.id"
@@ -37,30 +37,19 @@ import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scro
                     (mousedown)="onColumnAssistMouseDown($event, column.id, null, null)"
                     (click)="onColumnAssistClick($event, column.id, null, null)"
                   >
-                    <div>
-                      @if (editingColumnId() === column.id) {
-                        <input
-                          [attr.data-column-rename-id]="column.id"
-                          [ngModel]="editingColumnName()"
-                          (ngModelChange)="editingColumnName.set($event)"
-                          (blur)="onColumnRenameBlur(column.id)"
-                          (keydown.enter)="onColumnRenameEnter($event, column.id)"
-                          (keydown.escape)="onColumnRenameEscape($event, column.id)"
-                          class="w-full rounded border border-slate-300 bg-white px-2 py-1 text-center text-sm"
-                          [attr.aria-label]="'Rename column ' + column.name"
-                        />
-                      } @else {
-                        <button
-                          (dblclick)="startColumnRename(column.id, column.name)"
-                          (mousedown)="onHeaderLabelMouseDown($event, column.id)"
-                          (click)="onHeaderLabelClick($event, column.id)"
-                          class="w-full truncate text-center"
-                          type="button"
-                        >
-                          {{ formulaEditingMode() ? column.id : column.name }}
-                        </button>
-                      }
-                    </div>
+                    <input
+                      [attr.data-column-rename-id]="column.id"
+                      [ngModel]="columnInputValue(column.id, column.name)"
+                      (focus)="onHeaderInputFocus(column.id, column.name, $event)"
+                      (ngModelChange)="onHeaderInputChange(column.id, $event)"
+                      (blur)="onColumnRenameBlur(column.id)"
+                      (keydown.enter)="onColumnRenameEnter($event, column.id)"
+                      (keydown.escape)="onColumnRenameEscape($event, column.id, column.name)"
+                      (mousedown)="onHeaderLabelMouseDown($event, column.id)"
+                      (click)="onHeaderLabelClick($event, column.id)"
+                      class="block min-h-[44px] w-full rounded-none border-0 bg-transparent px-2 py-2 text-center text-sm font-semibold text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
+                      [attr.aria-label]="'Rename column ' + column.name"
+                    />
                   </th>
                 }
               </tr>
@@ -324,7 +313,7 @@ export class SubtopicTableComponent {
   protected startColumnRename(columnId: string, currentName: string): void {
     this.editingColumnId.set(columnId);
     this.editingColumnName.set(currentName);
-    requestAnimationFrame(() => {
+    queueMicrotask(() => {
       const input = this.getColumnRenameInput(columnId);
       if (!input) {
         return;
@@ -353,9 +342,11 @@ export class SubtopicTableComponent {
   protected onColumnRenameEnter(event: Event, columnId: string): void {
     event.preventDefault();
     this.commitColumnRename(columnId);
+    const input = event.target as HTMLInputElement | null;
+    input?.blur();
   }
 
-  protected onColumnRenameEscape(event: Event, columnId: string): void {
+  protected onColumnRenameEscape(event: Event, columnId: string, originalName: string): void {
     event.preventDefault();
     event.stopPropagation();
     if (this.editingColumnId() !== columnId) {
@@ -363,6 +354,57 @@ export class SubtopicTableComponent {
     }
     this.editingColumnId.set(null);
     this.editingColumnName.set('');
+    const input = event.target as HTMLInputElement | null;
+    if (input) {
+      input.value = originalName;
+      input.blur();
+    }
+  }
+
+  protected onHeaderInputFocus(columnId: string, currentName: string, event: FocusEvent): void {
+    if (this.menuOpen()) {
+      this.closeMenu();
+    }
+
+    if (this.formulaEditingMode()) {
+      return;
+    }
+
+    if (this.editingColumnId() === columnId) {
+      return;
+    }
+
+    const previousEditingId = this.editingColumnId();
+    if (previousEditingId && previousEditingId !== columnId) {
+      this.commitColumnRename(previousEditingId);
+    }
+
+    this.editingColumnId.set(columnId);
+    this.editingColumnName.set(currentName);
+    queueMicrotask(() => {
+      const input = event.target as HTMLInputElement | null;
+      input?.select();
+    });
+  }
+
+  protected onHeaderInputChange(columnId: string, value: string): void {
+    if (this.editingColumnId() !== columnId) {
+      return;
+    }
+
+    this.editingColumnName.set(value);
+  }
+
+  protected columnInputValue(columnId: string, currentName: string): string {
+    if (this.editingColumnId() === columnId) {
+      return this.editingColumnName();
+    }
+
+    if (this.formulaEditingMode()) {
+      return columnId;
+    }
+
+    return currentName;
   }
 
   protected onColumnAssistMouseDown(

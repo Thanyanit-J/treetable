@@ -97,8 +97,8 @@ describe('SubtopicTableComponent', () => {
     fixture.detectChanges();
   }
 
-  function headerRenameInput(fixture: ComponentFixture<SubtopicTableComponent>): HTMLInputElement | null {
-    return fixture.nativeElement.querySelector('thead input[data-column-rename-id]') as HTMLInputElement | null;
+  function headerRenameInputs(fixture: ComponentFixture<SubtopicTableComponent>): HTMLInputElement[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('thead input[data-column-rename-id]')) as HTMLInputElement[];
   }
 
   it('enters editing on first focus and shows raw formula', async () => {
@@ -200,68 +200,61 @@ describe('SubtopicTableComponent', () => {
   it('shows column ids in headers only during formula editing mode', async () => {
     const { fixture } = await setup('=$Amount*$Rate');
 
-    const headerLabelButtons = () =>
-      Array.from(fixture.nativeElement.querySelectorAll('th button.truncate')) as HTMLButtonElement[];
+    const headerInputs = () => headerRenameInputs(fixture);
 
-    expect(headerLabelButtons()[0]?.textContent?.trim()).toBe('Amount');
+    expect(headerInputs()[0]?.value).toBe('Amount');
 
     const valueInput = getCellInput(fixture, 'subtopic_1', '$Value');
     focusInput(fixture, valueInput);
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(headerLabelButtons()[0]?.textContent?.trim()).toBe('$Amount');
+    expect(headerInputs()[0]?.value).toBe('$Amount');
   });
 
-  it('focuses rename textbox immediately when column rename starts', async () => {
+  it('focuses header textbox immediately on first click', async () => {
     const { fixture } = await setup();
 
-    const renameTrigger = fixture.nativeElement.querySelector('th button.truncate') as HTMLButtonElement | null;
-    expect(renameTrigger).toBeTruthy();
-    renameTrigger?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-
-    await nextFrame();
+    const renameInput = headerRenameInputs(fixture)[0];
+    expect(renameInput).toBeTruthy();
+    renameInput.focus();
+    renameInput.dispatchEvent(new FocusEvent('focus'));
     fixture.detectChanges();
 
-    const renameInput = headerRenameInput(fixture);
-    expect(renameInput).toBeTruthy();
     expect(document.activeElement).toBe(renameInput);
   });
 
   it('commits header rename on Enter and cancels on Escape', async () => {
     const { fixture, renameColumnEvents } = await setup();
 
-    const renameTrigger = fixture.nativeElement.querySelector('th button.truncate') as HTMLButtonElement | null;
-    renameTrigger?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-    await nextFrame();
-    fixture.detectChanges();
-
-    const renameInput = headerRenameInput(fixture);
+    const renameInput = headerRenameInputs(fixture)[0];
     expect(renameInput).toBeTruthy();
     if (!renameInput) {
       return;
     }
+    renameInput.dispatchEvent(new FocusEvent('focus'));
+    fixture.detectChanges();
+
     renameInput.value = 'Principal';
     renameInput.dispatchEvent(new Event('input', { bubbles: true }));
     renameInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await fixture.whenStable();
     fixture.detectChanges();
 
     expect(renameColumnEvents).toHaveLength(1);
     expect(renameColumnEvents[0]).toEqual({ topicId: 'topic_1', columnId: '$Amount', name: 'Principal' });
 
-    const renameTrigger2 = fixture.nativeElement.querySelector('th button.truncate') as HTMLButtonElement | null;
-    renameTrigger2?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-    await nextFrame();
-    fixture.detectChanges();
-
-    const renameInput2 = headerRenameInput(fixture);
+    const renameInput2 = headerRenameInputs(fixture)[0];
     expect(renameInput2).toBeTruthy();
     if (!renameInput2) {
       return;
     }
+    renameInput2.dispatchEvent(new FocusEvent('focus'));
+    fixture.detectChanges();
+
     renameInput2.value = 'Ignored';
     renameInput2.dispatchEvent(new Event('input', { bubbles: true }));
     renameInput2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-    renameInput2.dispatchEvent(new FocusEvent('blur'));
+    await fixture.whenStable();
     fixture.detectChanges();
 
     expect(renameColumnEvents).toHaveLength(1);
