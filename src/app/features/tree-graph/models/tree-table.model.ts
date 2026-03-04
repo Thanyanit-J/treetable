@@ -67,7 +67,7 @@ export function createEmptyCells(columns: TableColumn[]): Record<ColumnId, CellD
 export function slugToColumnId(input: string): string {
   const cleaned = input
     .trim()
-    .replace(/[^A-Za-z0-9_]/g, '');
+    .replace(/\W/g, '');
 
   let base = cleaned.length > 0 ? cleaned : 'Column';
   if (!/^[A-Za-z_]/.test(base)) {
@@ -82,7 +82,7 @@ export function slugToColumnId(input: string): string {
 }
 
 export function isValidColumnId(input: string): boolean {
-  if (!/^\$[A-Za-z_][A-Za-z0-9_]*$/.test(input)) {
+  if (!/^\$[A-Za-z_]\w*$/.test(input)) {
     return false;
   }
   const baseName = input.slice(1);

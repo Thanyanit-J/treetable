@@ -219,7 +219,7 @@ export class PersistenceService {
     const entries = [...replacements.entries()].sort((a, b) => b[0].length - a[0].length);
     for (const [oldId, newId] of entries) {
       const escapedOldId = oldId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const pattern = new RegExp(`(?<![A-Za-z0-9_$])${escapedOldId}(?![A-Za-z0-9_])`, 'g');
+      const pattern = new RegExp(`(?<![\\w$])${escapedOldId}(?!\\w)`, 'g');
       rewritten = rewritten.replace(pattern, newId);
     }
 

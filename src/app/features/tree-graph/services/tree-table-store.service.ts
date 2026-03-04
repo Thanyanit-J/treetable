@@ -498,7 +498,7 @@ export class TreeTableStoreService {
 
   private replaceFormulaToken(formula: string, oldId: ColumnId, newId: ColumnId): string {
     const escapedOldId = oldId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pattern = new RegExp(`(?<![A-Za-z0-9_$])${escapedOldId}(?![A-Za-z0-9_])`, 'g');
+    const pattern = new RegExp(`(?<![\\w$])${escapedOldId}(?!\\w)`, 'g');
     return formula.replace(pattern, newId);
   }
 

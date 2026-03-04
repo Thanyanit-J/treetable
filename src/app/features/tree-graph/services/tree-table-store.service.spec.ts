@@ -161,6 +161,30 @@ describe('TreeTableStoreService', () => {
     expect(updatedRow?.cells[formulaColumn.id]?.raw).toContain('$Principal');
   });
 
+  it('renaming a column only rewrites standalone formula tokens', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const topic = store.topics()[0];
+    if (!topic || topic.children.length === 0 || topic.columns.length === 0) {
+      throw new Error('Expected starter topic shape');
+    }
+
+    const sourceColumn = topic.columns[0]!;
+    const row = topic.children[0]!;
+
+    store.setCellRaw(topic.id, row.id, sourceColumn.id, `=${sourceColumn.id}+$AA+$A_1+x${sourceColumn.id}`);
+    store.renameColumn(topic.id, sourceColumn.id, 'Renamed');
+
+    const updatedTopic = store.topics().find((candidate) => candidate.id === topic.id);
+    const renamed = updatedTopic?.columns.find((column) => column.name === 'Renamed');
+    expect(renamed).toBeDefined();
+    const renamedId = renamed?.id ?? '$Renamed';
+    const updatedRaw = updatedTopic?.children[0]?.cells[renamedId]?.raw ?? '';
+    expect(updatedRaw).toContain(`=${renamedId}+`);
+    expect(updatedRaw).toContain('+$AA+');
+    expect(updatedRaw).toContain('+$A_1+');
+    expect(updatedRaw).toContain(`+x${sourceColumn.id}`);
+  });
+
   it('updates title and supports undo/redo', () => {
     const store = TestBed.inject(TreeTableStoreService);
 

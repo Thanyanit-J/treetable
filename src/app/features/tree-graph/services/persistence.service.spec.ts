@@ -51,18 +51,61 @@ describe('PersistenceService', () => {
     if (!firstTopic) {
       throw new Error('Expected starter topic');
     }
+    const firstChild = firstTopic.children[0];
+    if (!firstChild) {
+      throw new Error('Expected starter child');
+    }
 
     firstTopic.columns = [
       { id: '$A', name: 'A', type: 'number' },
       { id: '$B', name: 'B', type: 'number' },
       { id: '$C', name: 'C', type: 'number' },
     ];
-    firstTopic.children[0]!.cells['$C'] = { raw: '=$A+$B', value: null, error: null };
+    firstChild.cells['$C'] = { raw: '=$A+$B', value: null, error: null };
 
     const json = service.export(state);
     const imported = service.import(json);
     expect(imported.result.ok).toBe(true);
     expect(imported.state?.topics[0]?.columns.map((column) => column.id)).toEqual(['$A', '$B', '$C']);
     expect(imported.state?.topics[0]?.children[0]?.cells['$C']?.raw).toBe('=$A+$B');
+  });
+
+  it('rewrites only standalone formula references during migration', () => {
+    const service = TestBed.inject(PersistenceService);
+
+    const legacy = {
+      version: 1,
+      title: 'Legacy',
+      selectedNodeId: null,
+      topics: [
+        {
+          id: 'topic_1',
+          label: 'Topic',
+          columns: [{ id: '$A-1', name: 'A1', type: 'number' }],
+          children: [
+            {
+              id: 'sub_1',
+              topicId: 'topic_1',
+              label: 'Row',
+              cells: {
+                '$A-1': {
+                  raw: '=$A-1+$A-10+x$A-1',
+                  value: null,
+                  error: null,
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = service.import(JSON.stringify(legacy));
+    expect(result.result.ok).toBe(true);
+    const migratedTopic = result.state?.topics[0];
+    const migratedColumnId = migratedTopic?.columns[0]?.id;
+    expect(migratedColumnId).toBe('$A1');
+    const migratedRaw = migratedTopic?.children[0]?.cells[migratedColumnId ?? '']?.raw;
+    expect(migratedRaw).toBe('=$A1+$A-10+x$A-1');
   });
 });

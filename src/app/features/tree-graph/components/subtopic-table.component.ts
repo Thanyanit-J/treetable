@@ -668,7 +668,7 @@ export class SubtopicTableComponent {
       return null;
     }
 
-    const pattern = /\$[A-Za-z_][A-Za-z0-9_]*/g;
+    const pattern = /\$[A-Za-z_]\w*/g;
     for (const match of raw.matchAll(pattern)) {
       const token = match[0];
       const start = match.index ?? -1;
@@ -685,7 +685,7 @@ export class SubtopicTableComponent {
   }
 
   private getReferenceRangeAtCursor(raw: string, cursor: number): { start: number; end: number } | null {
-    const pattern = /\$[A-Za-z_][A-Za-z0-9_]*/g;
+    const pattern = /\$[A-Za-z_]\w*/g;
     for (const match of raw.matchAll(pattern)) {
       const token = match[0];
       const start = match.index ?? -1;
