@@ -1,9 +1,10 @@
 export type NodeId = string;
 export type ColumnId = string;
+export type CellValue = number | string | null;
 
 export interface CellData {
   raw: string;
-  value: number | string | null;
+  value: CellValue;
   error: string | null;
 }
 

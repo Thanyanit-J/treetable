@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import {
+  CellValue,
   DEFAULT_TOPIC_COLUMNS,
   ImportResult,
   STARTER_STATE,
@@ -193,10 +194,10 @@ export class PersistenceService {
     cells: unknown,
     columns: Array<{ column: TableColumn; sourceId: string }>,
     formulaReplacements: Map<string, string>,
-  ): Record<string, { raw: string; value: number | string | null; error: string | null }> {
+  ): Record<string, { raw: string; value: CellValue; error: string | null }> {
     const cellRecord =
       cells && typeof cells === 'object' ? (cells as Record<string, { raw?: unknown }>) : {};
-    const normalized: Record<string, { raw: string; value: number | string | null; error: string | null }> = {};
+    const normalized: Record<string, { raw: string; value: CellValue; error: string | null }> = {};
 
     for (const item of columns) {
       const rawByNewId = cellRecord[item.column.id]?.raw;

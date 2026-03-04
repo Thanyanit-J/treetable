@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, input, output, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { TreeTopic } from '../models/tree-table.model';
+import { CellValue, TreeTopic } from '../models/tree-table.model';
 import { ColumnContextMenuComponent } from './column-context-menu.component';
 import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scroll-lock';
 
@@ -294,7 +294,7 @@ export class SubtopicTableComponent {
     return this.editingCellKey() === this.makeCellKey(subtopicId, columnId);
   }
 
-  displayCellValue(raw: string, value: number | string | null, error: string | null): string {
+  displayCellValue(raw: string, value: CellValue, error: string | null): string {
     if (error) {
       return error;
     }
@@ -592,7 +592,7 @@ export class SubtopicTableComponent {
     subtopicId: string,
     columnId: string,
     raw: string,
-    value: number | string | null,
+    value: CellValue,
     error: string | null,
   ): string {
     if (this.isEditingCell(subtopicId, columnId)) {
@@ -606,7 +606,7 @@ export class SubtopicTableComponent {
     return `${subtopicId}:${columnId}`;
   }
 
-  private formatValue(value: number | string | null): string {
+  private formatValue(value: CellValue): string {
     if (value === null || value === '') {
       return '—';
     }

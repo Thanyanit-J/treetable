@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { CellValue } from '../models/tree-table.model';
 
 @Component({
   selector: 'app-formula-cell',
@@ -31,7 +32,7 @@ export class FormulaCellComponent {
   readonly label = input.required<string>();
   readonly raw = input.required<string>();
   readonly error = input<string | null>(null);
-  readonly value = input<number | string | null>(null);
+  readonly value = input<CellValue>(null);
   readonly describedBy = input.required<string>();
 
   readonly rawChange = output<string>();
