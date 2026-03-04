@@ -319,7 +319,7 @@ export class TreeTableStoreService {
       return;
     }
 
-    const next = stack[stack.length - 1];
+    const next = stack.at(-1);
     if (!next) {
       return;
     }
@@ -497,9 +497,9 @@ export class TreeTableStoreService {
   }
 
   private replaceFormulaToken(formula: string, oldId: ColumnId, newId: ColumnId): string {
-    const escapedOldId = oldId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedOldId = oldId.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
     const pattern = new RegExp(`(?<![\\w$])${escapedOldId}(?!\\w)`, 'g');
-    return formula.replace(pattern, newId);
+    return formula.replaceAll(pattern, newId);
   }
 
   private defaultTopicColumns(): TableColumn[] {

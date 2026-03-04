@@ -24,8 +24,9 @@ interface PendingDeleteTopic {
   },
   template: `
     <main
-      class="tree-graph-page mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8"
+      class="tree-graph-page mx-auto max-w-(--tree-graph-page-max-width) p-4 sm:p-6 lg:p-8"
       style="
+        --tree-graph-page-max-width: 1500px;
         --subtopic-node-height: 40px;
         --subtopic-gap: 13px;
         --subtopic-table-offset-top: 5px;
@@ -220,7 +221,7 @@ export class TreeGraphPageComponent {
 
   constructor() {
     effect(() => {
-      this.store.topics().length;
+      this.store.topics();
       setTimeout(() => this.updateCardRailOverflow(), 0);
     });
   }
@@ -347,14 +348,18 @@ export class TreeGraphPageComponent {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = typeof reader.result === 'string' ? reader.result : '';
+    void file
+      .text()
+      .then((text) => {
       const result = this.store.importState(text);
       this.showStatusMessage(result);
-      input.value = '';
-    };
-    reader.readAsText(file);
+      })
+      .catch(() => {
+        this.showStatusMessage({ ok: false, error: 'Unable to read JSON file.' });
+      })
+      .finally(() => {
+        input.value = '';
+      });
   }
 
   exportJson(): void {
