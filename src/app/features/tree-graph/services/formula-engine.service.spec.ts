@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { createCellData } from '../models/tree-table.model';
+import { TableColumn, TreeSubtopic, createCellData } from '../models/tree-table.model';
 import { FormulaEngineService } from './formula-engine.service';
 
 function evaluateSingleFormula(raw: string): ReturnType<FormulaEngineService['evaluateRow']>['$Value'] {
@@ -8,6 +8,11 @@ function evaluateSingleFormula(raw: string): ReturnType<FormulaEngineService['ev
   const row = { $Value: createCellData(raw) };
   const result = service.evaluateRow(columns, row);
   return result['$Value'];
+}
+
+function evaluateTopicRows(columns: TableColumn[], rows: TreeSubtopic[]): TreeSubtopic[] {
+  const service = TestBed.inject(FormulaEngineService);
+  return service.evaluateTopicRows(columns, rows);
 }
 
 describe('FormulaEngineService', () => {
@@ -102,5 +107,167 @@ describe('FormulaEngineService', () => {
   it('reports unexpected tokens and division by zero', () => {
     expect(evaluateSingleFormula('=)')?.error).toBe('Unexpected token in formula');
     expect(evaluateSingleFormula('=10/0')?.error).toBe('Division by zero');
+  });
+
+  it('evaluates SUM AVG MIN MAX in whole-column mode with a single bare column id', () => {
+    const columns: TableColumn[] = [
+      { id: '$A', name: 'A', type: 'number' },
+      { id: '$Sum', name: 'Sum', type: 'number' },
+      { id: '$Avg', name: 'Avg', type: 'number' },
+      { id: '$Min', name: 'Min', type: 'number' },
+      { id: '$Max', name: 'Max', type: 'number' },
+    ];
+    const rows: TreeSubtopic[] = [
+      {
+        id: 'row-1',
+        topicId: 'topic-1',
+        label: 'Row 1',
+        cells: {
+          $A: createCellData('1'),
+          $Sum: createCellData('=SUM($A)'),
+          $Avg: createCellData('=AVG($A)'),
+          $Min: createCellData('=MIN($A)'),
+          $Max: createCellData('=MAX($A)'),
+        },
+      },
+      {
+        id: 'row-2',
+        topicId: 'topic-1',
+        label: 'Row 2',
+        cells: {
+          $A: createCellData('2'),
+          $Sum: createCellData('=SUM($A)'),
+          $Avg: createCellData('=AVG($A)'),
+          $Min: createCellData('=MIN($A)'),
+          $Max: createCellData('=MAX($A)'),
+        },
+      },
+      {
+        id: 'row-3',
+        topicId: 'topic-1',
+        label: 'Row 3',
+        cells: {
+          $A: createCellData('3'),
+          $Sum: createCellData('=SUM($A)'),
+          $Avg: createCellData('=AVG($A)'),
+          $Min: createCellData('=MIN($A)'),
+          $Max: createCellData('=MAX($A)'),
+        },
+      },
+    ];
+
+    const evaluated = evaluateTopicRows(columns, rows);
+    for (const row of evaluated) {
+      expect(row.cells['$Sum']?.value).toBe(6);
+      expect(row.cells['$Avg']?.value).toBe(2);
+      expect(row.cells['$Min']?.value).toBe(1);
+      expect(row.cells['$Max']?.value).toBe(3);
+      expect(row.cells['$Sum']?.error).toBeNull();
+    }
+  });
+
+  it('keeps function evaluation row-local when args are not exactly one bare column id', () => {
+    const columns: TableColumn[] = [
+      { id: '$A', name: 'A', type: 'number' },
+      { id: '$B', name: 'B', type: 'number' },
+      { id: '$C', name: 'C', type: 'number' },
+      { id: '$D', name: 'D', type: 'number' },
+      { id: '$E', name: 'E', type: 'number' },
+      { id: '$F', name: 'F', type: 'number' },
+    ];
+    const rows: TreeSubtopic[] = [
+      {
+        id: 'row-1',
+        topicId: 'topic-1',
+        label: 'Row 1',
+        cells: {
+          $A: createCellData('2'),
+          $B: createCellData('3'),
+          $C: createCellData('=SUM($A,1)'),
+          $D: createCellData('=SUM($A,$B)'),
+          $E: createCellData('=SUM($A,SUM($A))'),
+          $F: createCellData('=SUM(($A))'),
+        },
+      },
+      {
+        id: 'row-2',
+        topicId: 'topic-1',
+        label: 'Row 2',
+        cells: {
+          $A: createCellData('4'),
+          $B: createCellData('5'),
+          $C: createCellData('=SUM($A,1)'),
+          $D: createCellData('=SUM($A,$B)'),
+          $E: createCellData('=SUM($A,SUM($A))'),
+          $F: createCellData('=SUM(($A))'),
+        },
+      },
+    ];
+
+    const evaluated = evaluateTopicRows(columns, rows);
+    expect(evaluated[0]?.cells['$C']?.value).toBe(3);
+    expect(evaluated[1]?.cells['$C']?.value).toBe(5);
+    expect(evaluated[0]?.cells['$D']?.value).toBe(5);
+    expect(evaluated[1]?.cells['$D']?.value).toBe(9);
+    expect(evaluated[0]?.cells['$E']?.value).toBe(8);
+    expect(evaluated[1]?.cells['$E']?.value).toBe(10);
+    expect(evaluated[0]?.cells['$F']?.value).toBe(2);
+    expect(evaluated[1]?.cells['$F']?.value).toBe(4);
+  });
+
+  it('fails fast when whole-column aggregation includes an errored row', () => {
+    const columns: TableColumn[] = [
+      { id: '$A', name: 'A', type: 'number' },
+      { id: '$B', name: 'B', type: 'number' },
+    ];
+    const rows: TreeSubtopic[] = [
+      {
+        id: 'row-1',
+        topicId: 'topic-1',
+        label: 'Row 1',
+        cells: {
+          $A: createCellData('=10/0'),
+          $B: createCellData('=SUM($A)'),
+        },
+      },
+      {
+        id: 'row-2',
+        topicId: 'topic-1',
+        label: 'Row 2',
+        cells: {
+          $A: createCellData('2'),
+          $B: createCellData('=SUM($A)'),
+        },
+      },
+    ];
+
+    const evaluated = evaluateTopicRows(columns, rows);
+    expect(evaluated[0]?.cells['$B']?.error).toBe('Division by zero');
+    expect(evaluated[1]?.cells['$B']?.error).toBe('Division by zero');
+  });
+
+  it('detects circular references involving whole-column aggregation', () => {
+    const columns: TableColumn[] = [{ id: '$A', name: 'A', type: 'number' }];
+    const rows: TreeSubtopic[] = [
+      {
+        id: 'row-1',
+        topicId: 'topic-1',
+        label: 'Row 1',
+        cells: {
+          $A: createCellData('=SUM($A)'),
+        },
+      },
+      {
+        id: 'row-2',
+        topicId: 'topic-1',
+        label: 'Row 2',
+        cells: {
+          $A: createCellData('2'),
+        },
+      },
+    ];
+
+    const evaluated = evaluateTopicRows(columns, rows);
+    expect(evaluated[0]?.cells['$A']?.error).toContain('Circular');
   });
 });

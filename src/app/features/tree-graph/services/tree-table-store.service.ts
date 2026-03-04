@@ -362,8 +362,9 @@ export class TreeTableStoreService {
             child.cells[column.id] = createCellData('');
           }
         }
-        child.cells = this.formulaEngine.evaluateRow(topic.columns, child.cells);
       }
+
+      topic.children = this.formulaEngine.evaluateTopicRows(topic.columns, topic.children);
     }
 
     return next;

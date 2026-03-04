@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { CellData, TableColumn } from '../models/tree-table.model';
+import { CellData, TableColumn, TreeSubtopic } from '../models/tree-table.model';
 
 interface FormulaSuccess {
   value: number;
@@ -31,7 +31,8 @@ interface Token {
 }
 
 interface EvalContext {
-  resolveColumn: (columnId: string) => FormulaResult;
+  resolveColumnInRow: (columnId: string) => FormulaResult;
+  resolveColumnSeries: (columnId: string) => FormulaSeriesResult;
 }
 
 interface ParseState {
@@ -44,49 +45,84 @@ type FunctionArgumentResult =
   | { ok: true; value: number | number[] }
   | { ok: false; error: string };
 
+interface FormulaSeriesSuccess {
+  values: number[];
+  error: null;
+}
+
+interface FormulaSeriesFailure {
+  values: null;
+  error: string;
+}
+
+type FormulaSeriesResult = FormulaSeriesSuccess | FormulaSeriesFailure;
+
 @Injectable({ providedIn: 'root' })
 export class FormulaEngineService {
   evaluateRow(columns: TableColumn[], cells: Record<string, CellData>): Record<string, CellData> {
-    const next: Record<string, CellData> = structuredClone(cells);
+    const [evaluated] = this.evaluateTopicRows(columns, [
+      {
+        id: '__row__',
+        topicId: '__topic__',
+        label: '__row__',
+        cells: structuredClone(cells),
+      },
+    ]);
+    return evaluated?.cells ?? structuredClone(cells);
+  }
+
+  evaluateTopicRows(columns: TableColumn[], rows: TreeSubtopic[]): TreeSubtopic[] {
+    const nextRows = structuredClone(rows);
+    const rowById = new Map(nextRows.map((row) => [row.id, row]));
     const cache = new Map<string, FormulaResult>();
     const stack = new Set<string>();
 
-    const resolveColumn = (columnId: string): FormulaResult => {
-      const inCache = cache.get(columnId);
+    const resolveCell = (rowId: string, columnId: string): FormulaResult => {
+      const cacheKey = this.makeCellKey(rowId, columnId);
+      const inCache = cache.get(cacheKey);
       if (inCache) {
         return inCache;
       }
 
-      if (stack.has(columnId)) {
+      if (stack.has(cacheKey)) {
         return { value: null, error: 'Circular reference' };
       }
 
-      const cell = next[columnId];
+      const row = rowById.get(rowId);
+      if (!row) {
+        return { value: null, error: `Unknown column: ${columnId}` };
+      }
+
+      const cell = row.cells[columnId];
       if (!cell) {
         return { value: null, error: `Unknown column: ${columnId}` };
       }
 
-      stack.add(columnId);
+      stack.add(cacheKey);
       const result = this.evaluateRawCell(cell.raw, {
-        resolveColumn,
+        resolveColumnInRow: (targetColumnId) => resolveCell(rowId, targetColumnId),
+        resolveColumnSeries: (targetColumnId) => this.resolveColumnSeries(nextRows, resolveCell, targetColumnId),
       });
-      stack.delete(columnId);
+      stack.delete(cacheKey);
 
-      cache.set(columnId, result);
+      cache.set(cacheKey, result);
       return result;
     };
 
-    for (const column of columns) {
-      const result = resolveColumn(column.id);
-      const current = next[column.id] ?? { raw: '', value: null, error: null };
-      if (result.error) {
-        next[column.id] = {
-          ...current,
-          value: null,
-          error: result.error,
-        };
-      } else {
-        next[column.id] = {
+    for (const row of nextRows) {
+      for (const column of columns) {
+        const result = resolveCell(row.id, column.id);
+        const current = row.cells[column.id] ?? { raw: '', value: null, error: null };
+        if (result.error) {
+          row.cells[column.id] = {
+            ...current,
+            value: null,
+            error: result.error,
+          };
+          continue;
+        }
+
+        row.cells[column.id] = {
           ...current,
           value: result.value,
           error: null,
@@ -94,7 +130,31 @@ export class FormulaEngineService {
       }
     }
 
-    return next;
+    return nextRows;
+  }
+
+  private makeCellKey(rowId: string, columnId: string): string {
+    return `${rowId}::${columnId}`;
+  }
+
+  private resolveColumnSeries(
+    rows: TreeSubtopic[],
+    resolveCell: (rowId: string, columnId: string) => FormulaResult,
+    columnId: string,
+  ): FormulaSeriesResult {
+    const values: number[] = [];
+
+    for (const row of rows) {
+      const result = resolveCell(row.id, columnId);
+      if (result.error) {
+        return { values: null, error: result.error };
+      }
+
+      const value = result.value ?? 0;
+      values.push(value);
+    }
+
+    return { values, error: null };
   }
 
   private evaluateRawCell(raw: string, context: EvalContext): FormulaResult {
@@ -248,7 +308,7 @@ export class FormulaEngineService {
       };
     }
 
-    return state.context.resolveColumn(firstIdentifier);
+    return state.context.resolveColumnInRow(firstIdentifier);
   }
 
   private parseParenthesizedFactor(state: ParseState): FormulaResult | null {
@@ -270,6 +330,14 @@ export class FormulaEngineService {
   }
 
   private parseFunctionCall(state: ParseState, functionName: string): FormulaResult {
+    const wholeColumnArgument = this.tryParseWholeColumnAggregateArg(state, functionName);
+    if (wholeColumnArgument) {
+      if (wholeColumnArgument.values === null) {
+        return { value: null, error: wholeColumnArgument.error };
+      }
+      return this.runFunction(functionName, [wholeColumnArgument.values]);
+    }
+
     const args: Array<number | number[]> = [];
     if (!this.match(state, 'rightParen')) {
       while (true) {
@@ -291,6 +359,25 @@ export class FormulaEngineService {
     }
 
     return this.runFunction(functionName, args);
+  }
+
+  private tryParseWholeColumnAggregateArg(state: ParseState, functionName: string): FormulaSeriesResult | null {
+    if (!this.isAggregateFunction(functionName)) {
+      return null;
+    }
+
+    const firstToken = this.peek(state);
+    const secondToken = state.tokens[state.cursor + 1];
+    if (firstToken?.type !== 'identifier' || secondToken?.type !== 'rightParen') {
+      return null;
+    }
+
+    if (!/^\$[A-Za-z_]\w*$/.test(firstToken.lexeme)) {
+      return null;
+    }
+
+    state.cursor += 2;
+    return state.context.resolveColumnSeries(firstToken.lexeme);
   }
 
   private parseFunctionArg(state: ParseState): FunctionArgumentResult {
@@ -363,6 +450,11 @@ export class FormulaEngineService {
 
   private lastConsumed(state: ParseState): Token | null {
     return state.tokens[state.cursor - 1] ?? null;
+  }
+
+  private isAggregateFunction(functionName: string): boolean {
+    const normalized = functionName.toUpperCase();
+    return normalized === 'SUM' || normalized === 'AVG' || normalized === 'MIN' || normalized === 'MAX';
   }
 
   private runFunction(name: string, args: Array<number | number[]>): FormulaResult {

@@ -250,6 +250,42 @@ describe('TreeTableStoreService', () => {
     expect(afterRemoveTopic?.children[1]?.cells[formulaColumn.id]?.raw).toBe('');
   });
 
+  it('recalculates topic rows with whole-column and row-local aggregate semantics', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const topic = store.topics()[0];
+    if (!topic || topic.children.length < 2 || topic.columns.length < 2) {
+      throw new Error('Expected starter topic with at least two rows and two columns');
+    }
+
+    const sourceColumn = topic.columns[0];
+    const targetColumn = topic.columns[1];
+    const firstRow = topic.children[0];
+    if (!sourceColumn || !targetColumn || !firstRow) {
+      throw new Error('Expected starter topic with at least two rows and two columns');
+    }
+
+    store.setCellRaw(topic.id, firstRow.id, targetColumn.id, `=SUM(${sourceColumn.id})`);
+    const wholeColumnTopic = store.topics().find((candidate) => candidate.id === topic.id);
+    const wholeRow1 = wholeColumnTopic?.children[0]?.cells[sourceColumn.id]?.value;
+    const wholeRow2 = wholeColumnTopic?.children[1]?.cells[sourceColumn.id]?.value;
+    if (typeof wholeRow1 !== 'number' || typeof wholeRow2 !== 'number') {
+      throw new Error('Expected numeric source values after whole-column formula');
+    }
+    const expectedWhole = wholeRow1 + wholeRow2;
+    expect(wholeColumnTopic?.children[0]?.cells[targetColumn.id]?.value).toBe(expectedWhole);
+    expect(wholeColumnTopic?.children[1]?.cells[targetColumn.id]?.value).toBe(expectedWhole);
+
+    store.setCellRaw(topic.id, firstRow.id, targetColumn.id, `=SUM(${sourceColumn.id},1)`);
+    const rowLocalTopic = store.topics().find((candidate) => candidate.id === topic.id);
+    const row1Source = rowLocalTopic?.children[0]?.cells[sourceColumn.id]?.value;
+    const row2Source = rowLocalTopic?.children[1]?.cells[sourceColumn.id]?.value;
+    if (typeof row1Source !== 'number' || typeof row2Source !== 'number') {
+      throw new Error('Expected numeric source values after row-local formula');
+    }
+    expect(rowLocalTopic?.children[0]?.cells[targetColumn.id]?.value).toBe(row1Source + 1);
+    expect(rowLocalTopic?.children[1]?.cells[targetColumn.id]?.value).toBe(row2Source + 1);
+  });
+
   it('normalizes malformed topic column ids and rewrites row formulas during recalculation', () => {
     const store = TestBed.inject(TreeTableStoreService);
     const storeInternal = store as unknown as {
