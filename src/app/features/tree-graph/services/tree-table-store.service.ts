@@ -375,49 +375,73 @@ export class TreeTableStoreService {
     const seen = new Set<string>();
     const replacements = new Map<string, string>();
 
-    topic.columns = topic.columns.map((column, index) => {
-      const nextName = column.name.trim() || `Column ${index + 1}`;
-      let nextId = isValidColumnId(column.id) ? column.id : slugToColumnId(nextName);
+    topic.columns = topic.columns.map((column, index) =>
+      this.normalizeTopicColumn(column, index, seen, replacements),
+    );
+    this.applyTopicColumnReplacements(topic.children, replacements);
+  }
 
-      if (seen.has(nextId)) {
-        let suffix = 2;
-        const baseId = nextId;
-        while (seen.has(nextId)) {
-          nextId = `${baseId}_${suffix}`;
-          suffix += 1;
-        }
+  private normalizeTopicColumn(
+    column: TableColumn,
+    index: number,
+    seen: Set<string>,
+    replacements: Map<string, string>,
+  ): TableColumn {
+    const nextName = column.name.trim() || `Column ${index + 1}`;
+    const baseId = isValidColumnId(column.id) ? column.id : slugToColumnId(nextName);
+    const nextId = this.ensureUniqueColumnId(baseId, seen);
+
+    if (column.id !== nextId) {
+      replacements.set(column.id, nextId);
+    }
+
+    return {
+      id: nextId,
+      name: nextName,
+      type: column.type === 'text' ? 'text' : 'number',
+    };
+  }
+
+  private ensureUniqueColumnId(baseId: ColumnId, seen: Set<string>): ColumnId {
+    let nextId = baseId;
+    let suffix = 2;
+    while (seen.has(nextId)) {
+      nextId = `${baseId}_${suffix}`;
+      suffix += 1;
+    }
+    seen.add(nextId);
+    return nextId;
+  }
+
+  private applyTopicColumnReplacements(children: TreeSubtopic[], replacements: ReadonlyMap<string, string>): void {
+    if (replacements.size === 0) {
+      return;
+    }
+
+    for (const child of children) {
+      this.renameChildCellKeys(child, replacements);
+      this.rewriteChildFormulaReferences(child, replacements);
+    }
+  }
+
+  private renameChildCellKeys(child: TreeSubtopic, replacements: ReadonlyMap<string, string>): void {
+    for (const [oldId, newId] of replacements.entries()) {
+      const oldCell = child.cells[oldId];
+      if (oldCell) {
+        child.cells[newId] = oldCell;
+        delete child.cells[oldId];
+      }
+    }
+  }
+
+  private rewriteChildFormulaReferences(child: TreeSubtopic, replacements: ReadonlyMap<string, string>): void {
+    for (const cell of Object.values(child.cells)) {
+      if (!cell.raw.trim().startsWith('=')) {
+        continue;
       }
 
-      seen.add(nextId);
-      if (column.id !== nextId) {
-        replacements.set(column.id, nextId);
-      }
-
-      return {
-        id: nextId,
-        name: nextName,
-        type: column.type === 'text' ? 'text' : 'number',
-      };
-    });
-
-    if (replacements.size > 0) {
-      for (const child of topic.children) {
-        for (const [oldId, newId] of replacements.entries()) {
-          const oldCell = child.cells[oldId];
-          if (oldCell) {
-            child.cells[newId] = oldCell;
-            delete child.cells[oldId];
-          }
-        }
-
-        for (const cell of Object.values(child.cells)) {
-          if (!cell.raw.trim().startsWith('=')) {
-            continue;
-          }
-          for (const [oldId, newId] of replacements.entries()) {
-            cell.raw = this.replaceFormulaToken(cell.raw, oldId, newId);
-          }
-        }
+      for (const [oldId, newId] of replacements.entries()) {
+        cell.raw = this.replaceFormulaToken(cell.raw, oldId, newId);
       }
     }
   }

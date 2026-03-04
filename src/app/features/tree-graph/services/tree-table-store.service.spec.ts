@@ -249,4 +249,99 @@ describe('TreeTableStoreService', () => {
     expect(afterRemoveTopic?.children[0]?.cells[formulaColumn.id]?.raw).toBe('');
     expect(afterRemoveTopic?.children[1]?.cells[formulaColumn.id]?.raw).toBe('');
   });
+
+  it('normalizes malformed topic column ids and rewrites row formulas during recalculation', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const storeInternal = store as unknown as {
+      mutate: (mutator: (state: { topics: Array<{ columns: Array<{ id: string; name: string; type: string }>; children: Array<{ cells: Record<string, { raw: string; value: number | string | null; error: string | null }> }> }> }) => void) => void;
+    };
+
+    storeInternal.mutate((state) => {
+      const topic = state.topics[0];
+      if (!topic || topic.children.length === 0) {
+        throw new Error('Expected starter topic');
+      }
+
+      // Intentionally invalid IDs: they do not match the required "$<word>" column-id format.
+      topic.columns = [
+        { id: 'bad-1', name: 'A', type: 'number' },
+        { id: 'bad-2', name: 'B', type: 'number' },
+      ];
+
+      const firstRow = topic.children[0];
+      if (!firstRow) {
+        throw new Error('Expected starter row');
+      }
+
+      firstRow.cells = {
+        'bad-1': { raw: '1', value: '1', error: null },
+        'bad-2': { raw: '=bad-1+bad-2', value: null, error: null },
+      };
+    });
+
+    const topic = store.topics()[0];
+    expect(topic?.columns.map((column) => column.id)).toEqual(['$A', '$B']);
+    const firstRow = topic?.children[0];
+    expect(firstRow?.cells['$A']?.raw).toBe('1');
+    expect(firstRow?.cells['$B']?.raw).toBe('=$A+$B');
+    expect(firstRow?.cells['bad-1']).toBeUndefined();
+    expect(firstRow?.cells['bad-2']).toBeUndefined();
+  });
+
+  it('applies unique suffixes for normalized id collisions and rewrites formulas', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const storeInternal = store as unknown as {
+      mutate: (mutator: (state: { topics: Array<{ columns: Array<{ id: string; name: string; type: string }>; children: Array<{ cells: Record<string, { raw: string; value: number | string | null; error: string | null }> }> }> }) => void) => void;
+    };
+
+    storeInternal.mutate((state) => {
+      const topic = state.topics[0];
+      if (!topic || topic.children.length === 0) {
+        throw new Error('Expected starter topic');
+      }
+
+      topic.columns = [
+        { id: 'bad-a', name: 'A', type: 'number' },
+        { id: 'bad-b', name: 'A', type: 'number' },
+      ];
+
+      const firstRow = topic.children[0];
+      if (!firstRow) {
+        throw new Error('Expected starter row');
+      }
+
+      firstRow.cells = {
+        'bad-a': { raw: '2', value: '2', error: null },
+        'bad-b': { raw: '=bad-a+bad-b', value: null, error: null },
+      };
+    });
+
+    const topic = store.topics()[0];
+    expect(topic?.columns.map((column) => column.id)).toEqual(['$A', '$A_2']);
+    const firstRow = topic?.children[0];
+    expect(firstRow?.cells['$A']?.raw).toBe('2');
+    expect(firstRow?.cells['$A_2']?.raw).toBe('=$A+$A_2');
+  });
+
+  it('keeps formulas unchanged when column ids are already valid', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const topic = store.topics()[0];
+    if (!topic || topic.children.length === 0 || topic.columns.length < 2) {
+      throw new Error('Expected starter topic');
+    }
+
+    const firstRow = topic.children[0];
+    const firstColumn = topic.columns[0];
+    const secondColumn = topic.columns[1];
+    if (!firstRow || !firstColumn || !secondColumn) {
+      throw new Error('Expected starter topic');
+    }
+
+    const rawBefore = `=${firstColumn.id}+${secondColumn.id}`;
+    store.setCellRaw(topic.id, firstRow.id, secondColumn.id, rawBefore);
+
+    const updatedTopic = store.topics().find((candidate) => candidate.id === topic.id);
+    const rawAfter = updatedTopic?.children[0]?.cells[secondColumn.id]?.raw;
+    expect(rawAfter).toBe(rawBefore);
+  });
 });
