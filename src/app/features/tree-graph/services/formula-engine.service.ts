@@ -34,6 +34,12 @@ interface EvalContext {
   resolveColumn: (columnId: string) => FormulaResult;
 }
 
+interface ParseState {
+  tokens: Token[];
+  cursor: number;
+  context: EvalContext;
+}
+
 type FunctionArgumentResult =
   | { ok: true; value: number | number[] }
   | { ok: false; error: string };
@@ -109,159 +115,254 @@ export class FormulaEngineService {
       return { value: null, error: tokens.error };
     }
 
-    let cursor = 0;
-
-    const peek = () => tokens.value[cursor];
-    const match = (type: TokenType): boolean => {
-      if (peek()?.type === type) {
-        cursor += 1;
-        return true;
-      }
-      return false;
-    };
-
-    const expect = (type: TokenType, message: string): Token | FormulaFailure => {
-      if (!match(type)) {
-        return { value: null, error: message };
-      }
-      const consumed = tokens.value[cursor - 1];
-      if (!consumed) {
-        return { value: null, error: message };
-      }
-      return consumed;
-    };
-
-    const parseExpression = (): FormulaResult => {
-      let left = parseTerm();
-      while (!left.error && (match('plus') || match('minus'))) {
-        const operator = tokens.value[cursor - 1]?.type;
-        const right = parseTerm();
-        if (right.error) {
-          return right;
-        }
-        const rightValue = right.value ?? 0;
-        const leftValue = left.value ?? 0;
-        left = {
-          value: operator === 'plus' ? leftValue + rightValue : leftValue - rightValue,
-          error: null,
-        };
-      }
-      return left;
-    };
-
-    const parseTerm = (): FormulaResult => {
-      let left = parseFactor();
-      while (!left.error && (match('multiply') || match('divide'))) {
-        const operator = tokens.value[cursor - 1]?.type;
-        const right = parseFactor();
-        if (right.error) {
-          return right;
-        }
-        const rightValue = right.value ?? 0;
-        const leftValue = left.value ?? 0;
-        if (operator === 'divide' && rightValue === 0) {
-          return { value: null, error: 'Division by zero' };
-        }
-        left = {
-          value: operator === 'multiply' ? leftValue * rightValue : leftValue / rightValue,
-          error: null,
-        };
-      }
-      return left;
-    };
-
-    const parseFactor = (): FormulaResult => {
-      if (match('plus')) {
-        return parseFactor();
-      }
-      if (match('minus')) {
-        const factor = parseFactor();
-        if (factor.error) {
-          return factor;
-        }
-        return { value: -(factor.value ?? 0), error: null };
-      }
-
-      if (match('number')) {
-        return { value: Number(tokens.value[cursor - 1]?.lexeme), error: null };
-      }
-
-      if (match('identifier')) {
-        const firstIdentifier = tokens.value[cursor - 1]?.lexeme;
-        if (!firstIdentifier) {
-          return { value: null, error: 'Missing identifier' };
-        }
-
-        if (match('leftParen')) {
-          const args: Array<number | number[]> = [];
-          if (!match('rightParen')) {
-            while (true) {
-              const parsedArgument = parseFunctionArg();
-              if (!parsedArgument.ok) {
-                return { value: null, error: parsedArgument.error };
-              }
-              args.push(parsedArgument.value);
-              if (match('rightParen')) {
-                break;
-              }
-              const comma = expect('comma', 'Expected comma between function arguments');
-              if ('error' in comma) {
-                return comma;
-              }
-            }
-          }
-          return this.runFunction(firstIdentifier, args);
-        }
-
-        if (firstIdentifier === 'children' && match('dot')) {
-          return {
-            value: null,
-            error: 'children.* is not supported in subtopic-only table mode',
-          };
-        }
-
-        return context.resolveColumn(firstIdentifier);
-      }
-
-      if (match('leftParen')) {
-        const nested = parseExpression();
-        if (nested.error) {
-          return nested;
-        }
-        const rightParen = expect('rightParen', 'Expected closing parenthesis');
-        if ('error' in rightParen) {
-          return rightParen;
-        }
-        return nested;
-      }
-
-      return { value: null, error: 'Unexpected token in formula' };
-    };
-
-    const parseFunctionArg = (): FunctionArgumentResult => {
-      if (peek()?.type === 'identifier' && peek()?.lexeme === 'children') {
-        return {
-          ok: false,
-          error: 'children.* is not supported in subtopic-only table mode',
-        };
-      }
-      const parsed = parseExpression();
-      if (parsed.error) {
-        return { ok: false, error: parsed.error };
-      }
-      return { ok: true, value: parsed.value ?? 0 };
-    };
-
-    const result = parseExpression();
+    const state: ParseState = { tokens: tokens.value, cursor: 0, context };
+    const result = this.parseExpression(state);
     if (result.error) {
       return result;
     }
 
-    if (cursor < tokens.value.length) {
+    if (state.cursor < state.tokens.length) {
       return { value: null, error: 'Unexpected trailing formula tokens' };
     }
 
     return result;
+  }
+
+  private parseExpression(state: ParseState): FormulaResult {
+    let left = this.parseTerm(state);
+    while (!left.error) {
+      const operator = this.readAdditiveOperator(state);
+      if (!operator) {
+        break;
+      }
+
+      const right = this.parseTerm(state);
+      if (right.error) {
+        return right;
+      }
+
+      const rightValue = right.value ?? 0;
+      const leftValue = left.value ?? 0;
+      left = {
+        value: operator === 'plus' ? leftValue + rightValue : leftValue - rightValue,
+        error: null,
+      };
+    }
+    return left;
+  }
+
+  private parseTerm(state: ParseState): FormulaResult {
+    let left = this.parseFactor(state);
+    while (!left.error) {
+      const operator = this.readMultiplicativeOperator(state);
+      if (!operator) {
+        break;
+      }
+
+      const right = this.parseFactor(state);
+      if (right.error) {
+        return right;
+      }
+
+      const rightValue = right.value ?? 0;
+      const leftValue = left.value ?? 0;
+      if (operator === 'divide' && rightValue === 0) {
+        return { value: null, error: 'Division by zero' };
+      }
+
+      left = {
+        value: operator === 'multiply' ? leftValue * rightValue : leftValue / rightValue,
+        error: null,
+      };
+    }
+    return left;
+  }
+
+  private parseFactor(state: ParseState): FormulaResult {
+    const unary = this.parseUnaryFactor(state);
+    if (unary) {
+      return unary;
+    }
+
+    const number = this.parseNumberFactor(state);
+    if (number) {
+      return number;
+    }
+
+    const identifier = this.parseIdentifierFactor(state);
+    if (identifier) {
+      return identifier;
+    }
+
+    const grouped = this.parseParenthesizedFactor(state);
+    if (grouped) {
+      return grouped;
+    }
+
+    return { value: null, error: 'Unexpected token in formula' };
+  }
+
+  private parseUnaryFactor(state: ParseState): FormulaResult | null {
+    if (this.match(state, 'plus')) {
+      return this.parseFactor(state);
+    }
+
+    if (!this.match(state, 'minus')) {
+      return null;
+    }
+
+    const factor = this.parseFactor(state);
+    if (factor.error) {
+      return factor;
+    }
+    return { value: -(factor.value ?? 0), error: null };
+  }
+
+  private parseNumberFactor(state: ParseState): FormulaResult | null {
+    const numberToken = this.consumeIf(state, 'number');
+    if (!numberToken) {
+      return null;
+    }
+    return { value: Number(numberToken.lexeme), error: null };
+  }
+
+  private parseIdentifierFactor(state: ParseState): FormulaResult | null {
+    const identifierToken = this.consumeIf(state, 'identifier');
+    if (!identifierToken) {
+      return null;
+    }
+
+    const firstIdentifier = identifierToken.lexeme;
+    if (!firstIdentifier) {
+      return { value: null, error: 'Missing identifier' };
+    }
+
+    if (this.match(state, 'leftParen')) {
+      return this.parseFunctionCall(state, firstIdentifier);
+    }
+
+    if (firstIdentifier === 'children' && this.match(state, 'dot')) {
+      return {
+        value: null,
+        error: 'children.* is not supported in subtopic-only table mode',
+      };
+    }
+
+    return state.context.resolveColumn(firstIdentifier);
+  }
+
+  private parseParenthesizedFactor(state: ParseState): FormulaResult | null {
+    if (!this.match(state, 'leftParen')) {
+      return null;
+    }
+
+    const nested = this.parseExpression(state);
+    if (nested.error) {
+      return nested;
+    }
+
+    const rightParen = this.expect(state, 'rightParen', 'Expected closing parenthesis');
+    if ('error' in rightParen) {
+      return rightParen;
+    }
+
+    return nested;
+  }
+
+  private parseFunctionCall(state: ParseState, functionName: string): FormulaResult {
+    const args: Array<number | number[]> = [];
+    if (!this.match(state, 'rightParen')) {
+      while (true) {
+        const parsedArgument = this.parseFunctionArg(state);
+        if (!parsedArgument.ok) {
+          return { value: null, error: parsedArgument.error };
+        }
+        args.push(parsedArgument.value);
+
+        if (this.match(state, 'rightParen')) {
+          break;
+        }
+
+        const comma = this.expect(state, 'comma', 'Expected comma between function arguments');
+        if ('error' in comma) {
+          return comma;
+        }
+      }
+    }
+
+    return this.runFunction(functionName, args);
+  }
+
+  private parseFunctionArg(state: ParseState): FunctionArgumentResult {
+    const token = this.peek(state);
+    if (token?.type === 'identifier' && token.lexeme === 'children') {
+      return {
+        ok: false,
+        error: 'children.* is not supported in subtopic-only table mode',
+      };
+    }
+
+    const parsed = this.parseExpression(state);
+    if (parsed.error) {
+      return { ok: false, error: parsed.error };
+    }
+    return { ok: true, value: parsed.value ?? 0 };
+  }
+
+  private readAdditiveOperator(state: ParseState): 'plus' | 'minus' | null {
+    if (this.match(state, 'plus')) {
+      return 'plus';
+    }
+    if (this.match(state, 'minus')) {
+      return 'minus';
+    }
+    return null;
+  }
+
+  private readMultiplicativeOperator(state: ParseState): 'multiply' | 'divide' | null {
+    if (this.match(state, 'multiply')) {
+      return 'multiply';
+    }
+    if (this.match(state, 'divide')) {
+      return 'divide';
+    }
+    return null;
+  }
+
+  private peek(state: ParseState): Token | undefined {
+    return state.tokens[state.cursor];
+  }
+
+  private match(state: ParseState, type: TokenType): boolean {
+    if (this.peek(state)?.type === type) {
+      state.cursor += 1;
+      return true;
+    }
+    return false;
+  }
+
+  private consumeIf(state: ParseState, type: TokenType): Token | null {
+    if (!this.match(state, type)) {
+      return null;
+    }
+    return this.lastConsumed(state);
+  }
+
+  private expect(state: ParseState, type: TokenType, message: string): Token | FormulaFailure {
+    if (!this.match(state, type)) {
+      return { value: null, error: message };
+    }
+
+    const consumed = this.lastConsumed(state);
+    if (!consumed) {
+      return { value: null, error: message };
+    }
+
+    return consumed;
+  }
+
+  private lastConsumed(state: ParseState): Token | null {
+    return state.tokens[state.cursor - 1] ?? null;
   }
 
   private runFunction(name: string, args: Array<number | number[]>): FormulaResult {
