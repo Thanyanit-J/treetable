@@ -57,9 +57,9 @@ describe('PersistenceService', () => {
     }
 
     firstTopic.columns = [
-      { id: '$A', name: 'A', type: 'number' },
-      { id: '$B', name: 'B', type: 'number' },
-      { id: '$C', name: 'C', type: 'number' },
+      { id: '$A', name: 'A', type: 'number', summaryMode: 'sum' },
+      { id: '$B', name: 'B', type: 'number', summaryMode: 'none' },
+      { id: '$C', name: 'C', type: 'number', summaryMode: 'none' },
     ];
     firstChild.cells['$C'] = { raw: '=$A+$B', value: null, error: null };
 
@@ -67,6 +67,7 @@ describe('PersistenceService', () => {
     const imported = service.import(json);
     expect(imported.result.ok).toBe(true);
     expect(imported.state?.topics[0]?.columns.map((column) => column.id)).toEqual(['$A', '$B', '$C']);
+    expect(imported.state?.topics[0]?.columns[0]?.summaryMode).toBe('sum');
     expect(imported.state?.topics[0]?.children[0]?.cells['$C']?.raw).toBe('=$A+$B');
   });
 
@@ -150,5 +151,48 @@ describe('PersistenceService', () => {
     expect(migratedTopic?.columns[0]?.id).toBe('$A1');
     expect(migratedTopic?.children[0]?.cells['$A1']?.raw).toBe('new-value');
     expect(migratedTopic?.children[1]?.cells['$A1']?.raw).toBe('old-only');
+  });
+
+  it('defaults summary mode to none for legacy columns without summary mode', () => {
+    const service = TestBed.inject(PersistenceService);
+    const state = service.load();
+    const firstTopic = state.topics[0];
+    if (!firstTopic) {
+      throw new Error('Expected starter topic');
+    }
+
+    firstTopic.columns = [{ id: '$A', name: 'A', type: 'number' }];
+    const imported = service.import(service.export(state));
+    expect(imported.result.ok).toBe(true);
+    expect(imported.state?.topics[0]?.columns[0]?.summaryMode).toBe('none');
+  });
+
+  it('normalizes invalid summary mode to none during import', () => {
+    const service = TestBed.inject(PersistenceService);
+
+    const invalid = {
+      version: 1,
+      title: 'Invalid Summary',
+      selectedNodeId: null,
+      topics: [
+        {
+          id: 'topic_1',
+          label: 'Topic',
+          columns: [{ id: '$A', name: 'A', type: 'number', summaryMode: 'avg' }],
+          children: [
+            {
+              id: 'sub_1',
+              topicId: 'topic_1',
+              label: 'Row',
+              cells: { $A: { raw: '1', value: 1, error: null } },
+            },
+          ],
+        },
+      ],
+    };
+
+    const imported = service.import(JSON.stringify(invalid));
+    expect(imported.result.ok).toBe(true);
+    expect(imported.state?.topics[0]?.columns[0]?.summaryMode).toBe('none');
   });
 });

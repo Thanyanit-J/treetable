@@ -49,6 +49,14 @@ import {
           Rename column
         </button>
         <button
+          (click)="action.emit('toggleSummary')"
+          class="block w-full rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+          role="menuitem"
+          type="button"
+        >
+          {{ summaryMode() === 'sum' ? 'Remove summary cell' : 'Add summary cell' }}
+        </button>
+        <button
           (click)="action.emit('delete')"
           [disabled]="!canDelete()"
           class="block w-full rounded px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -67,8 +75,9 @@ export class ColumnContextMenuComponent {
   readonly x = input(0);
   readonly y = input(0);
   readonly canDelete = input(true);
+  readonly summaryMode = input<'none' | 'sum'>('none');
 
-  readonly action = output<'insertLeft' | 'insertRight' | 'rename' | 'delete'>();
+  readonly action = output<'insertLeft' | 'insertRight' | 'rename' | 'delete' | 'toggleSummary'>();
   readonly menuClosed = output<void>();
 
   private readonly menuRef = viewChild<ElementRef<HTMLElement>>('menu');

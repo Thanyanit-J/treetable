@@ -127,6 +127,7 @@ interface PendingDeleteTopic {
                     (insertColumn)="store.insertColumn($event.topicId, $event.referenceColumnId, $event.side)"
                     (deleteColumn)="onDeleteColumn($event.topicId, $event.columnId)"
                     (renameColumn)="store.renameColumn($event.topicId, $event.columnId, $event.name)"
+                    (setColumnSummary)="store.setColumnSummary($event.topicId, $event.columnId, $event.mode)"
                   />
                 </div>
               </div>

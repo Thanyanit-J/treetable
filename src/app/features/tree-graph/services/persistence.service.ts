@@ -162,6 +162,7 @@ export class PersistenceService {
             ? candidate.name
             : `Column ${index + 1}`;
         const type: 'number' | 'text' = candidate.type === 'text' ? 'text' : 'number';
+        const summaryMode: 'none' | 'sum' = candidate.summaryMode === 'sum' ? 'sum' : 'none';
 
         let id = slugToColumnId(name);
         if (typeof candidate.id === 'string' && isValidColumnId(candidate.id)) {
@@ -177,11 +178,11 @@ export class PersistenceService {
         seen.add(uniqueId);
 
         return {
-          column: { id: uniqueId, name, type },
+          column: { id: uniqueId, name, type, summaryMode },
           sourceId: typeof candidate.id === 'string' ? candidate.id : uniqueId,
         };
       })
-      .filter((column): column is { column: TableColumn; sourceId: string } => column !== null);
+      .filter((column) => column !== null) as Array<{ column: TableColumn; sourceId: string }>;
 
     if (normalized.length === 0) {
       return structuredClone(DEFAULT_TOPIC_COLUMNS).map((column) => ({ column, sourceId: column.id }));

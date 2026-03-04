@@ -10,6 +10,7 @@ export interface TableColumn {
   id: string;
   name: string;
   type: 'number' | 'text';
+  summaryMode?: 'none' | 'sum';
 }
 
 export interface TreeSubtopic {
@@ -85,8 +86,8 @@ export function isValidColumnId(input: string): boolean {
 }
 
 export const DEFAULT_TOPIC_COLUMNS: TableColumn[] = [
-  { id: '$A', name: 'A', type: 'number' },
-  { id: '$B', name: 'B', type: 'number' },
+  { id: '$A', name: 'A', type: 'number', summaryMode: 'none' },
+  { id: '$B', name: 'B', type: 'number', summaryMode: 'none' },
 ];
 
 export const STARTER_STATE: TreeTableStateV1 = {

@@ -91,6 +91,26 @@ import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scro
                 </tr>
               }
             </tbody>
+            @if (hasAnySummary()) {
+              <tfoot data-testid="summary-footer">
+                <tr>
+                  @for (column of columns(); track column.id; let columnIndex = $index) {
+                    <td class="border-0 p-0 align-top">
+                      @if (column.summaryMode === 'sum') {
+                        <div
+                          [attr.data-summary-column-id]="column.id"
+                          class="mt-2 cursor-default border-y border-r border-slate-200 bg-white px-2 py-2 text-center text-sm font-semibold text-slate-700"
+                          [class.border-l]="showSummaryLeftBorder(columnIndex)"
+                          (contextmenu)="openMenu($event, column.id)"
+                        >
+                          {{ summaryDisplayValue(column.id) }}
+                        </div>
+                      }
+                    </td>
+                  }
+                </tr>
+              </tfoot>
+            }
           </table>
         }
       </div>
@@ -100,6 +120,7 @@ import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scro
         [x]="menuX()"
         [y]="menuY()"
         [canDelete]="columns().length > 1"
+        [summaryMode]="selectedColumnSummaryMode()"
         (action)="onMenuAction($event)"
         (menuClosed)="closeMenu()"
       />
@@ -112,6 +133,7 @@ export class SubtopicTableComponent {
   readonly selectedNodeId = input<string | null>(null);
 
   readonly setCell = output<{ topicId: string; subtopicId: string; columnId: string; raw: string }>();
+  readonly setColumnSummary = output<{ topicId: string; columnId: string; mode: 'none' | 'sum' }>();
   readonly selectNode = output<string | null>();
   readonly insertColumn = output<{ topicId: string; referenceColumnId: string; side: 'left' | 'right' }>();
   readonly deleteColumn = output<{ topicId: string; columnId: string }>();
@@ -131,6 +153,12 @@ export class SubtopicTableComponent {
   protected readonly activeReferencedColumnId = signal<string | null>(null);
   protected readonly columns = computed(() => this.topic().columns);
   protected readonly rows = computed(() => this.topic().children);
+  protected readonly hasAnySummary = computed(() => this.columns().some((column) => column.summaryMode === 'sum'));
+  protected readonly selectedColumnSummaryMode = computed<'none' | 'sum'>(() => {
+    const columnId = this.menuColumnId();
+    const column = this.columns().find((candidate) => candidate.id === columnId);
+    return column?.summaryMode === 'sum' ? 'sum' : 'none';
+  });
   protected readonly columnWidthsCh = computed(() => {
     const widths: Record<string, number> = {};
     for (const column of this.columns()) {
@@ -210,7 +238,7 @@ export class SubtopicTableComponent {
     this.selectColumn(columnId);
   }
 
-  onMenuAction(action: 'insertLeft' | 'insertRight' | 'rename' | 'delete'): void {
+  onMenuAction(action: 'insertLeft' | 'insertRight' | 'rename' | 'delete' | 'toggleSummary'): void {
     const columnId = this.menuColumnId();
     if (!columnId) {
       this.closeMenu();
@@ -232,6 +260,14 @@ export class SubtopicTableComponent {
 
     if (action === 'delete') {
       this.deleteColumn.emit({ topicId, columnId });
+      this.closeMenu();
+      return;
+    }
+
+    if (action === 'toggleSummary') {
+      const column = this.columns().find((candidate) => candidate.id === columnId);
+      const nextMode: 'none' | 'sum' = column?.summaryMode === 'sum' ? 'none' : 'sum';
+      this.setColumnSummary.emit({ topicId, columnId, mode: nextMode });
       this.closeMenu();
       return;
     }
@@ -308,6 +344,62 @@ export class SubtopicTableComponent {
     }
 
     return raw;
+  }
+
+  protected summaryDisplayValue(columnId: string): string {
+    const column = this.columns().find((candidate) => candidate.id === columnId);
+    if (!column || column.summaryMode !== 'sum') {
+      return '';
+    }
+
+    if (column.type === 'text') {
+      return 'N/A';
+    }
+
+    let total = 0;
+    for (const row of this.rows()) {
+      const cell = row.cells[columnId];
+      if (cell?.error) {
+        return cell.error;
+      }
+
+      if (this.isInvalidSummaryLiteral(cell?.raw ?? '')) {
+        return 'N/A';
+      }
+
+      const value = cell?.value;
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return 'N/A';
+      }
+      total += value;
+    }
+
+    return this.formatValue(total);
+  }
+
+  protected showSummaryLeftBorder(columnIndex: number): boolean {
+    const columns = this.columns();
+    const current = columns[columnIndex];
+    if (!current || current.summaryMode !== 'sum') {
+      return false;
+    }
+
+    if (columnIndex === 0) {
+      return true;
+    }
+
+    const previous = columns[columnIndex - 1];
+    return previous?.summaryMode !== 'sum';
+  }
+
+  private isInvalidSummaryLiteral(raw: string): boolean {
+    const trimmed = raw.trim();
+    if (trimmed.length === 0 || trimmed.startsWith('=')) {
+      return false;
+    }
+
+    const parsed = Number(trimmed);
+    return Number.isNaN(parsed) || !Number.isFinite(parsed);
   }
 
   protected startColumnRename(columnId: string, currentName: string): void {

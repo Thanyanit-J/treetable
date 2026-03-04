@@ -280,6 +280,22 @@ export class TreeTableStoreService {
     return undefined;
   }
 
+  setColumnSummary(topicId: string, columnId: string, mode: 'none' | 'sum'): void {
+    this.mutate((state) => {
+      const topic = state.topics.find((candidate) => candidate.id === topicId);
+      if (!topic) {
+        return;
+      }
+
+      const column = topic.columns.find((candidate) => candidate.id === columnId);
+      if (!column) {
+        return;
+      }
+
+      column.summaryMode = mode;
+    });
+  }
+
   importState(json: string): ImportResult {
     const imported = this.persistence.import(json);
     if (!imported.result.ok || !imported.state) {
@@ -398,6 +414,7 @@ export class TreeTableStoreService {
       id: nextId,
       name: nextName,
       type: column.type === 'text' ? 'text' : 'number',
+      summaryMode: column.summaryMode === 'sum' ? 'sum' : 'none',
     };
   }
 
@@ -483,6 +500,7 @@ export class TreeTableStoreService {
       id: this.buildUniqueColumnId(existingColumns, name),
       name: name.trim() || 'New Column',
       type,
+      summaryMode: 'none',
     };
   }
 

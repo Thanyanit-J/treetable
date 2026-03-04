@@ -2,14 +2,18 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { TreeTopic } from '../models/tree-table.model';
 import { SubtopicTableComponent } from './subtopic-table.component';
 
-function buildTopic(valueRaw = '=$Amount*$Rate', includeSecondRow = false): TreeTopic {
+function buildTopic(
+  valueRaw = '=$Amount*$Rate',
+  includeSecondRow = false,
+  amountSummaryMode: 'none' | 'sum' = 'none',
+): TreeTopic {
   const topic: TreeTopic = {
     id: 'topic_1',
     label: 'Topic 1',
     columns: [
-      { id: '$Amount', name: 'Amount', type: 'number' },
-      { id: '$Rate', name: 'Rate', type: 'number' },
-      { id: '$Value', name: 'Value', type: 'number' },
+      { id: '$Amount', name: 'Amount', type: 'number', summaryMode: amountSummaryMode },
+      { id: '$Rate', name: 'Rate', type: 'number', summaryMode: 'none' },
+      { id: '$Value', name: 'Value', type: 'number', summaryMode: 'none' },
     ],
     children: [
       {
@@ -49,11 +53,16 @@ async function nextMacrotask(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
-async function setup(valueRaw = '=$Amount*$Rate', includeSecondRow = false): Promise<{
+async function setup(
+  valueRaw = '=$Amount*$Rate',
+  includeSecondRow = false,
+  amountSummaryMode: 'none' | 'sum' = 'none',
+): Promise<{
   fixture: ComponentFixture<SubtopicTableComponent>;
   component: SubtopicTableComponent;
   setCellEvents: Array<{ topicId: string; subtopicId: string; columnId: string; raw: string }>;
   renameColumnEvents: Array<{ topicId: string; columnId: string; name: string }>;
+  setColumnSummaryEvents: Array<{ topicId: string; columnId: string; mode: 'none' | 'sum' }>;
   selectNodeEvents: Array<string | null>;
 }> {
   await TestBed.configureTestingModule({
@@ -61,22 +70,24 @@ async function setup(valueRaw = '=$Amount*$Rate', includeSecondRow = false): Pro
   }).compileComponents();
 
   const fixture = TestBed.createComponent(SubtopicTableComponent);
-  fixture.componentRef.setInput('topic', buildTopic(valueRaw, includeSecondRow));
+  fixture.componentRef.setInput('topic', buildTopic(valueRaw, includeSecondRow, amountSummaryMode));
   fixture.componentRef.setInput('selectedNodeId', null);
 
   const component = fixture.componentInstance;
   const setCellEvents: Array<{ topicId: string; subtopicId: string; columnId: string; raw: string }> = [];
   const renameColumnEvents: Array<{ topicId: string; columnId: string; name: string }> = [];
+  const setColumnSummaryEvents: Array<{ topicId: string; columnId: string; mode: 'none' | 'sum' }> = [];
   const selectNodeEvents: Array<string | null> = [];
   component.setCell.subscribe((payload) => setCellEvents.push(payload));
   component.renameColumn.subscribe((payload) => renameColumnEvents.push(payload));
+  component.setColumnSummary.subscribe((payload) => setColumnSummaryEvents.push(payload));
   component.selectNode.subscribe((payload) => selectNodeEvents.push(payload));
 
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();
 
-  return { fixture, component, setCellEvents, renameColumnEvents, selectNodeEvents };
+  return { fixture, component, setCellEvents, renameColumnEvents, setColumnSummaryEvents, selectNodeEvents };
 }
 
 function getCellInput(fixture: ComponentFixture<SubtopicTableComponent>, nodeId: string, columnId: string): HTMLInputElement {
@@ -101,6 +112,17 @@ function headerRenameInputs(fixture: ComponentFixture<SubtopicTableComponent>): 
   return Array.from(root.querySelectorAll('thead input[data-column-rename-id]')).filter(
     (element): element is HTMLInputElement => element instanceof HTMLInputElement,
   );
+}
+
+function findMenuButtonByText(fixture: ComponentFixture<SubtopicTableComponent>, text: string): HTMLButtonElement {
+  const buttons = Array.from(
+    (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>('section[aria-label="Column actions"] button'),
+  ).filter((item): item is HTMLButtonElement => item instanceof HTMLButtonElement);
+  const target = buttons.find((button) => button.textContent?.trim() === text);
+  if (!target) {
+    throw new Error(`Missing menu button: ${text}`);
+  }
+  return target;
 }
 
 describe('SubtopicTableComponent', () => {
@@ -275,5 +297,83 @@ describe('SubtopicTableComponent', () => {
     fixture.detectChanges();
 
     expect(selectNodeEvents).toContain(null);
+  });
+
+  it('shows Add summary cell in context menu and emits sum mode', async () => {
+    const { fixture, setColumnSummaryEvents } = await setup('=$Amount*$Rate', false, 'none');
+    const amountHeaderInput = headerRenameInputs(fixture)[0];
+    if (!amountHeaderInput) {
+      throw new Error('Expected amount header input');
+    }
+
+    amountHeaderInput.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+    fixture.detectChanges();
+
+    const toggleButton = findMenuButtonByText(fixture, 'Add summary cell');
+    toggleButton.click();
+    fixture.detectChanges();
+
+    expect(setColumnSummaryEvents).toEqual([{ topicId: 'topic_1', columnId: '$Amount', mode: 'sum' }]);
+  });
+
+  it('renders summary footer cell with top gap and supports removing summary via summary-cell right click', async () => {
+    const { fixture, setColumnSummaryEvents } = await setup('=$Amount*$Rate', true, 'sum');
+
+    const footer = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-testid="summary-footer"]');
+    expect(footer).toBeTruthy();
+
+    const summaryCell = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-summary-column-id="$Amount"]');
+    expect(summaryCell).toBeTruthy();
+    expect(summaryCell?.className).toContain('font-semibold');
+    expect(summaryCell?.className).toContain('mt-2');
+    expect(summaryCell?.textContent?.trim()).toBe('350');
+
+    summaryCell?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 12, clientY: 12 }));
+    fixture.detectChanges();
+
+    const toggleButton = findMenuButtonByText(fixture, 'Remove summary cell');
+    toggleButton.click();
+    fixture.detectChanges();
+
+    expect(setColumnSummaryEvents).toContainEqual({ topicId: 'topic_1', columnId: '$Amount', mode: 'none' });
+  });
+
+  it('shows N/A when summary column contains at least one invalid text literal', async () => {
+    await TestBed.configureTestingModule({
+      imports: [SubtopicTableComponent],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(SubtopicTableComponent);
+    const topic = buildTopic('=$Amount*$Rate', true, 'sum');
+    const secondRow = topic.children[1];
+    if (!secondRow) {
+      throw new Error('Expected second row');
+    }
+
+    secondRow.cells['$Amount'] = { raw: 'text', value: 0, error: null };
+    fixture.componentRef.setInput('topic', topic);
+    fixture.componentRef.setInput('selectedNodeId', null);
+    fixture.detectChanges();
+
+    const summaryCell = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-summary-column-id="$Amount"]');
+    expect(summaryCell?.textContent?.trim()).toBe('N/A');
+  });
+
+  it('keeps zero-row empty state without rendering headers or summary footer', async () => {
+    await TestBed.configureTestingModule({
+      imports: [SubtopicTableComponent],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(SubtopicTableComponent);
+    const topic = buildTopic();
+    topic.children = [];
+    fixture.componentRef.setInput('topic', topic);
+    fixture.componentRef.setInput('selectedNodeId', null);
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('No subtopics yet. Add one in the tree graph.');
+    expect(root.querySelector('thead')).toBeNull();
+    expect(root.querySelector('[data-testid="summary-footer"]')).toBeNull();
   });
 });

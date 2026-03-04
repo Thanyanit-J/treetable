@@ -270,4 +270,58 @@ describe('FormulaEngineService', () => {
     const evaluated = evaluateTopicRows(columns, rows);
     expect(evaluated[0]?.cells['$A']?.error).toContain('Circular');
   });
+
+  it('fails whole-column aggregates when at least one row has invalid literal text', () => {
+    const columns: TableColumn[] = [
+      { id: '$A', name: 'A', type: 'number' },
+      { id: '$B', name: 'B', type: 'number' },
+    ];
+    const rows: TreeSubtopic[] = [
+      {
+        id: 'row-1',
+        topicId: 'topic-1',
+        label: 'Row 1',
+        cells: {
+          $A: createCellData('1'),
+          $B: createCellData('=SUM($A)'),
+        },
+      },
+      {
+        id: 'row-2',
+        topicId: 'topic-1',
+        label: 'Row 2',
+        cells: {
+          $A: createCellData('abc'),
+          $B: createCellData('=SUM($A)'),
+        },
+      },
+    ];
+
+    const evaluated = evaluateTopicRows(columns, rows);
+    expect(evaluated[0]?.cells['$B']?.error).toBe('Invalid numeric value in column: $A');
+    expect(evaluated[1]?.cells['$B']?.error).toBe('Invalid numeric value in column: $A');
+  });
+
+  it('fails row-local aggregates when any referenced argument is invalid text', () => {
+    const columns: TableColumn[] = [
+      { id: '$A', name: 'A', type: 'number' },
+      { id: '$B', name: 'B', type: 'number' },
+      { id: '$C', name: 'C', type: 'number' },
+    ];
+    const rows: TreeSubtopic[] = [
+      {
+        id: 'row-1',
+        topicId: 'topic-1',
+        label: 'Row 1',
+        cells: {
+          $A: createCellData('1'),
+          $B: createCellData('abc'),
+          $C: createCellData('=SUM($A,$B)'),
+        },
+      },
+    ];
+
+    const evaluated = evaluateTopicRows(columns, rows);
+    expect(evaluated[0]?.cells['$C']?.error).toBe('Invalid numeric value in column: $B');
+  });
 });

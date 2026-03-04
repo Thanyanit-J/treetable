@@ -100,7 +100,19 @@ export class FormulaEngineService {
 
       stack.add(cacheKey);
       const result = this.evaluateRawCell(cell.raw, {
-        resolveColumnInRow: (targetColumnId) => resolveCell(rowId, targetColumnId),
+        resolveColumnInRow: (targetColumnId) => {
+          const targetCell = rowById.get(rowId)?.cells[targetColumnId];
+          const targetResult = resolveCell(rowId, targetColumnId);
+          if (targetResult.error) {
+            return targetResult;
+          }
+
+          if (targetCell && this.isInvalidNumericLiteral(targetCell.raw)) {
+            return { value: null, error: `Invalid numeric value in column: ${targetColumnId}` };
+          }
+
+          return targetResult;
+        },
         resolveColumnSeries: (targetColumnId) => this.resolveColumnSeries(nextRows, resolveCell, targetColumnId),
       });
       stack.delete(cacheKey);
@@ -145,6 +157,11 @@ export class FormulaEngineService {
     const values: number[] = [];
 
     for (const row of rows) {
+      const raw = row.cells[columnId]?.raw ?? '';
+      if (this.isInvalidNumericLiteral(raw)) {
+        return { values: null, error: `Invalid numeric value in column: ${columnId}` };
+      }
+
       const result = resolveCell(row.id, columnId);
       if (result.error) {
         return { values: null, error: result.error };
@@ -155,6 +172,16 @@ export class FormulaEngineService {
     }
 
     return { values, error: null };
+  }
+
+  private isInvalidNumericLiteral(raw: string): boolean {
+    const trimmed = raw.trim();
+    if (trimmed.length === 0 || trimmed.startsWith('=')) {
+      return false;
+    }
+
+    const parsed = Number(trimmed);
+    return Number.isNaN(parsed) || !Number.isFinite(parsed);
   }
 
   private evaluateRawCell(raw: string, context: EvalContext): FormulaResult {

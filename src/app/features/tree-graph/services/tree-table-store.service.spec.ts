@@ -286,6 +286,57 @@ describe('TreeTableStoreService', () => {
     expect(rowLocalTopic?.children[1]?.cells[targetColumn.id]?.value).toBe(row2Source + 1);
   });
 
+  it('updates only target column summary mode and keeps summary metadata through mutations', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const topic = store.topics()[0];
+    if (!topic || topic.columns.length < 2 || topic.children.length === 0) {
+      throw new Error('Expected starter topic shape');
+    }
+
+    const firstColumn = topic.columns[0];
+    const secondColumn = topic.columns[1];
+    const firstRow = topic.children[0];
+    if (!firstColumn || !secondColumn || !firstRow) {
+      throw new Error('Expected starter topic shape');
+    }
+
+    store.setColumnSummary(topic.id, firstColumn.id, 'sum');
+    const afterSummary = store.topics().find((candidate) => candidate.id === topic.id);
+    expect(afterSummary?.columns[0]?.summaryMode).toBe('sum');
+    expect(afterSummary?.columns[1]?.summaryMode).toBe('none');
+
+    store.addSubtopic(topic.id, 'Newer');
+    store.renameNode(firstRow.id, 'Renamed');
+    const afterMutations = store.topics().find((candidate) => candidate.id === topic.id);
+    expect(afterMutations?.columns[0]?.summaryMode).toBe('sum');
+    expect(afterMutations?.columns[1]?.summaryMode).toBe('none');
+  });
+
+  it('keeps formula results unchanged when summary mode is enabled', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const topic = store.topics()[0];
+    if (!topic || topic.columns.length < 2 || topic.children.length === 0) {
+      throw new Error('Expected starter topic shape');
+    }
+
+    const sourceColumn = topic.columns[0];
+    const targetColumn = topic.columns[1];
+    const firstRow = topic.children[0];
+    if (!sourceColumn || !targetColumn || !firstRow) {
+      throw new Error('Expected starter topic shape');
+    }
+
+    store.setCellRaw(topic.id, firstRow.id, targetColumn.id, `=SUM(${sourceColumn.id})`);
+    const withoutSummary = store.topics().find((candidate) => candidate.id === topic.id);
+    const rowValuesWithout = withoutSummary?.children.map((child) => child.cells[targetColumn.id]?.value) ?? [];
+
+    store.setColumnSummary(topic.id, sourceColumn.id, 'sum');
+    const withSummary = store.topics().find((candidate) => candidate.id === topic.id);
+    const rowValuesWith = withSummary?.children.map((child) => child.cells[targetColumn.id]?.value) ?? [];
+
+    expect(rowValuesWith).toEqual(rowValuesWithout);
+  });
+
   it('normalizes malformed topic column ids and rewrites row formulas during recalculation', () => {
     const store = TestBed.inject(TreeTableStoreService);
     const storeInternal = store as unknown as {
