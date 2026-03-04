@@ -137,14 +137,6 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
 
           @if (menuTarget()?.kind === 'subtopic') {
             <button
-              (click)="onSubtopicMenuAction('focusRow')"
-              class="block w-full rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
-              role="menuitem"
-              type="button"
-            >
-              Focus row
-            </button>
-            <button
               (click)="onSubtopicMenuAction('addSubtopic')"
               class="block w-full rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
               role="menuitem"
@@ -245,16 +237,14 @@ export class TreeCanvasComponent {
     this.closeNodeMenu();
   }
 
-  onSubtopicMenuAction(action: 'focusRow' | 'deleteSubtopic' | 'addSubtopic'): void {
+  onSubtopicMenuAction(action: 'deleteSubtopic' | 'addSubtopic'): void {
     const target = this.menuTarget();
     if (target?.kind !== 'subtopic') {
       this.closeNodeMenu();
       return;
     }
 
-    if (action === 'focusRow') {
-      this.selectNode.emit(target.subtopicId);
-    } else if (action === 'addSubtopic') {
+    if (action === 'addSubtopic') {
       this.addSubtopic.emit(target.topicId);
     } else {
       this.requestDeleteSubtopic.emit({
