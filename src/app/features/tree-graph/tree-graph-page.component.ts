@@ -1,5 +1,5 @@
 import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
-import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, effect, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ConfirmDialogComponent } from './components/confirm-dialog.component';
 import { SubtopicTableComponent } from './components/subtopic-table.component';
@@ -12,14 +12,6 @@ interface PendingDeleteTopic {
   type: 'topic';
   topicId: string;
 }
-
-interface PendingDeleteSubtopic {
-  type: 'subtopic';
-  topicId: string;
-  subtopicId: string;
-}
-
-type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
 
 @Component({
   selector: 'app-tree-graph-page',
@@ -196,9 +188,9 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
     </main>
 
     <app-confirm-dialog
-      [open]="isDeleteDialogOpen()"
+      [open]="pendingDelete() !== null"
       title="Delete node"
-      [message]="deleteMessage()"
+      message="Deleting a topic removes all its subtopics and table rows."
       (confirmed)="confirmDelete()"
       (cancelled)="pendingDelete.set(null)"
     />
@@ -208,7 +200,7 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
 export class TreeGraphPageComponent {
   readonly store = inject(TreeTableStoreService);
 
-  protected readonly pendingDelete = signal<PendingDelete | null>(null);
+  protected readonly pendingDelete = signal<PendingDeleteTopic | null>(null);
   protected readonly statusMessage = signal<ImportResult | null>(null);
   protected readonly editingTitle = signal(false);
   protected readonly titleDraft = signal('');
@@ -223,20 +215,6 @@ export class TreeGraphPageComponent {
   private readonly menuOwnerId = `tree-graph-page-${crypto.randomUUID()}`;
   private statusToastTimer: ReturnType<typeof setTimeout> | null = null;
   private isScrollLocked = false;
-
-  protected readonly isDeleteDialogOpen = computed(() => this.pendingDelete() !== null);
-  protected readonly deleteMessage = computed(() => {
-    const pending = this.pendingDelete();
-    if (!pending) {
-      return 'Are you sure you want to delete this node?';
-    }
-
-    if (pending.type === 'topic') {
-      return 'Deleting a topic removes all its subtopics and table rows.';
-    }
-
-    return 'Deleting a subtopic removes its table row.';
-  });
 
   constructor() {
     effect(() => {
@@ -346,7 +324,7 @@ export class TreeGraphPageComponent {
   }
 
   queueSubtopicDelete(topicId: string, subtopicId: string): void {
-    this.pendingDelete.set({ type: 'subtopic', topicId, subtopicId });
+    this.store.removeSubtopic(topicId, subtopicId);
   }
 
   confirmDelete(): void {
@@ -355,11 +333,7 @@ export class TreeGraphPageComponent {
       return;
     }
 
-    if (pending.type === 'topic') {
-      this.store.removeTopic(pending.topicId);
-    } else {
-      this.store.removeSubtopic(pending.topicId, pending.subtopicId);
-    }
+    this.store.removeTopic(pending.topicId);
 
     this.pendingDelete.set(null);
   }
