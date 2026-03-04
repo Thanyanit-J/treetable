@@ -24,9 +24,8 @@ interface PendingDeleteTopic {
   },
   template: `
     <main
-      class="tree-graph-page mx-auto max-w-(--tree-graph-page-max-width) p-4 sm:p-6 lg:p-8"
+      class="tree-graph-page mx-auto p-4 sm:p-6 lg:p-8"
       style="
-        --tree-graph-page-max-width: 1500px;
         --subtopic-node-height: 40px;
         --subtopic-gap: 13px;
         --subtopic-table-offset-top: 5px;
