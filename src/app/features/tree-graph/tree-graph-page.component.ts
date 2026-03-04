@@ -31,7 +31,13 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteSubtopic;
     '(document:tree-graph-menu-opened)': 'onGlobalMenuOpened($event)',
   },
   template: `
-    <main class="tree-graph-page mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8">
+    <main
+      class="tree-graph-page mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8"
+      style="
+        --subtopic-node-height: 40px;
+        --subtopic-gap: 13px;
+      "
+    >
       <section class="mb-4 rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>

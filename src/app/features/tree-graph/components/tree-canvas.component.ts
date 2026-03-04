@@ -55,7 +55,7 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
           cdkDropList
           [cdkDropListData]="topic().children"
           (cdkDropListDropped)="onSubtopicDrop(topic().id, $event)"
-          class="space-y-3 pl-10"
+          class="space-y-[var(--subtopic-gap)] pl-10"
           [attr.aria-label]="'Subtopics for ' + topic().label"
         >
           @for (subtopic of topic().children; track subtopic.id) {
@@ -84,7 +84,7 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
                   (blur)="onNodeBlur($event, subtopic.id, subtopic.label)"
                   (keydown.enter)="onNodeEnter($event, subtopic.id, subtopic.label)"
                   (keydown.escape)="onNodeEscape($event, subtopic.id, subtopic.label)"
-                  class="block min-h-[40px] w-full rounded-xl border-0 bg-transparent px-2 py-2 text-center text-sm font-medium text-slate-800 focus-visible:outline-none"
+                  class="block min-h-[var(--subtopic-node-height)] w-full rounded-xl border-0 bg-transparent px-2 py-2 text-center text-sm font-medium text-slate-800 focus-visible:outline-none"
                   [attr.aria-label]="'Subtopic label: ' + subtopic.label"
                 />
               </div>

@@ -23,7 +23,7 @@ import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scro
             No subtopics yet. Add one in the tree graph.
           </div>
         } @else {
-          <table class="w-max border-collapse text-sm">
+          <table class="mt-[5px] w-max border-collapse text-sm">
             <thead>
               <tr>
                 @for (column of columns(); track column.id) {
@@ -84,7 +84,7 @@ import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scro
                         (ngModelChange)="onCellModelChange(row.id, column.id, $event)"
                         [attr.aria-label]="'Edit cell ' + column.name"
                         [attr.aria-invalid]="cell?.error ? 'true' : 'false'"
-                        class="block min-h-[44px] min-w-0 w-full overflow-x-auto whitespace-nowrap rounded-none border-0 px-2 py-2 text-sm text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
+                        class="block min-h-[calc(var(--subtopic-node-height)+var(--subtopic-gap)+1px)] min-w-0 w-full overflow-x-auto whitespace-nowrap rounded-none border-0 px-2 py-2 text-sm text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
                       />
                     </td>
                   }
