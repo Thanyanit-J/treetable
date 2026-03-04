@@ -133,4 +133,16 @@ describe('TreeCanvasComponent', () => {
     });
     expect(subtopicDrag?.previewClass).toBe('drag-preview-solid');
   });
+
+  it('renders only row connector elements for subtopic lines', async () => {
+    const { fixture } = await setup();
+    const inRowConnectors = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>('[data-testid="subtopic-row-connector"]'),
+    );
+
+    expect(inRowConnectors.length).toBe(1);
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('[data-testid="subtopic-outset-connector"]'),
+    ).toBeNull();
+  });
 });

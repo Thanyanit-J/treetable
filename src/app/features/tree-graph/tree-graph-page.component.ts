@@ -104,7 +104,7 @@ interface PendingDeleteTopic {
               class="w-max shrink-0 rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm"
               (contextmenu)="onTopicCardContextMenu($event, topic.id)"
             >
-              <div class="flex flex-nowrap gap-4 overflow-x-auto">
+              <div class="flex flex-nowrap overflow-x-auto">
                 <div class="w-max shrink-0">
                   <app-tree-canvas
                     [topic]="topic"

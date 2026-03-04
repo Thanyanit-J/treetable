@@ -27,7 +27,7 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
     '(document:tree-graph-menu-opened)': 'onGlobalMenuOpened($event)',
   },
   template: `
-    <section #canvasRoot class="h-full p-1" aria-label="Tree graph canvas">
+    <section #canvasRoot class="h-full py-1" aria-label="Tree graph canvas">
       <article class="space-y-3">
         <div class="relative flex items-center gap-2">
           <div
@@ -73,7 +73,7 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
                 [cdkDragData]="subtopic"
                 (cdkDragStarted)="onSubtopicDragStarted($event)"
                 (cdkDragEnded)="onSubtopicDragEnded($event)"
-                class="relative flex items-center gap-2"
+                class="relative flex w-full items-center"
               >
                 <div class="absolute -left-5 top-1/2 h-px w-5 -translate-y-1/2 bg-slate-300"></div>
 
@@ -96,6 +96,11 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
                     [attr.aria-label]="'Subtopic label: ' + subtopic.label"
                   />
                 </div>
+                <div
+                  aria-hidden="true"
+                  data-testid="subtopic-row-connector"
+                  class="h-px min-w-4 flex-1 bg-slate-300"
+                ></div>
               </div>
             }
           </div>
