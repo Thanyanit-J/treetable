@@ -7,12 +7,14 @@ import { ChangeDetectionStrategy, Component, ElementRef, effect, input, output, 
       #dialog
       class="fixed left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-900/35"
       (close)="onClose()"
+      (keydown)="onDialogKeyDown($event)"
     >
       <form method="dialog" class="space-y-4 p-6">
         <h2 class="text-lg font-semibold text-slate-900">{{ title() }}</h2>
         <p class="text-sm text-slate-600">{{ message() }}</p>
         <div class="flex justify-end gap-2 pt-2">
           <button
+            #cancelButton
             class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
             value="cancel"
             type="submit"
@@ -20,6 +22,7 @@ import { ChangeDetectionStrategy, Component, ElementRef, effect, input, output, 
             Cancel
           </button>
           <button
+            #confirmButton
             class="rounded-lg border border-rose-300 bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-600"
             value="confirm"
             type="submit"
@@ -41,6 +44,8 @@ export class ConfirmDialogComponent {
   readonly cancelled = output<void>();
 
   private readonly dialogElement = viewChild<ElementRef<HTMLDialogElement>>('dialog');
+  private readonly cancelButtonElement = viewChild<ElementRef<HTMLButtonElement>>('cancelButton');
+  private readonly confirmButtonElement = viewChild<ElementRef<HTMLButtonElement>>('confirmButton');
 
   constructor() {
     effect(() => {
@@ -52,6 +57,9 @@ export class ConfirmDialogComponent {
       if (this.open()) {
         if (!dialog.open) {
           dialog.showModal();
+          queueMicrotask(() => {
+            this.confirmButtonElement()?.nativeElement.focus();
+          });
         }
       } else if (dialog.open) {
         dialog.close();
@@ -71,5 +79,26 @@ export class ConfirmDialogComponent {
     }
 
     this.cancelled.emit();
+  }
+
+  onDialogKeyDown(event: KeyboardEvent): void {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+      return;
+    }
+
+    const cancelButton = this.cancelButtonElement()?.nativeElement;
+    const confirmButton = this.confirmButtonElement()?.nativeElement;
+    if (!cancelButton || !confirmButton) {
+      return;
+    }
+
+    event.preventDefault();
+    const activeElement = document.activeElement;
+    if (activeElement === cancelButton) {
+      confirmButton.focus();
+      return;
+    }
+
+    cancelButton.focus();
   }
 }
