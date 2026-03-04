@@ -51,45 +51,54 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
           </div>
         </div>
 
-        <div
-          cdkDropList
-          [cdkDropListData]="topic().children"
-          (cdkDropListDropped)="onSubtopicDrop(topic().id, $event)"
-          class="space-y-[var(--subtopic-gap)] pl-10"
-          [attr.aria-label]="'Subtopics for ' + topic().label"
-        >
-          @for (subtopic of topic().children; track subtopic.id) {
+        <div class="relative pl-10">
+          @if (topic().children.length > 0) {
             <div
-              cdkDrag
-              cdkDragPreviewClass="drag-preview-solid"
-              [cdkDragData]="subtopic"
-              (cdkDragStarted)="onSubtopicDragStarted($event)"
-              (cdkDragEnded)="onSubtopicDragEnded($event)"
-              class="relative flex items-center gap-2"
-            >
-              <div class="absolute -left-5 top-1/2 h-px w-5 -translate-y-1/2 bg-slate-300"></div>
-
-              <div
-                class="cursor-grab rounded-xl border border-amber-300 bg-amber-100"
-                [style.min-width.ch]="10"
-                [style.width.ch]="nodeWidthCh(subtopic.label)"
-                [class.ring-2]="selectedNodeId() === subtopic.id"
-                [class.ring-amber-400]="selectedNodeId() === subtopic.id"
-                (contextmenu)="openSubtopicMenu($event, topic().id, subtopic.id)"
-              >
-                <input
-                  [ngModel]="nodeInputValue(subtopic.id, subtopic.label)"
-                  (focus)="onNodeFocus(subtopic.id, subtopic.label)"
-                  (ngModelChange)="onNodeModelChange(subtopic.id, $event)"
-                  (blur)="onNodeBlur($event, subtopic.id, subtopic.label)"
-                  (keydown.enter)="onNodeEnter($event, subtopic.id, subtopic.label)"
-                  (keydown.escape)="onNodeEscape($event, subtopic.id, subtopic.label)"
-                  class="block min-h-[var(--subtopic-node-height)] w-full rounded-xl border-0 bg-transparent px-2 py-2 text-center text-sm font-medium text-slate-800 focus-visible:outline-none"
-                  [attr.aria-label]="'Subtopic label: ' + subtopic.label"
-                />
-              </div>
-            </div>
+              aria-hidden="true"
+              class="pointer-events-none absolute bottom-[calc((var(--subtopic-node-height)+2px)/2)] left-5 w-px bg-slate-300"
+              style="top: calc(-1 * var(--subtopic-gap));"
+            ></div>
           }
+          <div
+            cdkDropList
+            [cdkDropListData]="topic().children"
+            (cdkDropListDropped)="onSubtopicDrop(topic().id, $event)"
+            class="space-y-[var(--subtopic-gap)]"
+            [attr.aria-label]="'Subtopics for ' + topic().label"
+          >
+            @for (subtopic of topic().children; track subtopic.id) {
+              <div
+                cdkDrag
+                cdkDragPreviewClass="drag-preview-solid"
+                [cdkDragData]="subtopic"
+                (cdkDragStarted)="onSubtopicDragStarted($event)"
+                (cdkDragEnded)="onSubtopicDragEnded($event)"
+                class="relative flex items-center gap-2"
+              >
+                <div class="absolute -left-5 top-1/2 h-px w-5 -translate-y-1/2 bg-slate-300"></div>
+
+                <div
+                  class="cursor-grab rounded-xl border border-amber-300 bg-amber-100"
+                  [style.min-width.ch]="10"
+                  [style.width.ch]="nodeWidthCh(subtopic.label)"
+                  [class.ring-2]="selectedNodeId() === subtopic.id"
+                  [class.ring-amber-400]="selectedNodeId() === subtopic.id"
+                  (contextmenu)="openSubtopicMenu($event, topic().id, subtopic.id)"
+                >
+                  <input
+                    [ngModel]="nodeInputValue(subtopic.id, subtopic.label)"
+                    (focus)="onNodeFocus(subtopic.id, subtopic.label)"
+                    (ngModelChange)="onNodeModelChange(subtopic.id, $event)"
+                    (blur)="onNodeBlur($event, subtopic.id, subtopic.label)"
+                    (keydown.enter)="onNodeEnter($event, subtopic.id, subtopic.label)"
+                    (keydown.escape)="onNodeEscape($event, subtopic.id, subtopic.label)"
+                    class="block min-h-[var(--subtopic-node-height)] w-full rounded-xl border-0 bg-transparent px-2 py-2 text-center text-sm font-medium text-slate-800 focus-visible:outline-none"
+                    [attr.aria-label]="'Subtopic label: ' + subtopic.label"
+                  />
+                </div>
+              </div>
+            }
+          </div>
         </div>
       </article>
 
