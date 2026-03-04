@@ -69,7 +69,7 @@ export class ColumnContextMenuComponent {
   readonly canDelete = input(true);
 
   readonly action = output<'insertLeft' | 'insertRight' | 'rename' | 'delete'>();
-  readonly close = output<void>();
+  readonly menuClosed = output<void>();
 
   private readonly menuRef = viewChild<ElementRef<HTMLElement>>('menu');
 
@@ -87,7 +87,7 @@ export class ColumnContextMenuComponent {
 
   onEscape(): void {
     if (this.open()) {
-      this.close.emit();
+      this.menuClosed.emit();
     }
   }
 
@@ -102,6 +102,6 @@ export class ColumnContextMenuComponent {
       return;
     }
 
-    this.close.emit();
+    this.menuClosed.emit();
   }
 }

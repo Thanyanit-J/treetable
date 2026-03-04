@@ -201,7 +201,7 @@ export class PersistenceService {
 
     for (const item of columns) {
       const rawByNewId = cellRecord[item.column.id]?.raw;
-      const rawByOldId = item.sourceId !== item.column.id ? cellRecord[item.sourceId]?.raw : undefined;
+      const rawByOldId = cellRecord[item.sourceId]?.raw;
       const rawValue = typeof rawByNewId === 'string' ? rawByNewId : rawByOldId;
       const nextRaw = typeof rawValue === 'string' ? this.replaceFormulaReferences(rawValue, formulaReplacements) : '';
       normalized[item.column.id] = createCellData(nextRaw);

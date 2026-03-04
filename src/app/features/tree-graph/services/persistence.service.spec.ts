@@ -108,4 +108,47 @@ describe('PersistenceService', () => {
     const migratedRaw = migratedTopic?.children[0]?.cells[migratedColumnId ?? '']?.raw;
     expect(migratedRaw).toBe('=$A1+$A-10+x$A-1');
   });
+
+  it('prefers raw by normalized id and falls back to source id when normalized raw is missing', () => {
+    const service = TestBed.inject(PersistenceService);
+
+    const legacy = {
+      version: 1,
+      title: 'Legacy',
+      selectedNodeId: null,
+      topics: [
+        {
+          id: 'topic_1',
+          label: 'Topic',
+          columns: [{ id: '$A-1', name: 'A1', type: 'number' }],
+          children: [
+            {
+              id: 'sub_1',
+              topicId: 'topic_1',
+              label: 'Row 1',
+              cells: {
+                '$A-1': { raw: 'old-value', value: null, error: null },
+                $A1: { raw: 'new-value', value: null, error: null },
+              },
+            },
+            {
+              id: 'sub_2',
+              topicId: 'topic_1',
+              label: 'Row 2',
+              cells: {
+                '$A-1': { raw: 'old-only', value: null, error: null },
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = service.import(JSON.stringify(legacy));
+    expect(result.result.ok).toBe(true);
+    const migratedTopic = result.state?.topics[0];
+    expect(migratedTopic?.columns[0]?.id).toBe('$A1');
+    expect(migratedTopic?.children[0]?.cells['$A1']?.raw).toBe('new-value');
+    expect(migratedTopic?.children[1]?.cells['$A1']?.raw).toBe('old-only');
+  });
 });

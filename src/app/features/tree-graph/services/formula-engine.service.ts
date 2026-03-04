@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { CellData, ColumnId, TableColumn } from '../models/tree-table.model';
+import { CellData, TableColumn } from '../models/tree-table.model';
 
 interface FormulaSuccess {
   value: number;
@@ -31,7 +31,7 @@ interface Token {
 }
 
 interface EvalContext {
-  resolveColumn: (columnId: ColumnId) => FormulaResult;
+  resolveColumn: (columnId: string) => FormulaResult;
 }
 
 type FunctionArgumentResult =
@@ -40,12 +40,12 @@ type FunctionArgumentResult =
 
 @Injectable({ providedIn: 'root' })
 export class FormulaEngineService {
-  evaluateRow(columns: TableColumn[], cells: Record<ColumnId, CellData>): Record<ColumnId, CellData> {
-    const next: Record<ColumnId, CellData> = structuredClone(cells);
-    const cache = new Map<ColumnId, FormulaResult>();
-    const stack = new Set<ColumnId>();
+  evaluateRow(columns: TableColumn[], cells: Record<string, CellData>): Record<string, CellData> {
+    const next: Record<string, CellData> = structuredClone(cells);
+    const cache = new Map<string, FormulaResult>();
+    const stack = new Set<string>();
 
-    const resolveColumn = (columnId: ColumnId): FormulaResult => {
+    const resolveColumn = (columnId: string): FormulaResult => {
       const inCache = cache.get(columnId);
       if (inCache) {
         return inCache;
@@ -124,7 +124,11 @@ export class FormulaEngineService {
       if (!match(type)) {
         return { value: null, error: message };
       }
-      return tokens.value[cursor - 1] as Token;
+      const consumed = tokens.value[cursor - 1];
+      if (!consumed) {
+        return { value: null, error: message };
+      }
+      return consumed;
     };
 
     const parseExpression = (): FormulaResult => {

@@ -101,7 +101,7 @@ import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scro
         [y]="menuY()"
         [canDelete]="columns().length > 1"
         (action)="onMenuAction($event)"
-        (close)="closeMenu()"
+        (menuClosed)="closeMenu()"
       />
     </section>
   `,

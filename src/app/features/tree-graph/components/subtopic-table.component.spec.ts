@@ -41,65 +41,69 @@ function buildTopic(valueRaw = '=$Amount*$Rate', includeSecondRow = false): Tree
   return topic;
 }
 
+async function nextFrame(): Promise<void> {
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+async function nextMacrotask(): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+async function setup(valueRaw = '=$Amount*$Rate', includeSecondRow = false): Promise<{
+  fixture: ComponentFixture<SubtopicTableComponent>;
+  component: SubtopicTableComponent;
+  setCellEvents: Array<{ topicId: string; subtopicId: string; columnId: string; raw: string }>;
+  renameColumnEvents: Array<{ topicId: string; columnId: string; name: string }>;
+  selectNodeEvents: Array<string | null>;
+}> {
+  await TestBed.configureTestingModule({
+    imports: [SubtopicTableComponent],
+  }).compileComponents();
+
+  const fixture = TestBed.createComponent(SubtopicTableComponent);
+  fixture.componentRef.setInput('topic', buildTopic(valueRaw, includeSecondRow));
+  fixture.componentRef.setInput('selectedNodeId', null);
+
+  const component = fixture.componentInstance;
+  const setCellEvents: Array<{ topicId: string; subtopicId: string; columnId: string; raw: string }> = [];
+  const renameColumnEvents: Array<{ topicId: string; columnId: string; name: string }> = [];
+  const selectNodeEvents: Array<string | null> = [];
+  component.setCell.subscribe((payload) => setCellEvents.push(payload));
+  component.renameColumn.subscribe((payload) => renameColumnEvents.push(payload));
+  component.selectNode.subscribe((payload) => selectNodeEvents.push(payload));
+
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
+
+  return { fixture, component, setCellEvents, renameColumnEvents, selectNodeEvents };
+}
+
+function getCellInput(fixture: ComponentFixture<SubtopicTableComponent>, nodeId: string, columnId: string): HTMLInputElement {
+  const input = fixture.nativeElement.querySelector(
+    `input[data-cell-key="${nodeId}:${columnId}"]`,
+  ) as HTMLInputElement | null;
+
+  if (!input) {
+    throw new Error(`Missing input for ${nodeId}:${columnId}`);
+  }
+
+  return input;
+}
+
+function focusInput(fixture: ComponentFixture<SubtopicTableComponent>, input: HTMLInputElement): void {
+  input.dispatchEvent(new FocusEvent('focus'));
+  fixture.detectChanges();
+}
+
+function headerRenameInputs(fixture: ComponentFixture<SubtopicTableComponent>): HTMLInputElement[] {
+  const root = fixture.nativeElement as HTMLElement;
+  return Array.from(root.querySelectorAll('thead input[data-column-rename-id]')).filter(
+    (element): element is HTMLInputElement => element instanceof HTMLInputElement,
+  );
+}
+
 describe('SubtopicTableComponent', () => {
-  async function nextFrame(): Promise<void> {
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  }
-
-  async function nextMacrotask(): Promise<void> {
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-  }
-
-  async function setup(valueRaw = '=$Amount*$Rate', includeSecondRow = false): Promise<{
-    fixture: ComponentFixture<SubtopicTableComponent>;
-    component: SubtopicTableComponent;
-    setCellEvents: Array<{ topicId: string; subtopicId: string; columnId: string; raw: string }>;
-    renameColumnEvents: Array<{ topicId: string; columnId: string; name: string }>;
-    selectNodeEvents: Array<string | null>;
-  }> {
-    await TestBed.configureTestingModule({
-      imports: [SubtopicTableComponent],
-    }).compileComponents();
-
-    const fixture = TestBed.createComponent(SubtopicTableComponent);
-    fixture.componentRef.setInput('topic', buildTopic(valueRaw, includeSecondRow));
-    fixture.componentRef.setInput('selectedNodeId', null);
-
-    const component = fixture.componentInstance;
-    const setCellEvents: Array<{ topicId: string; subtopicId: string; columnId: string; raw: string }> = [];
-    const renameColumnEvents: Array<{ topicId: string; columnId: string; name: string }> = [];
-    const selectNodeEvents: Array<string | null> = [];
-    component.setCell.subscribe((payload) => setCellEvents.push(payload));
-    component.renameColumn.subscribe((payload) => renameColumnEvents.push(payload));
-    component.selectNode.subscribe((payload) => selectNodeEvents.push(payload));
-
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    return { fixture, component, setCellEvents, renameColumnEvents, selectNodeEvents };
-  }
-
-  function getCellInput(fixture: ComponentFixture<SubtopicTableComponent>, nodeId: string, columnId: string): HTMLInputElement {
-    const input = fixture.nativeElement.querySelector(
-      `input[data-cell-key="${nodeId}:${columnId}"]`,
-    ) as HTMLInputElement | null;
-
-    if (!input) {
-      throw new Error(`Missing input for ${nodeId}:${columnId}`);
-    }
-
-    return input;
-  }
-
-  function focusInput(fixture: ComponentFixture<SubtopicTableComponent>, input: HTMLInputElement): void {
-    input.dispatchEvent(new FocusEvent('focus'));
-    fixture.detectChanges();
-  }
-
-  function headerRenameInputs(fixture: ComponentFixture<SubtopicTableComponent>): HTMLInputElement[] {
-    return Array.from(fixture.nativeElement.querySelectorAll('thead input[data-column-rename-id]')) as HTMLInputElement[];
-  }
 
   it('enters editing on first focus and shows raw formula', async () => {
     const { fixture } = await setup('=$Amount*$Rate');

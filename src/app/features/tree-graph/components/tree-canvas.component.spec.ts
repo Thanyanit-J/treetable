@@ -21,48 +21,48 @@ const TOPIC: TreeTopic = {
   ],
 };
 
+function topicInput(fixture: ComponentFixture<TreeCanvasComponent>): HTMLInputElement {
+  const input = fixture.nativeElement.querySelector('input[aria-label^="Topic label:"]') as HTMLInputElement | null;
+  if (!input) {
+    throw new Error('Topic input not found');
+  }
+  return input;
+}
+
+function subtopicInput(fixture: ComponentFixture<TreeCanvasComponent>): HTMLInputElement {
+  const input = fixture.nativeElement.querySelector('input[aria-label^="Subtopic label:"]') as HTMLInputElement | null;
+  if (!input) {
+    throw new Error('Subtopic input not found');
+  }
+  return input;
+}
+
+async function setup(): Promise<{
+  fixture: ComponentFixture<TreeCanvasComponent>;
+  renameEvents: Array<{ nodeId: string; label: string }>;
+  selectEvents: Array<string | null>;
+}> {
+  await TestBed.configureTestingModule({
+    imports: [TreeCanvasComponent],
+  }).compileComponents();
+
+  const fixture = TestBed.createComponent(TreeCanvasComponent);
+  fixture.componentRef.setInput('topic', TOPIC);
+  fixture.componentRef.setInput('selectedNodeId', null);
+
+  const renameEvents: Array<{ nodeId: string; label: string }> = [];
+  const selectEvents: Array<string | null> = [];
+  fixture.componentInstance.renameNode.subscribe((payload) => renameEvents.push(payload));
+  fixture.componentInstance.selectNode.subscribe((payload) => selectEvents.push(payload));
+
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
+
+  return { fixture, renameEvents, selectEvents };
+}
+
 describe('TreeCanvasComponent', () => {
-  async function setup(): Promise<{
-    fixture: ComponentFixture<TreeCanvasComponent>;
-    renameEvents: Array<{ nodeId: string; label: string }>;
-    selectEvents: Array<string | null>;
-  }> {
-    await TestBed.configureTestingModule({
-      imports: [TreeCanvasComponent],
-    }).compileComponents();
-
-    const fixture = TestBed.createComponent(TreeCanvasComponent);
-    fixture.componentRef.setInput('topic', TOPIC);
-    fixture.componentRef.setInput('selectedNodeId', null);
-
-    const renameEvents: Array<{ nodeId: string; label: string }> = [];
-    const selectEvents: Array<string | null> = [];
-    fixture.componentInstance.renameNode.subscribe((payload) => renameEvents.push(payload));
-    fixture.componentInstance.selectNode.subscribe((payload) => selectEvents.push(payload));
-
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    return { fixture, renameEvents, selectEvents };
-  }
-
-  function topicInput(fixture: ComponentFixture<TreeCanvasComponent>): HTMLInputElement {
-    const input = fixture.nativeElement.querySelector('input[aria-label^="Topic label:"]') as HTMLInputElement | null;
-    if (!input) {
-      throw new Error('Topic input not found');
-    }
-    return input;
-  }
-
-  function subtopicInput(fixture: ComponentFixture<TreeCanvasComponent>): HTMLInputElement {
-    const input = fixture.nativeElement.querySelector('input[aria-label^="Subtopic label:"]') as HTMLInputElement | null;
-    if (!input) {
-      throw new Error('Subtopic input not found');
-    }
-    return input;
-  }
-
   it('commits topic rename on blur', async () => {
     const { fixture, renameEvents } = await setup();
     const input = topicInput(fixture);

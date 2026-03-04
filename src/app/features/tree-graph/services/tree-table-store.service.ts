@@ -1,10 +1,8 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import {
   CellData,
-  ColumnId,
   DEFAULT_TOPIC_COLUMNS,
   ImportResult,
-  NodeId,
   TableColumn,
   TreeSubtopic,
   TreeTableState,
@@ -73,7 +71,7 @@ export class TreeTableStoreService {
     });
   }
 
-  removeTopic(topicId: NodeId): void {
+  removeTopic(topicId: string): void {
     this.mutate((state) => {
       state.topics = state.topics.filter((topic) => topic.id !== topicId);
       if (state.selectedNodeId?.startsWith('topic_') || state.selectedNodeId?.startsWith('subtopic_')) {
@@ -87,7 +85,7 @@ export class TreeTableStoreService {
     });
   }
 
-  addSubtopic(topicId: NodeId, label = 'New Subtopic'): void {
+  addSubtopic(topicId: string, label = 'New Subtopic'): void {
     this.mutate((state) => {
       const topic = state.topics.find((currentTopic) => currentTopic.id === topicId);
       if (!topic) {
@@ -105,7 +103,7 @@ export class TreeTableStoreService {
     });
   }
 
-  removeSubtopic(topicId: NodeId, subtopicId: NodeId): void {
+  removeSubtopic(topicId: string, subtopicId: string): void {
     this.mutate((state) => {
       const topic = state.topics.find((currentTopic) => currentTopic.id === topicId);
       if (!topic) {
@@ -118,7 +116,7 @@ export class TreeTableStoreService {
     });
   }
 
-  renameNode(nodeId: NodeId, label: string): void {
+  renameNode(nodeId: string, label: string): void {
     this.mutate((state) => {
       for (const topic of state.topics) {
         if (topic.id === nodeId) {
@@ -141,7 +139,7 @@ export class TreeTableStoreService {
     });
   }
 
-  selectNode(nodeId: NodeId | null): void {
+  selectNode(nodeId: string | null): void {
     this.mutate(
       (state) => {
         state.selectedNodeId = nodeId;
@@ -150,7 +148,7 @@ export class TreeTableStoreService {
     );
   }
 
-  moveTopicCard(topicId: NodeId, toIndex: number): void {
+  moveTopicCard(topicId: string, toIndex: number): void {
     this.mutate((state) => {
       const fromIndex = state.topics.findIndex((topic) => topic.id === topicId);
       if (fromIndex < 0 || toIndex < 0 || toIndex >= state.topics.length) {
@@ -164,7 +162,7 @@ export class TreeTableStoreService {
     });
   }
 
-  moveSubtopic(topicId: NodeId, subtopicId: NodeId, toIndex: number): void {
+  moveSubtopic(topicId: string, subtopicId: string, toIndex: number): void {
     this.mutate((state) => {
       const topic = state.topics.find((candidate) => candidate.id === topicId);
       if (!topic) {
@@ -182,7 +180,7 @@ export class TreeTableStoreService {
     });
   }
 
-  setCellRaw(topicId: NodeId, nodeId: NodeId, columnId: ColumnId, raw: string): void {
+  setCellRaw(topicId: string, nodeId: string, columnId: string, raw: string): void {
     this.mutate((state) => {
       const topic = state.topics.find((candidate) => candidate.id === topicId);
       if (!topic) {
@@ -208,7 +206,7 @@ export class TreeTableStoreService {
     });
   }
 
-  insertColumn(topicId: NodeId, referenceColumnId: ColumnId, side: 'left' | 'right'): void {
+  insertColumn(topicId: string, referenceColumnId: string, side: 'left' | 'right'): void {
     this.mutate((state) => {
       const topic = state.topics.find((candidate) => candidate.id === topicId);
       if (!topic) {
@@ -230,7 +228,7 @@ export class TreeTableStoreService {
     });
   }
 
-  renameColumn(topicId: NodeId, columnId: ColumnId, name: string): void {
+  renameColumn(topicId: string, columnId: string, name: string): void {
     this.mutate((state) => {
       const topic = state.topics.find((candidate) => candidate.id === topicId);
       if (!topic) {
@@ -258,7 +256,7 @@ export class TreeTableStoreService {
     });
   }
 
-  deleteColumn(topicId: NodeId, columnId: ColumnId): ImportResult | void {
+  deleteColumn(topicId: string, columnId: string): ImportResult | void {
     const topic = this.topics().find((candidate) => candidate.id === topicId);
     if (!topic) {
       return { ok: false, error: 'Topic not found.' };
@@ -402,7 +400,7 @@ export class TreeTableStoreService {
     };
   }
 
-  private ensureUniqueColumnId(baseId: ColumnId, seen: Set<string>): ColumnId {
+  private ensureUniqueColumnId(baseId: string, seen: Set<string>): string {
     let nextId = baseId;
     let suffix = 2;
     while (seen.has(nextId)) {
@@ -454,7 +452,7 @@ export class TreeTableStoreService {
     };
   }
 
-  private buildNewSubtopicCells(columns: TableColumn[], existingChildren: TreeSubtopic[]): Record<ColumnId, CellData> {
+  private buildNewSubtopicCells(columns: TableColumn[], existingChildren: TreeSubtopic[]): Record<string, CellData> {
     const cells = createEmptyCells(columns);
     for (const column of columns) {
       const formulaRaw = this.findColumnFormulaRaw(existingChildren, column.id);
@@ -465,7 +463,7 @@ export class TreeTableStoreService {
     return cells;
   }
 
-  private findColumnFormulaRaw(children: TreeSubtopic[], columnId: ColumnId): string | null {
+  private findColumnFormulaRaw(children: TreeSubtopic[], columnId: string): string | null {
     for (const child of children) {
       const raw = child.cells[columnId]?.raw ?? '';
       if (raw.trim().startsWith('=')) {
@@ -487,7 +485,7 @@ export class TreeTableStoreService {
     };
   }
 
-  private buildUniqueColumnId(existingColumns: TableColumn[], name: string): ColumnId {
+  private buildUniqueColumnId(existingColumns: TableColumn[], name: string): string {
     const base = slugToColumnId(name);
     let candidate = base;
     let suffix = 2;
@@ -501,7 +499,7 @@ export class TreeTableStoreService {
     return candidate;
   }
 
-  private renameColumnReferences(topic: TreeTopic, oldId: ColumnId, newId: ColumnId): void {
+  private renameColumnReferences(topic: TreeTopic, oldId: string, newId: string): void {
     for (const child of topic.children) {
       const oldCell = child.cells[oldId];
       if (oldCell) {
@@ -520,7 +518,7 @@ export class TreeTableStoreService {
     }
   }
 
-  private replaceFormulaToken(formula: string, oldId: ColumnId, newId: ColumnId): string {
+  private replaceFormulaToken(formula: string, oldId: string, newId: string): string {
     const escapedOldId = oldId.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
     const pattern = new RegExp(String.raw`(?<![\w$])${escapedOldId}(?!\w)`, 'g');
     return formula.replaceAll(pattern, newId);

@@ -1,5 +1,3 @@
-export type NodeId = string;
-export type ColumnId = string;
 export type CellValue = number | string | null;
 
 export interface CellData {
@@ -9,20 +7,20 @@ export interface CellData {
 }
 
 export interface TableColumn {
-  id: ColumnId;
+  id: string;
   name: string;
   type: 'number' | 'text';
 }
 
 export interface TreeSubtopic {
-  id: NodeId;
-  topicId: NodeId;
+  id: string;
+  topicId: string;
   label: string;
-  cells: Record<ColumnId, CellData>;
+  cells: Record<string, CellData>;
 }
 
 export interface TreeTopic {
-  id: NodeId;
+  id: string;
   label: string;
   columns: TableColumn[];
   children: TreeSubtopic[];
@@ -32,7 +30,7 @@ export interface TreeTableStateV1 {
   version: 1;
   title: string;
   topics: TreeTopic[];
-  selectedNodeId: NodeId | null;
+  selectedNodeId: string | null;
 }
 
 export type TreeTableState = TreeTableStateV1;
@@ -53,15 +51,12 @@ export function createCellData(raw = ''): CellData {
   };
 }
 
-export function makeNodeId(prefix: string): NodeId {
+export function makeNodeId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID()}`;
 }
 
-export function createEmptyCells(columns: TableColumn[]): Record<ColumnId, CellData> {
-  return Object.fromEntries(columns.map((column) => [column.id, createCellData('')])) as Record<
-    ColumnId,
-    CellData
-  >;
+export function createEmptyCells(columns: TableColumn[]): Record<string, CellData> {
+  return Object.fromEntries(columns.map((column) => [column.id, createCellData('')])) as Record<string, CellData>;
 }
 
 export function slugToColumnId(input: string): string {
