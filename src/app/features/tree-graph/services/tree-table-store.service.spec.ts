@@ -168,8 +168,11 @@ describe('TreeTableStoreService', () => {
       throw new Error('Expected starter topic shape');
     }
 
-    const sourceColumn = topic.columns[0]!;
-    const row = topic.children[0]!;
+    const sourceColumn = topic.columns[0];
+    const row = topic.children[0];
+    if (!sourceColumn || !row) {
+      throw new Error('Expected starter topic shape');
+    }
 
     store.setCellRaw(topic.id, row.id, sourceColumn.id, `=${sourceColumn.id}+$AA+$A_1+x${sourceColumn.id}`);
     store.renameColumn(topic.id, sourceColumn.id, 'Renamed');
@@ -206,10 +209,13 @@ describe('TreeTableStoreService', () => {
       throw new Error('Expected starter topic with at least two rows and two columns');
     }
 
-    const row1 = topic.children[0]!;
-    const row2 = topic.children[1]!;
-    const formulaColumn = topic.columns[1]!;
-    const literalColumn = topic.columns[0]!;
+    const row1 = topic.children[0];
+    const row2 = topic.children[1];
+    const formulaColumn = topic.columns[1];
+    const literalColumn = topic.columns[0];
+    if (!row1 || !row2 || !formulaColumn || !literalColumn) {
+      throw new Error('Expected starter topic with at least two rows and two columns');
+    }
 
     store.setCellRaw(topic.id, row1.id, formulaColumn.id, `=${literalColumn.id}*3`);
     const afterFormulaTopic = store.topics().find((candidate) => candidate.id === topic.id);
@@ -229,9 +235,12 @@ describe('TreeTableStoreService', () => {
       throw new Error('Expected starter topic with at least two rows and two columns');
     }
 
-    const row1 = topic.children[0]!;
-    const formulaColumn = topic.columns[1]!;
-    const sourceColumn = topic.columns[0]!;
+    const row1 = topic.children[0];
+    const formulaColumn = topic.columns[1];
+    const sourceColumn = topic.columns[0];
+    if (!row1 || !formulaColumn || !sourceColumn) {
+      throw new Error('Expected starter topic with at least two rows and two columns');
+    }
 
     store.setCellRaw(topic.id, row1.id, formulaColumn.id, `=${sourceColumn.id}*2`);
     store.setCellRaw(topic.id, row1.id, formulaColumn.id, '');

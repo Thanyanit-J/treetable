@@ -478,8 +478,8 @@ export class TreeGraphPageComponent {
     const trimmed = title.trim();
     const base = trimmed.length > 0 ? trimmed : 'Untitled';
     const sanitized = base
-      .replace(/[/\\?%*:|"<>]/g, '_')
-      .replace(/\s+/g, ' ')
+      .replaceAll(/[/\\?%*:|"<>]/g, '_')
+      .replaceAll(/\s+/g, ' ')
       .trim()
       .replace(/\.+$/, '');
     return sanitized.length > 0 ? sanitized : 'Untitled';

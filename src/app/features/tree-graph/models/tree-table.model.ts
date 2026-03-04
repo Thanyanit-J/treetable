@@ -67,7 +67,7 @@ export function createEmptyCells(columns: TableColumn[]): Record<ColumnId, CellD
 export function slugToColumnId(input: string): string {
   const cleaned = input
     .trim()
-    .replace(/\W/g, '');
+    .replaceAll(/\W/g, '');
 
   let base = cleaned.length > 0 ? cleaned : 'Column';
   if (!/^[A-Za-z_]/.test(base)) {
