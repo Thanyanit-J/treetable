@@ -12,7 +12,7 @@ import { FormsModule } from '@angular/forms';
         (ngModelChange)="rawChange.emit($event)"
         [attr.aria-invalid]="error() ? 'true' : 'false'"
         [attr.aria-describedby]="error() ? describedBy() : null"
-        class="w-full rounded-lg border px-2 py-1.5 text-sm text-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+        class="w-full rounded-lg border px-2 py-1.5 text-sm text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
         [class.border-rose-300]="!!error()"
         [class.border-slate-300]="!error()"
       />

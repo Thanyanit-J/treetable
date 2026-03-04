@@ -28,6 +28,8 @@ interface PendingDeleteTopic {
       style="
         --subtopic-node-height: 40px;
         --subtopic-gap: 13px;
+        --subtopic-table-offset-top: 5px;
+        --subtopic-table-header-height: 44px;
       "
     >
       <section class="mb-4 rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
@@ -48,7 +50,7 @@ interface PendingDeleteTopic {
           <div class="flex flex-wrap gap-2">
             <button
               (click)="store.addTopic()"
-              class="rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+              class="rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
               type="button"
             >
               + Topic
@@ -133,10 +135,10 @@ interface PendingDeleteTopic {
         </div>
         </div>
         @if (showLeftOverflowShadow()) {
-          <div class="pointer-events-none absolute bottom-5 left-0 top-0 w-10 bg-gradient-to-r from-slate-700/35 to-transparent"></div>
+          <div class="pointer-events-none absolute bottom-5 left-0 top-0 w-10 bg-linear-to-r from-slate-700/35 to-transparent"></div>
         }
         @if (showRightOverflowShadow()) {
-          <div class="pointer-events-none absolute bottom-5 right-0 top-0 w-10 bg-gradient-to-l from-slate-700/35 to-transparent"></div>
+          <div class="pointer-events-none absolute bottom-5 right-0 top-0 w-10 bg-linear-to-l from-slate-700/35 to-transparent"></div>
         }
       </div>
       @if (topicCardMenuOpen()) {

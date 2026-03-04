@@ -23,7 +23,7 @@ import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scro
             No subtopics yet. Add one in the tree graph.
           </div>
         } @else {
-          <table class="mt-[5px] w-max border-collapse text-sm">
+          <table class="mt-(--subtopic-table-offset-top) w-max border-collapse text-sm">
             <thead>
               <tr>
                 @for (column of columns(); track column.id) {
@@ -47,7 +47,7 @@ import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scro
                       (keydown.escape)="onColumnRenameEscape($event, column.id, column.name)"
                       (mousedown)="onHeaderLabelMouseDown($event, column.id)"
                       (click)="onHeaderLabelClick($event, column.id)"
-                      class="block min-h-[44px] w-full rounded-none border-0 bg-transparent px-2 py-2 text-center text-sm font-semibold text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
+                      class="block min-h-(--subtopic-table-header-height) w-full rounded-none border-0 bg-transparent px-2 py-2 text-center text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500"
                       [attr.aria-label]="'Rename column ' + column.name"
                     />
                   </th>
@@ -84,7 +84,7 @@ import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scro
                         (ngModelChange)="onCellModelChange(row.id, column.id, $event)"
                         [attr.aria-label]="'Edit cell ' + column.name"
                         [attr.aria-invalid]="cell?.error ? 'true' : 'false'"
-                        class="block min-h-[calc(var(--subtopic-node-height)+var(--subtopic-gap)+1px)] min-w-0 w-full overflow-x-auto whitespace-nowrap rounded-none border-0 px-2 py-2 text-sm text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
+                        class="block min-h-[calc(var(--subtopic-node-height)+var(--subtopic-gap)+1px)] min-w-0 w-full overflow-x-auto whitespace-nowrap rounded-none border-0 px-2 py-2 text-sm text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500"
                       />
                     </td>
                   }

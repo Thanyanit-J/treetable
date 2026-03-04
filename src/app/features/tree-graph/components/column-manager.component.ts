@@ -14,19 +14,19 @@ import { TableColumn } from '../models/tree-table.model';
             [ngModel]="newColumnName()"
             (ngModelChange)="newColumnName.set($event)"
             placeholder="New column"
-            class="w-36 rounded-lg border border-slate-300 px-2 py-1 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+            class="w-36 rounded-lg border border-slate-300 px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
           />
           <select
             [ngModel]="newColumnType()"
             (ngModelChange)="newColumnType.set($event === 'text' ? 'text' : 'number')"
-            class="rounded-lg border border-slate-300 px-2 py-1 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+            class="rounded-lg border border-slate-300 px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
           >
             <option value="number">Number</option>
             <option value="text">Text</option>
           </select>
           <button
             (click)="onAddColumn()"
-            class="rounded-lg bg-sky-600 px-3 py-1 text-sm font-semibold text-white hover:bg-sky-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+            class="rounded-lg bg-sky-600 px-3 py-1 text-sm font-semibold text-white hover:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
             type="button"
           >
             Add
@@ -40,12 +40,12 @@ import { TableColumn } from '../models/tree-table.model';
             <input
               [ngModel]="column.name"
               (ngModelChange)="rename.emit({ columnId: column.id, name: $event })"
-              class="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+              class="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
             />
             <code class="rounded bg-slate-200 px-1.5 py-0.5 text-xs text-slate-700">{{ column.id }}</code>
             <button
               (click)="remove.emit(column.id)"
-              class="rounded-lg border border-rose-300 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
+              class="rounded-lg border border-rose-300 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
               type="button"
             >
               Remove
