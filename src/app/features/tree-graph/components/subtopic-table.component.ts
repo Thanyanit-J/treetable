@@ -348,7 +348,7 @@ export class SubtopicTableComponent {
 
   protected summaryDisplayValue(columnId: string): string {
     const column = this.columns().find((candidate) => candidate.id === columnId);
-    if (!column || column.summaryMode !== 'sum') {
+    if (column?.summaryMode !== 'sum') {
       return '';
     }
 
@@ -380,7 +380,7 @@ export class SubtopicTableComponent {
   protected showSummaryLeftBorder(columnIndex: number): boolean {
     const columns = this.columns();
     const current = columns[columnIndex];
-    if (!current || current.summaryMode !== 'sum') {
+    if (current?.summaryMode !== 'sum') {
       return false;
     }
 
