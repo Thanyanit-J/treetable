@@ -302,6 +302,30 @@ describe('FormulaEngineService', () => {
     expect(evaluated[1]?.cells['$B']?.error).toBe('Invalid numeric value in column: $A');
   });
 
+  describe('tokenizer', () => {
+    it('parses a leading-dot decimal number', () => {
+      expect(evaluateSingleFormula('=.5 + .5')?.value).toBe(1);
+    });
+
+    it('parses identifiers starting with an underscore', () => {
+      const service = TestBed.inject(FormulaEngineService);
+      const columns = [
+        { id: '_base', name: 'Base', type: 'number' as const },
+        { id: '$Value', name: 'Value', type: 'number' as const },
+      ];
+      const row = {
+        _base: createCellData('7'),
+        $Value: createCellData('=_base * 2'),
+      };
+      const result = service.evaluateRow(columns, row);
+      expect(result['$Value']?.value).toBe(14);
+    });
+
+    it('returns an error for an invalid character', () => {
+      expect(evaluateSingleFormula('=1@2')?.error).toBe('Invalid character in formula: @');
+    });
+  });
+
   it('fails row-local aggregates when any referenced argument is invalid text', () => {
     const columns: TableColumn[] = [
       { id: '$A', name: 'A', type: 'number' },

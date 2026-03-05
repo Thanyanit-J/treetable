@@ -515,79 +515,45 @@ export class FormulaEngineService {
     return { value: null, error: `Unknown function: ${name}` };
   }
 
+  private readonly SINGLE_CHAR_TOKENS: Readonly<Record<string, TokenType>> = {
+    '+': 'plus',
+    '-': 'minus',
+    '*': 'multiply',
+    '/': 'divide',
+    '(': 'leftParen',
+    ')': 'rightParen',
+    ',': 'comma',
+    '.': 'dot',
+  };
+
   private tokenize(expression: string): { ok: true; value: Token[] } | { ok: false; error: string } {
     const tokens: Token[] = [];
     let index = 0;
 
     while (index < expression.length) {
       const char = expression[index];
-
-      if (!char) {
-        break;
-      }
-
-      if (/\s/.test(char)) {
+      if (!char || /\s/.test(char)) {
         index += 1;
         continue;
       }
 
-      if (/\d/.test(char) || (char === '.' && /\d/.test(expression[index + 1] ?? ''))) {
-        let end = index + 1;
-        while (end < expression.length && /[\d.]/.test(expression[end] ?? '')) {
-          end += 1;
-        }
-        tokens.push({ type: 'number', lexeme: expression.slice(index, end) });
-        index = end;
+      const numberEnd = this.tryReadNumber(expression, index);
+      if (numberEnd !== null) {
+        tokens.push({ type: 'number', lexeme: expression.slice(index, numberEnd) });
+        index = numberEnd;
         continue;
       }
 
-      if (/[A-Za-z_$]/.test(char)) {
-        let end = index + 1;
-        while (end < expression.length && /[\w$]/.test(expression[end] ?? '')) {
-          end += 1;
-        }
-        tokens.push({ type: 'identifier', lexeme: expression.slice(index, end) });
-        index = end;
+      const identEnd = this.tryReadIdentifier(expression, index);
+      if (identEnd !== null) {
+        tokens.push({ type: 'identifier', lexeme: expression.slice(index, identEnd) });
+        index = identEnd;
         continue;
       }
 
-      if (char === '+') {
-        tokens.push({ type: 'plus', lexeme: char });
-        index += 1;
-        continue;
-      }
-      if (char === '-') {
-        tokens.push({ type: 'minus', lexeme: char });
-        index += 1;
-        continue;
-      }
-      if (char === '*') {
-        tokens.push({ type: 'multiply', lexeme: char });
-        index += 1;
-        continue;
-      }
-      if (char === '/') {
-        tokens.push({ type: 'divide', lexeme: char });
-        index += 1;
-        continue;
-      }
-      if (char === '(') {
-        tokens.push({ type: 'leftParen', lexeme: char });
-        index += 1;
-        continue;
-      }
-      if (char === ')') {
-        tokens.push({ type: 'rightParen', lexeme: char });
-        index += 1;
-        continue;
-      }
-      if (char === ',') {
-        tokens.push({ type: 'comma', lexeme: char });
-        index += 1;
-        continue;
-      }
-      if (char === '.') {
-        tokens.push({ type: 'dot', lexeme: char });
+      const tokenType = this.SINGLE_CHAR_TOKENS[char];
+      if (tokenType) {
+        tokens.push({ type: tokenType, lexeme: char });
         index += 1;
         continue;
       }
@@ -596,5 +562,28 @@ export class FormulaEngineService {
     }
 
     return { ok: true, value: tokens };
+  }
+
+  private tryReadNumber(expression: string, index: number): number | null {
+    const char = expression[index] ?? '';
+    if (!/\d/.test(char) && !(char === '.' && /\d/.test(expression[index + 1] ?? ''))) {
+      return null;
+    }
+    let end = index + 1;
+    while (end < expression.length && /[\d.]/.test(expression[end] ?? '')) {
+      end += 1;
+    }
+    return end;
+  }
+
+  private tryReadIdentifier(expression: string, index: number): number | null {
+    if (!/[A-Za-z_$]/.test(expression[index] ?? '')) {
+      return null;
+    }
+    let end = index + 1;
+    while (end < expression.length && /[\w$]/.test(expression[end] ?? '')) {
+      end += 1;
+    }
+    return end;
   }
 }
