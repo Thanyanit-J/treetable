@@ -17,6 +17,7 @@ interface PendingDeleteNode {
   type: 'node';
   topicId: string;
   nodeId: string;
+  nodeLabel: string;
   canInheritValue: boolean;
 }
 
@@ -168,7 +169,7 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteNode;
             role="menuitem"
             type="button"
           >
-            Add Child Node
+            Add node
           </button>
           <button
             (click)="onTopicCardMenuAction('deleteTopic')"
@@ -204,6 +205,7 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteNode;
     <app-confirm-dialog
       [open]="pendingDelete() !== null"
       [title]="confirmTitle()"
+      [titleLabel]="confirmTitleLabel()"
       [message]="confirmMessage()"
       [secondaryConfirmLabel]="confirmSecondaryLabel()"
       (confirmed)="confirmDelete()"
@@ -356,7 +358,7 @@ export class TreeGraphPageComponent {
       return;
     }
 
-    this.pendingDelete.set({ type: 'node', topicId, nodeId, canInheritValue });
+    this.pendingDelete.set({ type: 'node', topicId, nodeId, nodeLabel: target.label, canInheritValue });
   }
 
   protected confirmTitle(): string {
@@ -364,7 +366,18 @@ export class TreeGraphPageComponent {
     if (!pending) {
       return 'Delete node';
     }
-    return pending.type === 'topic' ? 'Delete topic' : 'Delete node';
+    if (pending.type === 'topic') {
+      return 'Delete topic';
+    }
+    return 'Delete node';
+  }
+
+  protected confirmTitleLabel(): string {
+    const pending = this.pendingDelete();
+    if (pending?.type !== 'node') {
+      return '';
+    }
+    return pending.nodeLabel.trim().length > 0 ? pending.nodeLabel : 'Node';
   }
 
   protected confirmMessage(): string {
@@ -376,17 +389,17 @@ export class TreeGraphPageComponent {
       return 'Deleting a topic removes all its nodes and table rows.';
     }
     if (pending.canInheritValue) {
-      return 'Deleting this node removes all of its descendants and table rows. You can also delete it and move the only leaf row value to its parent.';
+      return 'Deleting this node will also delete everything under it. For the table data, you can preserve by choosing to keep it under the parent node instead.';
     }
     return 'Deleting this node removes all of its descendants and table rows.';
   }
 
   protected confirmSecondaryLabel(): string {
     const pending = this.pendingDelete();
-    if (!pending || pending.type !== 'node' || !pending.canInheritValue) {
+    if (pending?.type !== 'node' || !pending.canInheritValue) {
       return '';
     }
-    return 'Delete + Inherit Value';
+    return 'Delete and keep data';
   }
 
   confirmDelete(): void {
@@ -406,7 +419,7 @@ export class TreeGraphPageComponent {
 
   confirmDeleteAndInheritValue(): void {
     const pending = this.pendingDelete();
-    if (!pending || pending.type !== 'node' || !pending.canInheritValue) {
+    if (pending?.type !== 'node' || !pending.canInheritValue) {
       return;
     }
 
@@ -581,7 +594,7 @@ export class TreeGraphPageComponent {
 
   private canOfferInheritDelete(topic: TreeTopic, nodeId: string): boolean {
     const located = this.findNodeAndParent(topic.children, nodeId);
-    if (!located?.parent || located.parent.children.length !== 1) {
+    if (located?.parent?.children.length !== 1) {
       return false;
     }
 

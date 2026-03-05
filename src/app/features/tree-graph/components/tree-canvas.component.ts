@@ -170,7 +170,7 @@ type MenuTarget = TopicMenuTarget | NodeMenuTarget;
               role="menuitem"
               type="button"
             >
-              Add Child Node
+              Add node
             </button>
             <button
               (click)="onTopicMenuAction('deleteTopic')"
@@ -189,7 +189,7 @@ type MenuTarget = TopicMenuTarget | NodeMenuTarget;
               role="menuitem"
               type="button"
             >
-              Add Node
+              Add node below
             </button>
             <button
               (click)="onNodeMenuAction('addChild')"
@@ -197,7 +197,7 @@ type MenuTarget = TopicMenuTarget | NodeMenuTarget;
               role="menuitem"
               type="button"
             >
-              Add Child Node
+              Add child node
             </button>
             <button
               (click)="onNodeMenuAction('deleteNode')"

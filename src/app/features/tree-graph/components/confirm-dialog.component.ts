@@ -10,7 +10,15 @@ import { ChangeDetectionStrategy, Component, ElementRef, effect, input, output, 
       (keydown)="onDialogKeyDown($event)"
     >
       <form method="dialog" class="space-y-4 p-6">
-        <h2 class="text-lg font-semibold text-slate-900">{{ title() }}</h2>
+        @if (titleLabel()) {
+          <h2 class="flex min-w-0 items-baseline text-lg font-semibold text-slate-900">
+            <span class="shrink-0">Delete "</span>
+            <span class="min-w-0 truncate" [attr.title]="titleLabel()">{{ titleLabel() }}</span>
+            <span class="shrink-0">" node?</span>
+          </h2>
+        } @else {
+          <h2 class="block max-w-full truncate text-lg font-semibold text-slate-900" [attr.title]="title()">{{ title() }}</h2>
+        }
         <p class="text-sm text-slate-600">{{ message() }}</p>
         <div class="flex justify-end gap-2 pt-2">
           <button
@@ -48,6 +56,7 @@ import { ChangeDetectionStrategy, Component, ElementRef, effect, input, output, 
 export class ConfirmDialogComponent {
   readonly open = input(false);
   readonly title = input('Confirm');
+  readonly titleLabel = input('');
   readonly message = input('Are you sure?');
   readonly secondaryConfirmLabel = input('');
 
@@ -120,7 +129,7 @@ export class ConfirmDialogComponent {
 
     event.preventDefault();
     const activeElement = document.activeElement;
-    const currentIndex = orderedButtons.findIndex((button) => button === activeElement);
+    const currentIndex = orderedButtons.indexOf(activeElement as HTMLButtonElement);
     const move = event.key === 'ArrowRight' ? 1 : -1;
     const nextIndex = (currentIndex + move + orderedButtons.length) % orderedButtons.length;
     const nextButton = orderedButtons[nextIndex];
