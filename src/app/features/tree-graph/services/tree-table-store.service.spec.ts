@@ -428,7 +428,7 @@ describe('TreeTableStoreService', () => {
     const wholeRow1 = wholeColumnTopic?.children[0]?.cells[sourceColumn.id]?.value;
     const wholeRow2 = wholeColumnTopic?.children[1]?.cells[sourceColumn.id]?.value;
     if (typeof wholeRow1 !== 'number' || typeof wholeRow2 !== 'number') {
-      throw new Error('Expected numeric source values after whole-column formula');
+      throw new TypeError('Expected numeric source values after whole-column formula');
     }
     const expectedWhole = wholeRow1 + wholeRow2;
     expect(wholeColumnTopic?.children[0]?.cells[targetColumn.id]?.value).toBe(expectedWhole);
@@ -439,7 +439,7 @@ describe('TreeTableStoreService', () => {
     const row1Source = rowLocalTopic?.children[0]?.cells[sourceColumn.id]?.value;
     const row2Source = rowLocalTopic?.children[1]?.cells[sourceColumn.id]?.value;
     if (typeof row1Source !== 'number' || typeof row2Source !== 'number') {
-      throw new Error('Expected numeric source values after row-local formula');
+      throw new TypeError('Expected numeric source values after row-local formula');
     }
     expect(rowLocalTopic?.children[0]?.cells[targetColumn.id]?.value).toBe(row1Source + 1);
     expect(rowLocalTopic?.children[1]?.cells[targetColumn.id]?.value).toBe(row2Source + 1);

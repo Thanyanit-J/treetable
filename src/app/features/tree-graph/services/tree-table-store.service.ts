@@ -185,7 +185,7 @@ export class TreeTableStoreService {
       }
 
       let inheritedCells: Record<string, CellData> | null = null;
-      if (options?.inheritLeafValue && located.parent && located.parent.children.length === 1) {
+      if (options?.inheritLeafValue && located.parent?.children.length === 1) {
         const onlyLeaf = this.findOnlyLeafInChain(located.node);
         if (onlyLeaf && this.hasAnyRawValue(onlyLeaf.cells)) {
           inheritedCells = structuredClone(onlyLeaf.cells);
@@ -195,7 +195,7 @@ export class TreeTableStoreService {
       const siblings = located.parent ? located.parent.children : topic.children;
       siblings.splice(located.index, 1);
 
-      if (located.parent && located.parent.children.length === 0) {
+      if (located.parent?.children.length === 0) {
         if (inheritedCells) {
           located.parent.cells = inheritedCells;
         } else {
