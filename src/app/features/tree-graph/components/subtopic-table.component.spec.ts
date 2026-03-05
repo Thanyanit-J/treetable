@@ -17,9 +17,10 @@ function buildTopic(
     ],
     children: [
       {
-        id: 'subtopic_1',
+        id: 'node_1',
         topicId: 'topic_1',
-        label: 'Subtopic 1',
+        label: 'Node 1',
+        children: [],
         cells: {
           $Amount: { raw: '100', value: 100, error: null },
           $Rate: { raw: '0.1', value: 0.1, error: null },
@@ -31,9 +32,10 @@ function buildTopic(
 
   if (includeSecondRow) {
     topic.children.push({
-      id: 'subtopic_2',
+      id: 'node_2',
       topicId: 'topic_1',
-      label: 'Subtopic 2',
+      label: 'Node 2',
+      children: [],
       cells: {
         $Amount: { raw: '250', value: 250, error: null },
         $Rate: { raw: '0.2', value: 0.2, error: null },
@@ -60,7 +62,7 @@ async function setup(
 ): Promise<{
   fixture: ComponentFixture<SubtopicTableComponent>;
   component: SubtopicTableComponent;
-  setCellEvents: Array<{ topicId: string; subtopicId: string; columnId: string; raw: string }>;
+  setCellEvents: Array<{ topicId: string; nodeId: string; columnId: string; raw: string }>;
   renameColumnEvents: Array<{ topicId: string; columnId: string; name: string }>;
   setColumnSummaryEvents: Array<{ topicId: string; columnId: string; mode: 'none' | 'sum' }>;
   selectNodeEvents: Array<string | null>;
@@ -74,7 +76,7 @@ async function setup(
   fixture.componentRef.setInput('selectedNodeId', null);
 
   const component = fixture.componentInstance;
-  const setCellEvents: Array<{ topicId: string; subtopicId: string; columnId: string; raw: string }> = [];
+  const setCellEvents: Array<{ topicId: string; nodeId: string; columnId: string; raw: string }> = [];
   const renameColumnEvents: Array<{ topicId: string; columnId: string; name: string }> = [];
   const setColumnSummaryEvents: Array<{ topicId: string; columnId: string; mode: 'none' | 'sum' }> = [];
   const selectNodeEvents: Array<string | null> = [];
@@ -130,7 +132,7 @@ describe('SubtopicTableComponent', () => {
   it('enters editing on first focus and shows raw formula', async () => {
     const { fixture } = await setup('=$Amount*$Rate');
 
-    const valueInput = getCellInput(fixture, 'subtopic_1', '$Value');
+    const valueInput = getCellInput(fixture, 'node_1', '$Value');
     expect(valueInput.value).toBe('10');
 
     focusInput(fixture, valueInput);
@@ -143,33 +145,33 @@ describe('SubtopicTableComponent', () => {
   it('inserts a single column reference during formula assist and keeps active edit cell', async () => {
     const { fixture, component } = await setup('=');
 
-    const valueInput = getCellInput(fixture, 'subtopic_1', '$Value');
+    const valueInput = getCellInput(fixture, 'node_1', '$Value');
     focusInput(fixture, valueInput);
     await fixture.whenStable();
     fixture.detectChanges();
 
     valueInput.setSelectionRange(1, 1);
-    const amountInput = getCellInput(fixture, 'subtopic_1', '$Amount');
+    const amountInput = getCellInput(fixture, 'node_1', '$Amount');
     amountInput.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
     await fixture.whenStable();
     fixture.detectChanges();
 
     expect(valueInput.value).toBe('=$Amount');
     expect(valueInput.value.match(/\$Amount/g)?.length ?? 0).toBe(1);
-    expect(component.isEditingCell('subtopic_1', '$Value')).toBe(true);
-    expect(component.isEditingCell('subtopic_1', '$Amount')).toBe(false);
+    expect(component.isEditingCell('node_1', '$Value')).toBe(true);
+    expect(component.isEditingCell('node_1', '$Amount')).toBe(false);
   });
 
   it('replaces referenced token at cursor and places caret at inserted token end', async () => {
     const { fixture } = await setup('=$Amount+$Rate');
 
-    const valueInput = getCellInput(fixture, 'subtopic_1', '$Value');
+    const valueInput = getCellInput(fixture, 'node_1', '$Value');
     focusInput(fixture, valueInput);
     await fixture.whenStable();
     fixture.detectChanges();
 
     valueInput.setSelectionRange(3, 3);
-    const rateInput = getCellInput(fixture, 'subtopic_1', '$Rate');
+    const rateInput = getCellInput(fixture, 'node_1', '$Rate');
     rateInput.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
 
     await nextFrame();
@@ -185,7 +187,7 @@ describe('SubtopicTableComponent', () => {
   it('commits once on Enter and exits editing', async () => {
     const { fixture, component, setCellEvents } = await setup('=$Amount*$Rate');
 
-    const amountInput = getCellInput(fixture, 'subtopic_1', '$Amount');
+    const amountInput = getCellInput(fixture, 'node_1', '$Amount');
     focusInput(fixture, amountInput);
     await fixture.whenStable();
     fixture.detectChanges();
@@ -198,14 +200,14 @@ describe('SubtopicTableComponent', () => {
     fixture.detectChanges();
 
     expect(setCellEvents).toHaveLength(1);
-    expect(setCellEvents[0]).toEqual({ topicId: 'topic_1', subtopicId: 'subtopic_1', columnId: '$Amount', raw: '200' });
-    expect(component.isEditingCell('subtopic_1', '$Amount')).toBe(false);
+    expect(setCellEvents[0]).toEqual({ topicId: 'topic_1', nodeId: 'node_1', columnId: '$Amount', raw: '200' });
+    expect(component.isEditingCell('node_1', '$Amount')).toBe(false);
   });
 
   it('cancels on Escape and blur does not commit', async () => {
     const { fixture, setCellEvents } = await setup('=$Amount*$Rate');
 
-    const amountInput = getCellInput(fixture, 'subtopic_1', '$Amount');
+    const amountInput = getCellInput(fixture, 'node_1', '$Amount');
     focusInput(fixture, amountInput);
     await fixture.whenStable();
     fixture.detectChanges();
@@ -230,7 +232,7 @@ describe('SubtopicTableComponent', () => {
 
     expect(headerInputs()[0]?.value).toBe('Amount');
 
-    const valueInput = getCellInput(fixture, 'subtopic_1', '$Value');
+    const valueInput = getCellInput(fixture, 'node_1', '$Value');
     focusInput(fixture, valueInput);
     await fixture.whenStable();
     fixture.detectChanges();
@@ -288,10 +290,10 @@ describe('SubtopicTableComponent', () => {
 
   it('clears selection highlight when focus leaves table', async () => {
     const { fixture, selectNodeEvents } = await setup();
-    const amountInput = getCellInput(fixture, 'subtopic_1', '$Amount');
+    const amountInput = getCellInput(fixture, 'node_1', '$Amount');
 
     focusInput(fixture, amountInput);
-    expect(selectNodeEvents).toContain('subtopic_1');
+    expect(selectNodeEvents).toContain('node_1');
 
     amountInput.dispatchEvent(new FocusEvent('blur', { relatedTarget: null }));
     fixture.detectChanges();
@@ -372,7 +374,7 @@ describe('SubtopicTableComponent', () => {
     fixture.detectChanges();
 
     const root = fixture.nativeElement as HTMLElement;
-    expect(root.textContent).toContain('No subtopics yet. Add one in the tree graph.');
+    expect(root.textContent).toContain('No nodes yet. Add one in the tree graph.');
     expect(root.querySelector('thead')).toBeNull();
     expect(root.querySelector('[data-testid="summary-footer"]')).toBeNull();
   });

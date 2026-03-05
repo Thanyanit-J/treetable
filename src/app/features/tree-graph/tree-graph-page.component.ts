@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ConfirmDialogComponent } from './components/confirm-dialog.component';
 import { SubtopicTableComponent } from './components/subtopic-table.component';
 import { TreeCanvasComponent } from './components/tree-canvas.component';
-import { ImportResult, TreeTopic } from './models/tree-table.model';
+import { ImportResult, TreeNode, TreeTopic } from './models/tree-table.model';
 import { TreeTableStoreService } from './services/tree-table-store.service';
 import { acquireMenuScrollLock, releaseMenuScrollLock } from './utils/menu-scroll-lock';
 
@@ -12,6 +12,15 @@ interface PendingDeleteTopic {
   type: 'topic';
   topicId: string;
 }
+
+interface PendingDeleteNode {
+  type: 'node';
+  topicId: string;
+  nodeId: string;
+  canInheritValue: boolean;
+}
+
+type PendingDelete = PendingDeleteTopic | PendingDeleteNode;
 
 @Component({
   selector: 'app-tree-graph-page',
@@ -30,6 +39,7 @@ interface PendingDeleteTopic {
         --subtopic-gap: 13px;
         --subtopic-table-offset-top: 5px;
         --subtopic-table-header-height: 44px;
+        --tree-level-gap: 28px;
       "
     >
       <section class="mb-4 rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
@@ -109,12 +119,13 @@ interface PendingDeleteTopic {
                   <app-tree-canvas
                     [topic]="topic"
                     [selectedNodeId]="store.selectedNodeId()"
-                    (addSubtopic)="store.addSubtopic($event)"
+                    (addChildNode)="store.addChildNode($event.topicId, $event.parentNodeId)"
+                    (addSiblingNode)="store.addSiblingNode($event.topicId, $event.nodeId)"
                     (renameNode)="store.renameNode($event.nodeId, $event.label)"
                     (requestDeleteTopic)="queueTopicDelete($event)"
-                    (requestDeleteSubtopic)="queueSubtopicDelete($event.topicId, $event.subtopicId)"
+                    (requestDeleteNode)="queueNodeDelete($event.topicId, $event.nodeId)"
                     (selectNode)="store.selectNode($event)"
-                    (moveSubtopic)="store.moveSubtopic($event.topicId, $event.subtopicId, $event.toIndex)"
+                    (moveNode)="store.moveNode($event.topicId, $event.parentNodeId, $event.nodeId, $event.toIndex)"
                   />
                 </div>
 
@@ -122,7 +133,7 @@ interface PendingDeleteTopic {
                   <app-subtopic-table
                     [topic]="topic"
                     [selectedNodeId]="store.selectedNodeId()"
-                    (setCell)="store.setCellRaw($event.topicId, $event.subtopicId, $event.columnId, $event.raw)"
+                    (setCell)="store.setCellRaw($event.topicId, $event.nodeId, $event.columnId, $event.raw)"
                     (selectNode)="store.selectNode($event)"
                     (insertColumn)="store.insertColumn($event.topicId, $event.referenceColumnId, $event.side)"
                     (deleteColumn)="onDeleteColumn($event.topicId, $event.columnId)"
@@ -152,12 +163,12 @@ interface PendingDeleteTopic {
           aria-label="Topic card actions"
         >
           <button
-            (click)="onTopicCardMenuAction('addSubtopic')"
+            (click)="onTopicCardMenuAction('addChild')"
             class="block w-full rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
             role="menuitem"
             type="button"
           >
-            Add subtopic
+            Add Child Node
           </button>
           <button
             (click)="onTopicCardMenuAction('deleteTopic')"
@@ -192,9 +203,11 @@ interface PendingDeleteTopic {
 
     <app-confirm-dialog
       [open]="pendingDelete() !== null"
-      title="Delete node"
-      message="Deleting a topic removes all its subtopics and table rows."
+      [title]="confirmTitle()"
+      [message]="confirmMessage()"
+      [secondaryConfirmLabel]="confirmSecondaryLabel()"
       (confirmed)="confirmDelete()"
+      (secondaryConfirmed)="confirmDeleteAndInheritValue()"
       (cancelled)="pendingDelete.set(null)"
     />
   `,
@@ -203,7 +216,7 @@ interface PendingDeleteTopic {
 export class TreeGraphPageComponent {
   readonly store = inject(TreeTableStoreService);
 
-  protected readonly pendingDelete = signal<PendingDeleteTopic | null>(null);
+  protected readonly pendingDelete = signal<PendingDelete | null>(null);
   protected readonly statusMessage = signal<ImportResult | null>(null);
   protected readonly editingTitle = signal(false);
   protected readonly titleDraft = signal('');
@@ -307,15 +320,15 @@ export class TreeGraphPageComponent {
     this.broadcastMenuOpened();
   }
 
-  protected onTopicCardMenuAction(action: 'addSubtopic' | 'deleteTopic'): void {
+  protected onTopicCardMenuAction(action: 'addChild' | 'deleteTopic'): void {
     const topicId = this.topicCardMenuTopicId();
     if (!topicId) {
       this.closeTopicCardMenu();
       return;
     }
 
-    if (action === 'addSubtopic') {
-      this.store.addSubtopic(topicId);
+    if (action === 'addChild') {
+      this.store.addChildNode(topicId, null);
     } else {
       this.queueTopicDelete(topicId);
     }
@@ -326,8 +339,54 @@ export class TreeGraphPageComponent {
     this.pendingDelete.set({ type: 'topic', topicId });
   }
 
-  queueSubtopicDelete(topicId: string, subtopicId: string): void {
-    this.store.removeSubtopic(topicId, subtopicId);
+  queueNodeDelete(topicId: string, nodeId: string): void {
+    const topic = this.store.topics().find((candidate) => candidate.id === topicId);
+    if (!topic) {
+      return;
+    }
+
+    const target = this.findNode(topic.children, nodeId);
+    if (!target) {
+      return;
+    }
+
+    const canInheritValue = this.canOfferInheritDelete(topic, nodeId);
+    if (target.children.length === 0 && !canInheritValue) {
+      this.store.removeNode(topicId, nodeId);
+      return;
+    }
+
+    this.pendingDelete.set({ type: 'node', topicId, nodeId, canInheritValue });
+  }
+
+  protected confirmTitle(): string {
+    const pending = this.pendingDelete();
+    if (!pending) {
+      return 'Delete node';
+    }
+    return pending.type === 'topic' ? 'Delete topic' : 'Delete node';
+  }
+
+  protected confirmMessage(): string {
+    const pending = this.pendingDelete();
+    if (!pending) {
+      return '';
+    }
+    if (pending.type === 'topic') {
+      return 'Deleting a topic removes all its nodes and table rows.';
+    }
+    if (pending.canInheritValue) {
+      return 'Deleting this node removes all of its descendants and table rows. You can also delete it and move the only leaf row value to its parent.';
+    }
+    return 'Deleting this node removes all of its descendants and table rows.';
+  }
+
+  protected confirmSecondaryLabel(): string {
+    const pending = this.pendingDelete();
+    if (!pending || pending.type !== 'node' || !pending.canInheritValue) {
+      return '';
+    }
+    return 'Delete + Inherit Value';
   }
 
   confirmDelete(): void {
@@ -336,8 +395,22 @@ export class TreeGraphPageComponent {
       return;
     }
 
-    this.store.removeTopic(pending.topicId);
+    if (pending.type === 'topic') {
+      this.store.removeTopic(pending.topicId);
+    } else {
+      this.store.removeNode(pending.topicId, pending.nodeId);
+    }
 
+    this.pendingDelete.set(null);
+  }
+
+  confirmDeleteAndInheritValue(): void {
+    const pending = this.pendingDelete();
+    if (!pending || pending.type !== 'node' || !pending.canInheritValue) {
+      return;
+    }
+
+    this.store.removeNode(pending.topicId, pending.nodeId, { inheritLeafValue: true });
     this.pendingDelete.set(null);
   }
 
@@ -473,6 +546,68 @@ export class TreeGraphPageComponent {
     }
     releaseMenuScrollLock();
     this.isScrollLocked = false;
+  }
+
+  private findNode(nodes: TreeNode[], nodeId: string): TreeNode | null {
+    for (const node of nodes) {
+      if (node.id === nodeId) {
+        return node;
+      }
+      const found = this.findNode(node.children, nodeId);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  private findNodeAndParent(
+    nodes: TreeNode[],
+    nodeId: string,
+    parent: TreeNode | null = null,
+  ): { node: TreeNode; parent: TreeNode | null } | null {
+    for (const node of nodes) {
+      if (node.id === nodeId) {
+        return { node, parent };
+      }
+      const found = this.findNodeAndParent(node.children, nodeId, node);
+      if (found) {
+        return found;
+      }
+    }
+
+    return null;
+  }
+
+  private canOfferInheritDelete(topic: TreeTopic, nodeId: string): boolean {
+    const located = this.findNodeAndParent(topic.children, nodeId);
+    if (!located?.parent || located.parent.children.length !== 1) {
+      return false;
+    }
+
+    const onlyLeaf = this.findOnlyLeafInChain(located.node);
+    if (!onlyLeaf) {
+      return false;
+    }
+
+    return Object.values(onlyLeaf.cells).some((cell) => cell.raw.trim().length > 0);
+  }
+
+  private findOnlyLeafInChain(node: TreeNode): TreeNode | null {
+    let current: TreeNode = node;
+    while (current.children.length === 1) {
+      const next = current.children[0];
+      if (!next) {
+        break;
+      }
+      current = next;
+    }
+
+    if (current.children.length > 0) {
+      return null;
+    }
+
+    return current;
   }
 
   private buildExportFileName(title: string): string {

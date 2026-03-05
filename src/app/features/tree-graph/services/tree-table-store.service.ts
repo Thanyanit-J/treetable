@@ -4,7 +4,7 @@ import {
   DEFAULT_TOPIC_COLUMNS,
   ImportResult,
   TableColumn,
-  TreeSubtopic,
+  TreeNode,
   TreeTableState,
   TreeTableStateV1,
   TreeTopic,
@@ -15,6 +15,7 @@ import {
   makeNodeId,
   slugToColumnId,
 } from '../models/tree-table.model';
+import { collectLeaves, findNodeAndParent, nodeExists, updateLeafCells, walkNodes } from '../utils/tree-helpers';
 import { FormulaEngineService } from './formula-engine.service';
 import { PersistenceService } from './persistence.service';
 
@@ -52,65 +53,166 @@ export class TreeTableStoreService {
     this.mutate((state) => {
       const topicId = makeNodeId('topic');
       const columns = this.defaultTopicColumns();
-      const subtopicId = makeNodeId('subtopic');
+      const nodeId = makeNodeId('node');
       const newTopic: TreeTopic = {
         id: topicId,
         label,
         columns,
         children: [
           {
-            id: subtopicId,
+            id: nodeId,
             topicId,
-            label: 'New Subtopic',
-            cells: this.buildNewSubtopicCells(columns, []),
+            label: 'New Node',
+            children: [],
+            cells: this.buildNewLeafCells(columns, []),
           },
         ],
       };
       state.topics.push(newTopic);
-      state.selectedNodeId = subtopicId;
+      state.selectedNodeId = nodeId;
     });
   }
 
   removeTopic(topicId: string): void {
     this.mutate((state) => {
       state.topics = state.topics.filter((topic) => topic.id !== topicId);
-      if (state.selectedNodeId?.startsWith('topic_') || state.selectedNodeId?.startsWith('subtopic_')) {
-        const selectedStillExists = state.topics.some(
-          (topic) => topic.id === state.selectedNodeId || topic.children.some((child) => child.id === state.selectedNodeId),
-        );
-        if (!selectedStillExists) {
-          state.selectedNodeId = null;
-        }
+      const selectedId = state.selectedNodeId;
+      if (!selectedId) {
+        return;
+      }
+      const selectedStillExists = state.topics.some(
+        (topic) => topic.id === selectedId || nodeExists(topic.children, selectedId),
+      );
+      if (!selectedStillExists) {
+        state.selectedNodeId = null;
       }
     });
   }
 
-  addSubtopic(topicId: string, label = 'New Subtopic'): void {
+  addChildNode(topicId: string, parentNodeId: string | null, label = 'New Node'): void {
     this.mutate((state) => {
       const topic = state.topics.find((currentTopic) => currentTopic.id === topicId);
       if (!topic) {
         return;
       }
-      const subtopicId = makeNodeId('subtopic');
-      const newSubtopic: TreeSubtopic = {
-        id: subtopicId,
+      const newNodeId = makeNodeId('node');
+
+      if (!parentNodeId) {
+        const leaves = collectLeaves(topic.children);
+        const newNode: TreeNode = {
+          id: newNodeId,
+          topicId,
+          label,
+          children: [],
+          cells: this.buildNewLeafCells(topic.columns, leaves),
+        };
+        topic.children.push(newNode);
+        state.selectedNodeId = newNodeId;
+        return;
+      }
+
+      const parentResult = findNodeAndParent(topic.children, parentNodeId);
+      const parentNode = parentResult?.node;
+      if (!parentNode) {
+        return;
+      }
+
+      if (parentNode.children.length === 0) {
+        const child: TreeNode = {
+          id: newNodeId,
+          topicId,
+          label,
+          children: [],
+          cells: structuredClone(parentNode.cells),
+        };
+        parentNode.children = [child];
+        parentNode.cells = createEmptyCells(topic.columns);
+        state.selectedNodeId = newNodeId;
+        return;
+      }
+
+      const leaves = collectLeaves(topic.children);
+      const newNode: TreeNode = {
+        id: newNodeId,
         topicId,
         label,
-        cells: this.buildNewSubtopicCells(topic.columns, topic.children),
+        children: [],
+        cells: this.buildNewLeafCells(topic.columns, leaves),
       };
-      topic.children.push(newSubtopic);
-      state.selectedNodeId = subtopicId;
+      parentNode.children.push(newNode);
+      state.selectedNodeId = newNodeId;
     });
   }
 
-  removeSubtopic(topicId: string, subtopicId: string): void {
+  addSiblingNode(topicId: string, nodeId: string, label = 'New Node'): void {
     this.mutate((state) => {
       const topic = state.topics.find((currentTopic) => currentTopic.id === topicId);
       if (!topic) {
         return;
       }
-      topic.children = topic.children.filter((child) => child.id !== subtopicId);
-      if (state.selectedNodeId === subtopicId) {
+
+      const located = findNodeAndParent(topic.children, nodeId);
+      if (!located) {
+        return;
+      }
+
+      const siblings = located.parent ? located.parent.children : topic.children;
+      const leaves = collectLeaves(topic.children);
+      const newNodeId = makeNodeId('node');
+      const newNode: TreeNode = {
+        id: newNodeId,
+        topicId,
+        label,
+        children: [],
+        cells: this.buildNewLeafCells(topic.columns, leaves),
+      };
+
+      siblings.splice(located.index + 1, 0, newNode);
+      state.selectedNodeId = newNodeId;
+    });
+  }
+
+  removeNode(topicId: string, nodeId: string, options?: { inheritLeafValue?: boolean }): void {
+    this.mutate((state) => {
+      const topic = state.topics.find((currentTopic) => currentTopic.id === topicId);
+      if (!topic) {
+        return;
+      }
+
+      const located = findNodeAndParent(topic.children, nodeId);
+      if (!located) {
+        return;
+      }
+
+      let inheritedCells: Record<string, CellData> | null = null;
+      if (options?.inheritLeafValue && located.parent && located.parent.children.length === 1) {
+        const onlyLeaf = this.findOnlyLeafInChain(located.node);
+        if (onlyLeaf && this.hasAnyRawValue(onlyLeaf.cells)) {
+          inheritedCells = structuredClone(onlyLeaf.cells);
+        }
+      }
+
+      const siblings = located.parent ? located.parent.children : topic.children;
+      siblings.splice(located.index, 1);
+
+      if (located.parent && located.parent.children.length === 0) {
+        if (inheritedCells) {
+          located.parent.cells = inheritedCells;
+        } else {
+          const leaves = collectLeaves(topic.children);
+          located.parent.cells = this.buildNewLeafCells(topic.columns, leaves);
+        }
+      }
+
+      const selectedId = state.selectedNodeId;
+      if (!selectedId) {
+        return;
+      }
+
+      const selectedStillExists = state.topics.some(
+        (currentTopic) => currentTopic.id === selectedId || nodeExists(currentTopic.children, selectedId),
+      );
+      if (!selectedStillExists) {
         state.selectedNodeId = null;
       }
     });
@@ -123,9 +225,9 @@ export class TreeTableStoreService {
           topic.label = label;
           return;
         }
-        const child = topic.children.find((currentChild) => currentChild.id === nodeId);
-        if (child) {
-          child.label = label;
+        const found = this.findNodeById(topic.children, nodeId);
+        if (found) {
+          found.label = label;
           return;
         }
       }
@@ -162,21 +264,28 @@ export class TreeTableStoreService {
     });
   }
 
-  moveSubtopic(topicId: string, subtopicId: string, toIndex: number): void {
+  moveNode(topicId: string, parentNodeId: string | null, nodeId: string, toIndex: number): void {
     this.mutate((state) => {
       const topic = state.topics.find((candidate) => candidate.id === topicId);
       if (!topic) {
         return;
       }
-      const fromIndex = topic.children.findIndex((child) => child.id === subtopicId);
-      if (fromIndex < 0 || toIndex < 0 || toIndex >= topic.children.length) {
+
+      const parentNode = parentNodeId ? findNodeAndParent(topic.children, parentNodeId)?.node ?? null : null;
+      if (parentNodeId && !parentNode) {
         return;
       }
-      const [child] = topic.children.splice(fromIndex, 1);
+
+      const siblings = parentNode ? parentNode.children : topic.children;
+      const fromIndex = siblings.findIndex((child) => child.id === nodeId);
+      if (fromIndex < 0 || toIndex < 0 || toIndex >= siblings.length) {
+        return;
+      }
+      const [child] = siblings.splice(fromIndex, 1);
       if (!child) {
         return;
       }
-      topic.children.splice(toIndex, 0, child);
+      siblings.splice(toIndex, 0, child);
     });
   }
 
@@ -187,22 +296,24 @@ export class TreeTableStoreService {
         return;
       }
 
-      const targetChild = topic.children.find((candidate) => candidate.id === nodeId);
-      if (!targetChild) {
+      const located = findNodeAndParent(topic.children, nodeId);
+      const targetNode = located?.node;
+      if (!targetNode || targetNode.children.length > 0) {
         return;
       }
 
-      const prevRaw = targetChild.cells[columnId]?.raw ?? '';
+      const prevRaw = targetNode.cells[columnId]?.raw ?? '';
       const nextIsFormula = raw.trim().startsWith('=');
       const wasFormula = prevRaw.trim().startsWith('=');
       if (nextIsFormula || wasFormula) {
-        for (const child of topic.children) {
-          child.cells[columnId] = this.withRaw(child.cells[columnId], raw);
+        const leaves = collectLeaves(topic.children);
+        for (const leaf of leaves) {
+          leaf.cells[columnId] = this.withRaw(leaf.cells[columnId], raw);
         }
         return;
       }
 
-      targetChild.cells[columnId] = this.withRaw(targetChild.cells[columnId], raw);
+      targetNode.cells[columnId] = this.withRaw(targetNode.cells[columnId], raw);
     });
   }
 
@@ -222,9 +333,9 @@ export class TreeTableStoreService {
       const insertionIndex = side === 'left' ? refIndex : refIndex + 1;
       topic.columns.splice(insertionIndex, 0, column);
 
-      for (const child of topic.children) {
-        child.cells[column.id] = createCellData('');
-      }
+      walkNodes(topic.children, (node) => {
+        node.cells[column.id] = createCellData('');
+      });
     });
   }
 
@@ -272,9 +383,9 @@ export class TreeTableStoreService {
         return;
       }
       mutableTopic.columns = mutableTopic.columns.filter((column) => column.id !== columnId);
-      for (const child of mutableTopic.children) {
-        delete child.cells[columnId];
-      }
+      walkNodes(mutableTopic.children, (node) => {
+        delete node.cells[columnId];
+      });
     });
 
     return undefined;
@@ -368,19 +479,31 @@ export class TreeTableStoreService {
       if (!Array.isArray(topic.columns) || topic.columns.length === 0) {
         topic.columns = this.defaultTopicColumns();
       }
+      if (!Array.isArray(topic.children)) {
+        topic.children = [];
+      }
 
       this.normalizeTopicColumns(topic);
 
-      for (const child of topic.children) {
-        child.topicId = topic.id;
+      walkNodes(topic.children, (node) => {
+        node.topicId = topic.id;
+        if (!Array.isArray(node.children)) {
+          node.children = [];
+        }
+        if (!node.cells || typeof node.cells !== 'object') {
+          node.cells = {};
+        }
         for (const column of topic.columns) {
-          if (!child.cells[column.id]) {
-            child.cells[column.id] = createCellData('');
+          if (!node.cells[column.id]) {
+            node.cells[column.id] = createCellData('');
           }
         }
-      }
+      });
 
-      topic.children = this.formulaEngine.evaluateTopicRows(topic.columns, topic.children);
+      const leaves = collectLeaves(topic.children);
+      const evaluatedLeaves = this.formulaEngine.evaluateTopicRows(topic.columns, leaves);
+      const evaluatedMap = new Map(evaluatedLeaves.map((leaf) => [leaf.id, leaf.cells]));
+      updateLeafCells(topic.children, evaluatedMap);
     }
 
     return next;
@@ -429,18 +552,18 @@ export class TreeTableStoreService {
     return nextId;
   }
 
-  private applyTopicColumnReplacements(children: TreeSubtopic[], replacements: ReadonlyMap<string, string>): void {
+  private applyTopicColumnReplacements(children: TreeNode[], replacements: ReadonlyMap<string, string>): void {
     if (replacements.size === 0) {
       return;
     }
 
-    for (const child of children) {
-      this.renameChildCellKeys(child, replacements);
-      this.rewriteChildFormulaReferences(child, replacements);
-    }
+    walkNodes(children, (node) => {
+      this.renameChildCellKeys(node, replacements);
+      this.rewriteChildFormulaReferences(node, replacements);
+    });
   }
 
-  private renameChildCellKeys(child: TreeSubtopic, replacements: ReadonlyMap<string, string>): void {
+  private renameChildCellKeys(child: TreeNode, replacements: ReadonlyMap<string, string>): void {
     for (const [oldId, newId] of replacements.entries()) {
       const oldCell = child.cells[oldId];
       if (oldCell) {
@@ -450,7 +573,7 @@ export class TreeTableStoreService {
     }
   }
 
-  private rewriteChildFormulaReferences(child: TreeSubtopic, replacements: ReadonlyMap<string, string>): void {
+  private rewriteChildFormulaReferences(child: TreeNode, replacements: ReadonlyMap<string, string>): void {
     for (const cell of Object.values(child.cells)) {
       if (!cell.raw.trim().startsWith('=')) {
         continue;
@@ -470,10 +593,10 @@ export class TreeTableStoreService {
     };
   }
 
-  private buildNewSubtopicCells(columns: TableColumn[], existingChildren: TreeSubtopic[]): Record<string, CellData> {
+  private buildNewLeafCells(columns: TableColumn[], existingLeaves: TreeNode[]): Record<string, CellData> {
     const cells = createEmptyCells(columns);
     for (const column of columns) {
-      const formulaRaw = this.findColumnFormulaRaw(existingChildren, column.id);
+      const formulaRaw = this.findColumnFormulaRaw(existingLeaves, column.id);
       if (formulaRaw !== null) {
         cells[column.id] = createCellData(formulaRaw);
       }
@@ -481,9 +604,9 @@ export class TreeTableStoreService {
     return cells;
   }
 
-  private findColumnFormulaRaw(children: TreeSubtopic[], columnId: string): string | null {
-    for (const child of children) {
-      const raw = child.cells[columnId]?.raw ?? '';
+  private findColumnFormulaRaw(leaves: TreeNode[], columnId: string): string | null {
+    for (const leaf of leaves) {
+      const raw = leaf.cells[columnId]?.raw ?? '';
       if (raw.trim().startsWith('=')) {
         return raw;
       }
@@ -519,22 +642,56 @@ export class TreeTableStoreService {
   }
 
   private renameColumnReferences(topic: TreeTopic, oldId: string, newId: string): void {
-    for (const child of topic.children) {
-      const oldCell = child.cells[oldId];
+    walkNodes(topic.children, (node) => {
+      const oldCell = node.cells[oldId];
       if (oldCell) {
-        child.cells[newId] = oldCell;
-        delete child.cells[oldId];
-      } else if (!child.cells[newId]) {
-        child.cells[newId] = createCellData('');
+        node.cells[newId] = oldCell;
+        delete node.cells[oldId];
+      } else if (!node.cells[newId]) {
+        node.cells[newId] = createCellData('');
       }
 
-      for (const cell of Object.values(child.cells)) {
+      for (const cell of Object.values(node.cells)) {
         if (!cell.raw.trim().startsWith('=')) {
           continue;
         }
         cell.raw = this.replaceFormulaToken(cell.raw, oldId, newId);
       }
+    });
+  }
+
+  private findNodeById(nodes: TreeNode[], nodeId: string): TreeNode | null {
+    for (const node of nodes) {
+      if (node.id === nodeId) {
+        return node;
+      }
+      const found = this.findNodeById(node.children, nodeId);
+      if (found) {
+        return found;
+      }
     }
+    return null;
+  }
+
+  private findOnlyLeafInChain(node: TreeNode): TreeNode | null {
+    let current: TreeNode = node;
+    while (current.children.length === 1) {
+      const next = current.children[0];
+      if (!next) {
+        break;
+      }
+      current = next;
+    }
+
+    if (current.children.length > 0) {
+      return null;
+    }
+
+    return current;
+  }
+
+  private hasAnyRawValue(cells: Record<string, CellData>): boolean {
+    return Object.values(cells).some((cell) => cell.raw.trim().length > 0);
   }
 
   private replaceFormulaToken(formula: string, oldId: string, newId: string): string {

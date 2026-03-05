@@ -13,9 +13,10 @@ const TOPIC: TreeTopic = {
   ],
   children: [
     {
-      id: 'subtopic_1',
+      id: 'node_1',
       topicId: 'topic_1',
-      label: 'Subtopic 1',
+      label: 'Node 1',
+      children: [],
       cells: {},
     },
   ],
@@ -29,10 +30,10 @@ function topicInput(fixture: ComponentFixture<TreeCanvasComponent>): HTMLInputEl
   return input;
 }
 
-function subtopicInput(fixture: ComponentFixture<TreeCanvasComponent>): HTMLInputElement {
-  const input = fixture.nativeElement.querySelector('input[aria-label^="Subtopic label:"]') as HTMLInputElement | null;
+function nodeInput(fixture: ComponentFixture<TreeCanvasComponent>): HTMLInputElement {
+  const input = fixture.nativeElement.querySelector('input[aria-label^="Node label:"]') as HTMLInputElement | null;
   if (!input) {
-    throw new Error('Subtopic input not found');
+    throw new Error('Node input not found');
   }
   return input;
 }
@@ -76,17 +77,17 @@ describe('TreeCanvasComponent', () => {
     expect(renameEvents).toEqual([{ nodeId: 'topic_1', label: 'Topic Renamed' }]);
   });
 
-  it('commits subtopic rename on Enter', async () => {
+  it('commits node rename on Enter', async () => {
     const { fixture, renameEvents } = await setup();
-    const input = subtopicInput(fixture);
+    const input = nodeInput(fixture);
 
     input.dispatchEvent(new FocusEvent('focus'));
-    input.value = 'Subtopic Renamed';
+    input.value = 'Node Renamed';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
     fixture.detectChanges();
 
-    expect(renameEvents).toEqual([{ nodeId: 'subtopic_1', label: 'Subtopic Renamed' }]);
+    expect(renameEvents).toEqual([{ nodeId: 'node_1', label: 'Node Renamed' }]);
   });
 
   it('cancels rename on Escape', async () => {
@@ -124,25 +125,26 @@ describe('TreeCanvasComponent', () => {
     expect(topicDragButton).toBeNull();
   });
 
-  it('applies solid drag preview class to subtopic drag', async () => {
+  it('applies solid drag preview class to node drag', async () => {
     const { fixture } = await setup();
     const drags = fixture.debugElement.queryAll(By.directive(CdkDrag)).map((item) => item.injector.get(CdkDrag));
-    const subtopicDrag = drags.find((drag) => {
+    const nodeDrag = drags.find((drag) => {
       const data = drag.data as { id?: string } | undefined;
-      return data?.id === 'subtopic_1';
+      return data?.id === 'node_1';
     });
-    expect(subtopicDrag?.previewClass).toBe('drag-preview-solid');
+    expect(nodeDrag?.previewClass).toBe('drag-preview-solid');
   });
 
-  it('renders only row connector elements for subtopic lines', async () => {
+  it('renders connector elements for node lines', async () => {
     const { fixture } = await setup();
-    const inRowConnectors = Array.from(
-      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>('[data-testid="subtopic-row-connector"]'),
+    const leftConnectors = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>('[data-testid="node-connector-left"]'),
+    );
+    const rightConnectors = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>('[data-testid="node-connector-right"]'),
     );
 
-    expect(inRowConnectors.length).toBe(1);
-    expect(
-      (fixture.nativeElement as HTMLElement).querySelector('[data-testid="subtopic-outset-connector"]'),
-    ).toBeNull();
+    expect(leftConnectors.length).toBe(1);
+    expect(rightConnectors.length).toBe(1);
   });
 });

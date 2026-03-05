@@ -62,6 +62,17 @@ describe('PersistenceService', () => {
       { id: '$C', name: 'C', type: 'number', summaryMode: 'none' },
     ];
     firstChild.cells['$C'] = { raw: '=$A+$B', value: null, error: null };
+    firstChild.children.push({
+      id: 'node_nested',
+      topicId: firstTopic.id,
+      label: 'Nested',
+      children: [],
+      cells: {
+        $A: { raw: '10', value: 10, error: null },
+        $B: { raw: '5', value: 5, error: null },
+        $C: { raw: '=$A+$B', value: null, error: null },
+      },
+    });
 
     const json = service.export(state);
     const imported = service.import(json);
@@ -69,6 +80,7 @@ describe('PersistenceService', () => {
     expect(imported.state?.topics[0]?.columns.map((column) => column.id)).toEqual(['$A', '$B', '$C']);
     expect(imported.state?.topics[0]?.columns[0]?.summaryMode).toBe('sum');
     expect(imported.state?.topics[0]?.children[0]?.cells['$C']?.raw).toBe('=$A+$B');
+    expect(imported.state?.topics[0]?.children[0]?.children[0]?.label).toBe('Nested');
   });
 
   it('rewrites only standalone formula references during migration', () => {

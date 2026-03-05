@@ -1,5 +1,20 @@
 import { TestBed } from '@angular/core/testing';
+import { TreeNode } from '../models/tree-table.model';
+import { collectLeaves } from '../utils/tree-helpers';
 import { TreeTableStoreService } from './tree-table-store.service';
+
+function findNode(nodes: TreeNode[], nodeId: string): TreeNode | null {
+  for (const node of nodes) {
+    if (node.id === nodeId) {
+      return node;
+    }
+    const found = findNode(node.children, nodeId);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
 
 describe('TreeTableStoreService', () => {
   beforeEach(() => {
@@ -7,7 +22,7 @@ describe('TreeTableStoreService', () => {
     TestBed.configureTestingModule({});
   });
 
-  it('creates topics without topic-level cells and with default A/B columns + default subtopic', () => {
+  it('creates topics without topic-level cells and with default A/B columns + default node', () => {
     const store = TestBed.inject(TreeTableStoreService);
 
     store.addTopic('Auto Child Topic');
@@ -16,11 +31,11 @@ describe('TreeTableStoreService', () => {
     expect(created && 'cells' in created).toBe(false);
     expect(created?.columns.map((column) => column.name)).toEqual(['A', 'B']);
     expect(created?.children.length).toBe(1);
-    expect(created?.children[0]?.label).toBe('New Subtopic');
+    expect(created?.children[0]?.label).toBe('New Node');
     expect(store.selectedNodeId()).toBe(created?.children[0]?.id ?? null);
   });
 
-  it('new subtopic inherits active topic-column formulas', () => {
+  it('new child node inherits active topic-column formulas', () => {
     const store = TestBed.inject(TreeTableStoreService);
     const topic = store.topics()[0];
     if (!topic) {
@@ -35,14 +50,14 @@ describe('TreeTableStoreService', () => {
     }
 
     store.setCellRaw(topic.id, firstRow.id, secondColumn.id, `=${firstColumn.id}*2`);
-    store.addSubtopic(topic.id, 'Auto Formula Child');
+    store.addChildNode(topic.id, null, 'Auto Formula Child');
 
     const created = store.topics().find((candidate) => candidate.id === topic.id)?.children.at(-1);
     expect(created?.label).toBe('Auto Formula Child');
     expect(created?.cells[secondColumn.id]?.raw).toBe(`=${firstColumn.id}*2`);
   });
 
-  it('deleting subtopic supports undo', () => {
+  it('deleting node supports undo', () => {
     const store = TestBed.inject(TreeTableStoreService);
     const topic = store.topics()[0];
     if (!topic) {
@@ -50,17 +65,161 @@ describe('TreeTableStoreService', () => {
     }
     const child = topic.children[0];
     if (!child) {
-      throw new Error('Expected starter subtopic');
+      throw new Error('Expected starter node');
     }
 
     const beforeRows = topic.children.length;
-    store.removeSubtopic(topic.id, child.id);
+    store.removeNode(topic.id, child.id);
     const afterDeleteCount = store.topics().find((item) => item.id === topic.id)?.children.length ?? 0;
     expect(afterDeleteCount).toBe(beforeRows - 1);
 
     store.undo();
     const afterUndoCount = store.topics().find((item) => item.id === topic.id)?.children.length ?? 0;
     expect(afterUndoCount).toBe(beforeRows);
+  });
+
+  it('moves parent cells to new child node when adding child to a leaf', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const topic = store.topics()[0];
+    if (!topic) {
+      throw new Error('Expected starter topic');
+    }
+
+    const parent = topic.children[0];
+    const column = topic.columns[0];
+    if (!parent || !column) {
+      throw new Error('Expected starter node and column');
+    }
+
+    store.setCellRaw(topic.id, parent.id, column.id, '123');
+    store.addChildNode(topic.id, parent.id, 'Child');
+
+    const updatedTopic = store.topics().find((candidate) => candidate.id === topic.id);
+    const updatedParent = findNode(updatedTopic?.children ?? [], parent.id);
+    const child = updatedParent?.children[0];
+    expect(child?.cells[column.id]?.raw).toBe('123');
+    expect(updatedParent?.cells[column.id]?.raw).toBe('');
+  });
+
+  it('deleting the last child makes parent a leaf with empty cells', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const topic = store.topics()[0];
+    if (!topic) {
+      throw new Error('Expected starter topic');
+    }
+
+    const parent = topic.children[0];
+    const column = topic.columns[0];
+    if (!parent || !column) {
+      throw new Error('Expected starter node and column');
+    }
+
+    store.addChildNode(topic.id, parent.id, 'Child');
+    const updatedTopic = store.topics().find((candidate) => candidate.id === topic.id);
+    const updatedParent = findNode(updatedTopic?.children ?? [], parent.id);
+    const childId = updatedParent?.children[0]?.id;
+    if (!childId) {
+      throw new Error('Expected child');
+    }
+
+    store.removeNode(topic.id, childId);
+    const afterDeleteTopic = store.topics().find((candidate) => candidate.id === topic.id);
+    const afterParent = findNode(afterDeleteTopic?.children ?? [], parent.id);
+    expect(afterParent?.children.length).toBe(0);
+    expect(afterParent?.cells[column.id]?.raw ?? '').toBe('');
+  });
+
+  it('deleting the last child can move the only leaf value to parent', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const topic = store.topics()[0];
+    if (!topic) {
+      throw new Error('Expected starter topic');
+    }
+
+    const parent = topic.children[0];
+    const column = topic.columns[0];
+    if (!parent || !column) {
+      throw new Error('Expected starter node and column');
+    }
+
+    store.addChildNode(topic.id, parent.id, 'Child');
+    const afterAddTopic = store.topics().find((candidate) => candidate.id === topic.id);
+    const childId = findNode(afterAddTopic?.children ?? [], parent.id)?.children[0]?.id;
+    if (!childId) {
+      throw new Error('Expected child');
+    }
+
+    store.setCellRaw(topic.id, childId, column.id, '999');
+    store.removeNode(topic.id, childId, { inheritLeafValue: true });
+
+    const afterDeleteTopic = store.topics().find((candidate) => candidate.id === topic.id);
+    const afterParent = findNode(afterDeleteTopic?.children ?? [], parent.id);
+    expect(afterParent?.children.length).toBe(0);
+    expect(afterParent?.cells[column.id]?.raw).toBe('999');
+  });
+
+  it('inherits the deepest leaf value when deleting a straight-line subtree', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const topic = store.topics()[0];
+    if (!topic) {
+      throw new Error('Expected starter topic');
+    }
+
+    const parent = topic.children[0];
+    const column = topic.columns[0];
+    if (!parent || !column) {
+      throw new Error('Expected starter node and column');
+    }
+
+    store.addChildNode(topic.id, parent.id, 'Child');
+    const afterFirstAdd = store.topics().find((candidate) => candidate.id === topic.id);
+    const childId = findNode(afterFirstAdd?.children ?? [], parent.id)?.children[0]?.id;
+    if (!childId) {
+      throw new Error('Expected child');
+    }
+
+    store.addChildNode(topic.id, childId, 'Grandchild');
+    const afterSecondAdd = store.topics().find((candidate) => candidate.id === topic.id);
+    const grandchildId = findNode(afterSecondAdd?.children ?? [], childId)?.children[0]?.id;
+    if (!grandchildId) {
+      throw new Error('Expected grandchild');
+    }
+
+    store.setCellRaw(topic.id, grandchildId, column.id, '456');
+    store.removeNode(topic.id, childId, { inheritLeafValue: true });
+
+    const afterDeleteTopic = store.topics().find((candidate) => candidate.id === topic.id);
+    const afterParent = findNode(afterDeleteTopic?.children ?? [], parent.id);
+    expect(afterParent?.children.length).toBe(0);
+    expect(afterParent?.cells[column.id]?.raw).toBe('456');
+  });
+
+  it('orders leaf nodes depth-first left-to-right', () => {
+    const store = TestBed.inject(TreeTableStoreService);
+    const topic = store.topics()[0];
+    if (!topic || topic.children.length < 2) {
+      throw new Error('Expected starter topic with at least two nodes');
+    }
+
+    const rootA = topic.children[0];
+    const rootB = topic.children[1];
+    if (!rootA || !rootB) {
+      throw new Error('Expected starter nodes');
+    }
+
+    store.addChildNode(topic.id, rootA.id, 'A1');
+    const afterFirst = store.topics().find((candidate) => candidate.id === topic.id);
+    const updatedRootA = findNode(afterFirst?.children ?? [], rootA.id);
+    const firstChildId = updatedRootA?.children[0]?.id;
+    if (!firstChildId) {
+      throw new Error('Expected child after addChildNode');
+    }
+
+    store.addSiblingNode(topic.id, firstChildId, 'A2');
+    const afterSecond = store.topics().find((candidate) => candidate.id === topic.id);
+    const leaves = collectLeaves(afterSecond?.children ?? []);
+
+    expect(leaves.map((node) => node.label)).toEqual(['A1', 'A2', rootB.label]);
   });
 
   it('moves topic cards by index', () => {
@@ -305,7 +464,7 @@ describe('TreeTableStoreService', () => {
     expect(afterSummary?.columns[0]?.summaryMode).toBe('sum');
     expect(afterSummary?.columns[1]?.summaryMode).toBe('none');
 
-    store.addSubtopic(topic.id, 'Newer');
+    store.addChildNode(topic.id, null, 'Newer');
     store.renameNode(firstRow.id, 'Renamed');
     const afterMutations = store.topics().find((candidate) => candidate.id === topic.id);
     expect(afterMutations?.columns[0]?.summaryMode).toBe('sum');

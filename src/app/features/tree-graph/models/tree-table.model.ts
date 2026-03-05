@@ -13,10 +13,11 @@ export interface TableColumn {
   summaryMode?: 'none' | 'sum';
 }
 
-export interface TreeSubtopic {
+export interface TreeNode {
   id: string;
   topicId: string;
   label: string;
+  children: TreeNode[];
   cells: Record<string, CellData>;
 }
 
@@ -24,7 +25,7 @@ export interface TreeTopic {
   id: string;
   label: string;
   columns: TableColumn[];
-  children: TreeSubtopic[];
+  children: TreeNode[];
 }
 
 export interface TreeTableStateV1 {
@@ -104,6 +105,7 @@ export const STARTER_STATE: TreeTableStateV1 = {
           id: 'subtopic_bankA',
           topicId: 'topic_wealth',
           label: 'Bank A',
+          children: [],
           cells: {
             $A: createCellData('120000'),
             $B: createCellData('0.03'),
@@ -113,6 +115,7 @@ export const STARTER_STATE: TreeTableStateV1 = {
           id: 'subtopic_bankB',
           topicId: 'topic_wealth',
           label: 'Bank B',
+          children: [],
           cells: {
             $A: createCellData('90000'),
             $B: createCellData('0.05'),
@@ -129,6 +132,7 @@ export const STARTER_STATE: TreeTableStateV1 = {
           id: 'subtopic_dividend',
           topicId: 'topic_business',
           label: 'Dividend',
+          children: [],
           cells: {
             $A: createCellData('30000'),
             $B: createCellData('1'),
@@ -138,6 +142,7 @@ export const STARTER_STATE: TreeTableStateV1 = {
           id: 'subtopic_family',
           topicId: 'topic_business',
           label: 'Family Company',
+          children: [],
           cells: {
             $A: createCellData('45000'),
             $B: createCellData('1'),

@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, input, output, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CellValue, TreeTopic } from '../models/tree-table.model';
+import { collectLeaves } from '../utils/tree-helpers';
 import { ColumnContextMenuComponent } from './column-context-menu.component';
 import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scroll-lock';
 
@@ -16,11 +17,11 @@ import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scro
     '(document:tree-graph-menu-opened)': 'onGlobalMenuOpened($event)',
   },
   template: `
-    <section #tableSection class="h-fit p-0" aria-label="Subtopic table">
+    <section #tableSection class="h-fit p-0" aria-label="Node table">
       <div #tableContainer class="overflow-auto">
         @if (rows().length === 0) {
           <div class="rounded-lg border border-slate-200 px-3 py-6 text-center text-sm text-slate-500">
-            No subtopics yet. Add one in the tree graph.
+            No nodes yet. Add one in the tree graph.
           </div>
         } @else {
           <table class="mt-(--subtopic-table-offset-top) w-max border-collapse text-sm">
@@ -132,7 +133,7 @@ export class SubtopicTableComponent {
   readonly topic = input.required<TreeTopic>();
   readonly selectedNodeId = input<string | null>(null);
 
-  readonly setCell = output<{ topicId: string; subtopicId: string; columnId: string; raw: string }>();
+  readonly setCell = output<{ topicId: string; nodeId: string; columnId: string; raw: string }>();
   readonly setColumnSummary = output<{ topicId: string; columnId: string; mode: 'none' | 'sum' }>();
   readonly selectNode = output<string | null>();
   readonly insertColumn = output<{ topicId: string; referenceColumnId: string; side: 'left' | 'right' }>();
@@ -152,7 +153,7 @@ export class SubtopicTableComponent {
   protected readonly formulaEditingMode = signal(false);
   protected readonly activeReferencedColumnId = signal<string | null>(null);
   protected readonly columns = computed(() => this.topic().columns);
-  protected readonly rows = computed(() => this.topic().children);
+  protected readonly rows = computed(() => collectLeaves(this.topic().children));
   protected readonly hasAnySummary = computed(() => this.columns().some((column) => column.summaryMode === 'sum'));
   protected readonly selectedColumnSummaryMode = computed<'none' | 'sum'>(() => {
     const columnId = this.menuColumnId();
@@ -282,14 +283,14 @@ export class SubtopicTableComponent {
     this.menuOpen.set(false);
   }
 
-  startEditingCell(subtopicId: string, columnId: string): void {
-    if (this.isEditingCell(subtopicId, columnId)) {
+  startEditingCell(nodeId: string, columnId: string): void {
+    if (this.isEditingCell(nodeId, columnId)) {
       return;
     }
 
-    const raw = this.getCellRaw(subtopicId, columnId);
-    this.editingCellKey.set(this.makeCellKey(subtopicId, columnId));
-    this.editingCellNodeId.set(subtopicId);
+    const raw = this.getCellRaw(nodeId, columnId);
+    this.editingCellKey.set(this.makeCellKey(nodeId, columnId));
+    this.editingCellNodeId.set(nodeId);
     this.editingCellColumnId.set(columnId);
     this.editingCellDraft.set(raw);
     this.formulaEditingMode.set(raw.trim().startsWith('='));
@@ -297,12 +298,12 @@ export class SubtopicTableComponent {
   }
 
   commitEditingCell(): void {
-    const subtopicId = this.editingCellNodeId();
+    const nodeId = this.editingCellNodeId();
     const columnId = this.editingCellColumnId();
-    if (subtopicId && columnId) {
+    if (nodeId && columnId) {
       this.setCell.emit({
         topicId: this.topic().id,
-        subtopicId,
+        nodeId,
         columnId,
         raw: this.editingCellDraft(),
       });
@@ -312,7 +313,7 @@ export class SubtopicTableComponent {
   }
 
   cancelEditingCell(event?: Event): void {
-    const subtopicId = this.editingCellNodeId();
+    const nodeId = this.editingCellNodeId();
     const columnId = this.editingCellColumnId();
 
     if (event) {
@@ -321,13 +322,13 @@ export class SubtopicTableComponent {
     }
 
     this.resetEditingState();
-    if (subtopicId && columnId) {
-      this.syncDisplayValue(subtopicId, columnId);
+    if (nodeId && columnId) {
+      this.syncDisplayValue(nodeId, columnId);
     }
   }
 
-  isEditingCell(subtopicId: string, columnId: string): boolean {
-    return this.editingCellKey() === this.makeCellKey(subtopicId, columnId);
+  isEditingCell(nodeId: string, columnId: string): boolean {
+    return this.editingCellKey() === this.makeCellKey(nodeId, columnId);
   }
 
   displayCellValue(raw: string, value: CellValue, error: string | null): string {
@@ -498,7 +499,7 @@ export class SubtopicTableComponent {
   protected onColumnAssistMouseDown(
     event: MouseEvent,
     clickedColumnId: string,
-    clickedSubtopicId: string | null,
+    clickedNodeId: string | null,
     clickedCellColumnId: string | null,
   ): void {
     if (!this.formulaEditingMode()) {
@@ -506,7 +507,7 @@ export class SubtopicTableComponent {
     }
 
     if (
-      clickedSubtopicId === this.editingCellNodeId() &&
+      clickedNodeId === this.editingCellNodeId() &&
       clickedCellColumnId === this.editingCellColumnId()
     ) {
       return;
@@ -514,7 +515,7 @@ export class SubtopicTableComponent {
 
     const editingColumnId = this.editingCellColumnId();
     if (editingColumnId && clickedColumnId === editingColumnId) {
-      if (clickedSubtopicId && clickedSubtopicId !== this.editingCellNodeId()) {
+      if (clickedNodeId && clickedNodeId !== this.editingCellNodeId()) {
         this.commitEditingCell();
         return;
       }
@@ -528,23 +529,23 @@ export class SubtopicTableComponent {
     this.insertColumnReference(clickedColumnId);
   }
 
-  protected onCellFocus(subtopicId: string, columnId: string): void {
+  protected onCellFocus(nodeId: string, columnId: string): void {
     if (this.menuOpen()) {
       this.closeMenu();
     }
 
-    this.selectNode.emit(subtopicId);
-    if (this.isEditingCell(subtopicId, columnId)) {
+    this.selectNode.emit(nodeId);
+    if (this.isEditingCell(nodeId, columnId)) {
       return;
     }
 
-    this.startEditingCell(subtopicId, columnId);
+    this.startEditingCell(nodeId, columnId);
   }
 
   protected onColumnAssistClick(
     event: MouseEvent,
     clickedColumnId: string,
-    clickedSubtopicId: string | null,
+    clickedNodeId: string | null,
     clickedCellColumnId: string | null,
   ): void {
     if (this.menuOpen()) {
@@ -556,7 +557,7 @@ export class SubtopicTableComponent {
     }
 
     if (
-      clickedSubtopicId === this.editingCellNodeId() &&
+      clickedNodeId === this.editingCellNodeId() &&
       clickedCellColumnId === this.editingCellColumnId()
     ) {
       return;
@@ -573,8 +574,8 @@ export class SubtopicTableComponent {
     event.stopPropagation();
   }
 
-  protected onCellBlur(event: FocusEvent, subtopicId: string, columnId: string): void {
-    if (!this.isEditingCell(subtopicId, columnId)) {
+  protected onCellBlur(event: FocusEvent, nodeId: string, columnId: string): void {
+    if (!this.isEditingCell(nodeId, columnId)) {
       this.clearSelectionIfFocusLeftTable(event);
       return;
     }
@@ -600,8 +601,8 @@ export class SubtopicTableComponent {
     input?.blur();
   }
 
-  protected onCellModelChange(subtopicId: string, columnId: string, raw: string): void {
-    if (!this.isEditingCell(subtopicId, columnId)) {
+  protected onCellModelChange(nodeId: string, columnId: string, raw: string): void {
+    if (!this.isEditingCell(nodeId, columnId)) {
       return;
     }
 
@@ -612,8 +613,8 @@ export class SubtopicTableComponent {
     }
   }
 
-  protected onFormulaCursorChange(subtopicId: string, columnId: string, event: Event): void {
-    if (!this.isEditingCell(subtopicId, columnId)) {
+  protected onFormulaCursorChange(nodeId: string, columnId: string, event: Event): void {
+    if (!this.isEditingCell(nodeId, columnId)) {
       return;
     }
 
@@ -681,21 +682,21 @@ export class SubtopicTableComponent {
   }
 
   protected cellInputValue(
-    subtopicId: string,
+    nodeId: string,
     columnId: string,
     raw: string,
     value: CellValue,
     error: string | null,
   ): string {
-    if (this.isEditingCell(subtopicId, columnId)) {
+    if (this.isEditingCell(nodeId, columnId)) {
       return this.editingCellDraft();
     }
 
     return this.displayCellValue(raw, value, error);
   }
 
-  protected makeCellKey(subtopicId: string, columnId: string): string {
-    return `${subtopicId}:${columnId}`;
+  protected makeCellKey(nodeId: string, columnId: string): string {
+    return `${nodeId}:${columnId}`;
   }
 
   private formatValue(value: CellValue): string {
@@ -721,19 +722,19 @@ export class SubtopicTableComponent {
     this.activeReferencedColumnId.set(null);
   }
 
-  private getCellRaw(subtopicId: string, columnId: string): string {
-    const row = this.rows().find((candidate) => candidate.id === subtopicId);
+  private getCellRaw(nodeId: string, columnId: string): string {
+    const row = this.rows().find((candidate) => candidate.id === nodeId);
     return row?.cells[columnId]?.raw ?? '';
   }
 
   private insertColumnReference(columnId: string): void {
-    const subtopicId = this.editingCellNodeId();
+    const nodeId = this.editingCellNodeId();
     const editingColumnId = this.editingCellColumnId();
-    if (!subtopicId || !editingColumnId) {
+    if (!nodeId || !editingColumnId) {
       return;
     }
 
-    const cellKey = this.makeCellKey(subtopicId, editingColumnId);
+    const cellKey = this.makeCellKey(nodeId, editingColumnId);
     const input = this.getInputElement(cellKey);
     if (!input) {
       return;
@@ -826,14 +827,14 @@ export class SubtopicTableComponent {
     return tableRoot?.querySelector<HTMLInputElement>(`input[data-column-rename-id="${columnId}"]`) ?? null;
   }
 
-  private syncDisplayValue(subtopicId: string, columnId: string): void {
-    const cellKey = this.makeCellKey(subtopicId, columnId);
+  private syncDisplayValue(nodeId: string, columnId: string): void {
+    const cellKey = this.makeCellKey(nodeId, columnId);
     const input = this.getInputElement(cellKey);
     if (!input) {
       return;
     }
 
-    const row = this.rows().find((candidate) => candidate.id === subtopicId);
+    const row = this.rows().find((candidate) => candidate.id === nodeId);
     const cell = row?.cells[columnId];
     input.value = this.displayCellValue(cell?.raw ?? '', cell?.value ?? null, cell?.error ?? null);
   }

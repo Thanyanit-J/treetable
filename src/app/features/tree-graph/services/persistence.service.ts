@@ -5,7 +5,7 @@ import {
   ImportResult,
   STARTER_STATE,
   TableColumn,
-  TreeSubtopic,
+  TreeNode,
   TreeTableState,
   TreeTableStateV1,
   cloneState,
@@ -76,7 +76,7 @@ export class PersistenceService {
         Partial<TreeTableStateV1['topics'][number]> & {
           columns?: unknown;
           cells?: unknown;
-          children?: Array<Partial<TreeSubtopic>>;
+          children?: Array<Partial<TreeNode>>;
         }
       >;
     };
@@ -94,8 +94,6 @@ export class PersistenceService {
         typeof topic.label === 'string' && topic.label.trim().length > 0
           ? topic.label
           : `Topic ${topicIndex + 1}`;
-      const children = Array.isArray(topic.children) ? topic.children : [];
-
       const normalizedColumnMeta = this.normalizeColumns(topic.columns, legacyGlobalColumns.map((item) => item.column));
       const normalizedColumns = normalizedColumnMeta.map((item) => item.column);
       const formulaReplacements = new Map<string, string>(
@@ -104,28 +102,14 @@ export class PersistenceService {
           .map((item) => [item.sourceId, item.column.id]),
       );
 
-      const normalizedChildren = children.map((child, childIndex) => {
-        const childId =
-          typeof child.id === 'string' && child.id.length > 0
-            ? child.id
-            : `subtopic_migrated_${topicIndex}_${childIndex}`;
-        const childLabel =
-          typeof child.label === 'string' && child.label.trim().length > 0
-            ? child.label
-            : `Subtopic ${childIndex + 1}`;
-        const childCells = this.normalizeSubtopicCells(
-          child.cells,
-          normalizedColumnMeta,
-          formulaReplacements,
-        );
-
-        return {
-          id: childId,
-          topicId,
-          label: childLabel,
-          cells: childCells,
-        };
-      });
+      const normalizedChildren = this.normalizeNodes(
+        topic.children,
+        topicId,
+        topicIndex,
+        normalizedColumnMeta,
+        formulaReplacements,
+        '',
+      );
 
       return {
         id: topicId,
@@ -191,7 +175,7 @@ export class PersistenceService {
     return normalized;
   }
 
-  private normalizeSubtopicCells(
+  private normalizeNodeCells(
     cells: unknown,
     columns: Array<{ column: TableColumn; sourceId: string }>,
     formulaReplacements: Map<string, string>,
@@ -209,6 +193,47 @@ export class PersistenceService {
     }
 
     return normalized;
+  }
+
+  private normalizeNodes(
+    nodes: unknown,
+    topicId: string,
+    topicIndex: number,
+    columns: Array<{ column: TableColumn; sourceId: string }>,
+    formulaReplacements: Map<string, string>,
+    path: string,
+  ): TreeNode[] {
+    const rawNodes = Array.isArray(nodes) ? nodes : [];
+
+    return rawNodes.map((node, nodeIndex) => {
+      const candidate = node && typeof node === 'object' ? (node as Partial<TreeNode>) : {};
+      const id =
+        typeof candidate.id === 'string' && candidate.id.length > 0
+          ? candidate.id
+          : `node_migrated_${topicIndex}_${path}${nodeIndex}`;
+      const label =
+        typeof candidate.label === 'string' && candidate.label.trim().length > 0
+          ? candidate.label
+          : `Node ${nodeIndex + 1}`;
+
+      const cells = this.normalizeNodeCells(candidate.cells, columns, formulaReplacements);
+      const children = this.normalizeNodes(
+        candidate.children,
+        topicId,
+        topicIndex,
+        columns,
+        formulaReplacements,
+        `${path}${nodeIndex}_`,
+      );
+
+      return {
+        id,
+        topicId,
+        label,
+        children,
+        cells,
+      };
+    });
   }
 
   private replaceFormulaReferences(raw: string, replacements: Map<string, string>): string {

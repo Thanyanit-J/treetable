@@ -18,8 +18,8 @@ import { FormulaCellComponent } from './formula-cell.component';
           class="rounded-full px-2 py-0.5 text-xs font-medium"
           [class.bg-sky-100]="kind() === 'topic'"
           [class.text-sky-800]="kind() === 'topic'"
-          [class.bg-amber-100]="kind() === 'subtopic'"
-          [class.text-amber-800]="kind() === 'subtopic'"
+          [class.bg-amber-100]="kind() === 'node'"
+          [class.text-amber-800]="kind() === 'node'"
         >
           {{ kind() }}
         </span>
@@ -45,16 +45,14 @@ import { FormulaCellComponent } from './formula-cell.component';
 export class NodeRowCardComponent {
   readonly nodeId = input.required<string>();
   readonly label = input.required<string>();
-  readonly kind = input.required<'topic' | 'subtopic'>();
+  readonly kind = input.required<'topic' | 'node'>();
   readonly selected = input(false);
   readonly columns = input.required<TableColumn[]>();
   readonly cells = input.required<Record<string, CellData>>();
 
   readonly setCell = output<{ nodeId: string; columnId: string; raw: string }>();
 
-  protected readonly ariaLabel = computed(
-    () => `${this.kind() === 'topic' ? 'Topic' : 'Subtopic'} data row for ${this.label()}`,
-  );
+  protected readonly ariaLabel = computed(() => `${this.kind() === 'topic' ? 'Topic' : 'Node'} data row for ${this.label()}`);
 
   getCell(columnId: string): CellData {
     return this.cells()[columnId] ?? { raw: '', value: null, error: null };

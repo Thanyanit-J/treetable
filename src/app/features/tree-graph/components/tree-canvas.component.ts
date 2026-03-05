@@ -1,7 +1,21 @@
 import { CdkDragDrop, CdkDragEnd, CdkDragStart, DragDropModule } from '@angular/cdk/drag-drop';
-import { ChangeDetectionStrategy, Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
+import {
+  AfterViewInit,
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  OnDestroy,
+  computed,
+  effect,
+  input,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { TreeSubtopic, TreeTopic } from '../models/tree-table.model';
+import { TreeNode, TreeTopic } from '../models/tree-table.model';
+import { collectLeaves, computeLeafCounts } from '../utils/tree-helpers';
 import { acquireMenuScrollLock, releaseMenuScrollLock } from '../utils/menu-scroll-lock';
 
 interface TopicMenuTarget {
@@ -9,18 +23,19 @@ interface TopicMenuTarget {
   topicId: string;
 }
 
-interface SubtopicMenuTarget {
-  kind: 'subtopic';
+interface NodeMenuTarget {
+  kind: 'node';
   topicId: string;
-  subtopicId: string;
+  nodeId: string;
 }
 
-type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
+type MenuTarget = TopicMenuTarget | NodeMenuTarget;
 
 @Component({
   selector: 'app-tree-canvas',
-  imports: [DragDropModule, FormsModule],
+  imports: [CommonModule, DragDropModule, FormsModule],
   host: {
+    '(window:resize)': 'onWindowResize()',
     '(document:keydown.escape)': 'closeNodeMenu()',
     '(document:mousedown)': 'onDocumentMouseDown($event)',
     '(document:contextmenu)': 'onDocumentContextMenu($event)',
@@ -31,81 +46,113 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
       <article class="space-y-3">
         <div class="relative flex items-center gap-2">
           <div
-            class="relative rounded-full border border-sky-300 bg-sky-100"
-            [style.min-width.ch]="12"
-            [style.width.ch]="nodeWidthCh(topic().label)"
+            #topicCard
+            class="relative inline-flex rounded-full border border-sky-300 bg-sky-100"
             [class.ring-2]="selectedNodeId() === topic().id"
             [class.ring-sky-400]="selectedNodeId() === topic().id"
             (contextmenu)="openTopicMenu($event, topic().id)"
           >
             <input
               [ngModel]="nodeInputValue(topic().id, topic().label)"
+              [attr.size]="nodeInputSize(topic().id, topic().label)"
               (focus)="onNodeFocus(topic().id, topic().label)"
               (ngModelChange)="onNodeModelChange(topic().id, $event)"
               (blur)="onNodeBlur($event, topic().id, topic().label)"
               (keydown.enter)="onNodeEnter($event, topic().id, topic().label)"
               (keydown.escape)="onNodeEscape($event, topic().id, topic().label)"
-              class="block min-h-(--subtopic-node-height) w-full rounded-full border-0 bg-transparent px-2 py-2 text-center text-sm font-semibold text-slate-800 focus-visible:outline-none"
+              class="block min-h-(--subtopic-node-height) min-w-36 w-auto rounded-full border-0 bg-transparent px-4 py-2 text-center text-sm font-semibold text-slate-800 focus-visible:outline-none"
               [attr.aria-label]="'Topic label: ' + topic().label"
             />
           </div>
         </div>
 
-        <div class="relative pl-10">
-          @if (topic().children.length > 0) {
+        @if (topic().children.length > 0) {
+          <div class="relative mt-3" [style.margin-left.px]="topicHalfWidthPx()">
+            <ng-container
+              [ngTemplateOutlet]="nodeList"
+              [ngTemplateOutletContext]="{ nodes: topic().children, parentNodeId: null, isRoot: true }"
+            />
+          </div>
+        }
+      </article>
+
+      <ng-template #nodeList let-nodes="nodes" let-parentNodeId="parentNodeId" let-isRoot="isRoot">
+        <div
+          class="relative"
+          cdkDropList
+          cdkDropListOrientation="vertical"
+          [cdkDropListData]="nodes"
+          (cdkDropListDropped)="onNodeDrop(parentNodeId, $event)"
+          [attr.aria-label]="listAriaLabel(parentNodeId)"
+        >
+          @if (showListSpine(nodes, isRoot)) {
             <div
               aria-hidden="true"
-              class="pointer-events-none absolute bottom-[calc((var(--subtopic-node-height)+2px)/2)] left-5 w-px bg-slate-300"
-              style="top: calc(-1 * var(--subtopic-gap));"
+              class="pointer-events-none absolute left-0 w-px bg-slate-300"
+              [style.top.px]="listSpineTop(nodes, isRoot)"
+              [style.height.px]="listSpineHeight(nodes, isRoot)"
             ></div>
           }
-          <div
-            cdkDropList
-            [cdkDropListData]="topic().children"
-            (cdkDropListDropped)="onSubtopicDrop(topic().id, $event)"
-            class="space-y-(--subtopic-gap)"
-            [attr.aria-label]="'Subtopics for ' + topic().label"
-          >
-            @for (subtopic of topic().children; track subtopic.id) {
+          <div>
+            @for (node of nodes; track node.id) {
               <div
                 cdkDrag
                 cdkDragPreviewClass="drag-preview-solid"
-                [cdkDragData]="subtopic"
-                (cdkDragStarted)="onSubtopicDragStarted($event)"
-                (cdkDragEnded)="onSubtopicDragEnded($event)"
-                class="relative flex w-full items-center"
+                [cdkDragData]="node"
+                (cdkDragStarted)="onNodeDragStarted($event)"
+                (cdkDragEnded)="onNodeDragEnded($event)"
+                class="relative flex items-start"
+                [style.height.px]="nodeGroupHeight(node.id)"
               >
-                <div class="absolute -left-5 top-1/2 h-px w-5 -translate-y-1/2 bg-slate-300"></div>
-
                 <div
-                  class="cursor-grab rounded-xl border border-amber-300 bg-amber-100"
-                  [style.min-width.ch]="10"
-                  [style.width.ch]="nodeWidthCh(subtopic.label)"
-                  [class.ring-2]="selectedNodeId() === subtopic.id"
-                  [class.ring-amber-400]="selectedNodeId() === subtopic.id"
-                  (contextmenu)="openSubtopicMenu($event, topic().id, subtopic.id)"
+                  class="relative flex items-center self-start"
                 >
-                  <input
-                    [ngModel]="nodeInputValue(subtopic.id, subtopic.label)"
-                    (focus)="onNodeFocus(subtopic.id, subtopic.label)"
-                    (ngModelChange)="onNodeModelChange(subtopic.id, $event)"
-                    (blur)="onNodeBlur($event, subtopic.id, subtopic.label)"
-                    (keydown.enter)="onNodeEnter($event, subtopic.id, subtopic.label)"
-                    (keydown.escape)="onNodeEscape($event, subtopic.id, subtopic.label)"
-                    class="block min-h-(--subtopic-node-height) w-full rounded-xl border-0 bg-transparent px-2 py-2 text-center text-sm font-medium text-slate-800 focus-visible:outline-none"
-                    [attr.aria-label]="'Subtopic label: ' + subtopic.label"
-                  />
+                  <div
+                    aria-hidden="true"
+                    data-testid="node-connector-left"
+                    class="h-px bg-slate-300"
+                    [style.width]="incomingConnectorWidth(parentNodeId)"
+                  ></div>
+                  <div
+                    class="cursor-grab rounded-xl border border-amber-300 bg-amber-100"
+                    [attr.data-node-id]="node.id"
+                    [class.ring-2]="selectedNodeId() === node.id"
+                    [class.ring-amber-400]="selectedNodeId() === node.id"
+                    (contextmenu)="openNodeMenu($event, topic().id, node.id)"
+                  >
+                    <input
+                      [ngModel]="nodeInputValue(node.id, node.label)"
+                      [attr.size]="nodeInputSize(node.id, node.label)"
+                      (focus)="onNodeFocus(node.id, node.label)"
+                      (ngModelChange)="onNodeModelChange(node.id, $event)"
+                      (blur)="onNodeBlur($event, node.id, node.label)"
+                      (keydown.enter)="onNodeEnter($event, node.id, node.label)"
+                      (keydown.escape)="onNodeEscape($event, node.id, node.label)"
+                      class="block min-h-(--subtopic-node-height) min-w-36 w-auto rounded-xl border-0 bg-transparent px-4 py-2 text-center text-sm font-medium text-slate-800 focus-visible:outline-none"
+                      [attr.aria-label]="'Node label: ' + node.label"
+                    />
+                  </div>
+                  <div
+                    aria-hidden="true"
+                    data-testid="node-connector-right"
+                    class="h-px bg-slate-300"
+                    [style.width]="outgoingConnectorWidth(node)"
+                  ></div>
                 </div>
-                <div
-                  aria-hidden="true"
-                  data-testid="subtopic-row-connector"
-                  class="h-px min-w-4 flex-1 bg-slate-300"
-                ></div>
+
+                @if (node.children.length > 0) {
+                  <div class="self-stretch">
+                    <ng-container
+                      [ngTemplateOutlet]="nodeList"
+                      [ngTemplateOutletContext]="{ nodes: node.children, parentNodeId: node.id, isRoot: false }"
+                    />
+                  </div>
+                }
               </div>
             }
           </div>
         </div>
-      </article>
+      </ng-template>
 
       @if (menuOpen()) {
         <section
@@ -118,12 +165,12 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
         >
           @if (menuTarget()?.kind === 'topic') {
             <button
-              (click)="onTopicMenuAction('addSubtopic')"
+              (click)="onTopicMenuAction('addChild')"
               class="block w-full rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
               role="menuitem"
               type="button"
             >
-              Add subtopic
+              Add Child Node
             </button>
             <button
               (click)="onTopicMenuAction('deleteTopic')"
@@ -135,22 +182,30 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
             </button>
           }
 
-          @if (menuTarget()?.kind === 'subtopic') {
+          @if (menuTarget()?.kind === 'node') {
             <button
-              (click)="onSubtopicMenuAction('addSubtopic')"
+              (click)="onNodeMenuAction('addSibling')"
               class="block w-full rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
               role="menuitem"
               type="button"
             >
-              Add subtopic
+              Add Node
             </button>
             <button
-              (click)="onSubtopicMenuAction('deleteSubtopic')"
+              (click)="onNodeMenuAction('addChild')"
+              class="block w-full rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+              role="menuitem"
+              type="button"
+            >
+              Add Child Node
+            </button>
+            <button
+              (click)="onNodeMenuAction('deleteNode')"
               class="block w-full rounded px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50"
               role="menuitem"
               type="button"
             >
-              Delete subtopic
+              Delete node
             </button>
           }
         </section>
@@ -159,31 +214,62 @@ type NodeMenuTarget = TopicMenuTarget | SubtopicMenuTarget;
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class TreeCanvasComponent {
+export class TreeCanvasComponent implements AfterViewInit, OnDestroy {
   readonly topic = input.required<TreeTopic>();
   readonly selectedNodeId = input<string | null>(null);
 
-  readonly addSubtopic = output<string>();
+  readonly addChildNode = output<{ topicId: string; parentNodeId: string | null }>();
+  readonly addSiblingNode = output<{ topicId: string; nodeId: string }>();
   readonly renameNode = output<{ nodeId: string; label: string }>();
   readonly requestDeleteTopic = output<string>();
-  readonly requestDeleteSubtopic = output<{ topicId: string; subtopicId: string }>();
+  readonly requestDeleteNode = output<{ topicId: string; nodeId: string }>();
   readonly selectNode = output<string | null>();
-  readonly moveSubtopic = output<{ topicId: string; subtopicId: string; toIndex: number }>();
+  readonly moveNode = output<{ topicId: string; parentNodeId: string | null; nodeId: string; toIndex: number }>();
 
   protected readonly menuOpen = signal(false);
   protected readonly menuX = signal(0);
   protected readonly menuY = signal(0);
-  protected readonly menuTarget = signal<NodeMenuTarget | null>(null);
+  protected readonly menuTarget = signal<MenuTarget | null>(null);
   protected readonly editingNodeId = signal<string | null>(null);
   protected readonly editingNodeLabel = signal('');
+  protected readonly leafCounts = computed(() => computeLeafCounts(this.topic().children));
+  protected readonly topicHalfWidthPx = signal(80);
   private readonly canvasRootRef = viewChild<ElementRef<HTMLElement>>('canvasRoot');
+  private readonly topicCardRef = viewChild<ElementRef<HTMLElement>>('topicCard');
   private readonly nodeMenuRef = viewChild<ElementRef<HTMLElement>>('nodeMenu');
+  private readonly rowHeight = 54;
+  private readonly nodeHeight = 40;
+  private readonly rootListTopGap = 12;
+  private readonly levelGapPx = signal(28);
+  private readonly leafConnectorWidths = signal<Record<string, number>>({});
   private isScrollLocked = false;
-  private isDraggingSubtopic = false;
+  private isDraggingNode = false;
   private suppressNodeFocusUntil = 0;
   private readonly menuOwnerId = `tree-canvas-${crypto.randomUUID()}`;
+  private measureFrameId: number | null = null;
 
-  onSubtopicDrop(topicId: string, event: CdkDragDrop<TreeSubtopic[]>): void {
+  constructor() {
+    effect(() => {
+      this.topic();
+      this.editingNodeId();
+      this.editingNodeLabel();
+      this.scheduleConnectorMeasure();
+    });
+  }
+
+  ngAfterViewInit(): void {
+    this.scheduleConnectorMeasure();
+  }
+
+  ngOnDestroy(): void {
+    if (this.measureFrameId === null) {
+      return;
+    }
+    cancelAnimationFrame(this.measureFrameId);
+    this.measureFrameId = null;
+  }
+
+  onNodeDrop(parentNodeId: string | null, event: CdkDragDrop<TreeNode[]>): void {
     if (event.previousIndex === event.currentIndex) {
       return;
     }
@@ -193,7 +279,12 @@ export class TreeCanvasComponent {
       return;
     }
 
-    this.moveSubtopic.emit({ topicId, subtopicId: moved.id, toIndex: event.currentIndex });
+    this.moveNode.emit({
+      topicId: this.topic().id,
+      parentNodeId,
+      nodeId: moved.id,
+      toIndex: event.currentIndex,
+    });
   }
 
   openTopicMenu(event: MouseEvent, topicId: string): void {
@@ -206,9 +297,9 @@ export class TreeCanvasComponent {
     this.broadcastMenuOpened();
   }
 
-  openSubtopicMenu(event: MouseEvent, topicId: string, subtopicId: string): void {
+  openNodeMenu(event: MouseEvent, topicId: string, nodeId: string): void {
     event.preventDefault();
-    this.menuTarget.set({ kind: 'subtopic', topicId, subtopicId });
+    this.menuTarget.set({ kind: 'node', topicId, nodeId });
     this.menuX.set(event.clientX);
     this.menuY.set(event.clientY);
     this.menuOpen.set(true);
@@ -221,15 +312,15 @@ export class TreeCanvasComponent {
     this.menuOpen.set(false);
   }
 
-  onTopicMenuAction(action: 'addSubtopic' | 'deleteTopic'): void {
+  onTopicMenuAction(action: 'addChild' | 'deleteTopic'): void {
     const target = this.menuTarget();
     if (target?.kind !== 'topic') {
       this.closeNodeMenu();
       return;
     }
 
-    if (action === 'addSubtopic') {
-      this.addSubtopic.emit(target.topicId);
+    if (action === 'addChild') {
+      this.addChildNode.emit({ topicId: target.topicId, parentNodeId: null });
     } else {
       this.requestDeleteTopic.emit(target.topicId);
     }
@@ -237,27 +328,31 @@ export class TreeCanvasComponent {
     this.closeNodeMenu();
   }
 
-  onSubtopicMenuAction(action: 'deleteSubtopic' | 'addSubtopic'): void {
+  onNodeMenuAction(action: 'addSibling' | 'addChild' | 'deleteNode'): void {
     const target = this.menuTarget();
-    if (target?.kind !== 'subtopic') {
+    if (target?.kind !== 'node') {
       this.closeNodeMenu();
       return;
     }
 
-    if (action === 'addSubtopic') {
-      this.addSubtopic.emit(target.topicId);
-    } else {
-      this.requestDeleteSubtopic.emit({
-        topicId: target.topicId,
-        subtopicId: target.subtopicId,
-      });
+    if (action === 'addSibling') {
+      this.addSiblingNode.emit({ topicId: target.topicId, nodeId: target.nodeId });
+      this.closeNodeMenu();
+      return;
     }
 
+    if (action === 'addChild') {
+      this.addChildNode.emit({ topicId: target.topicId, parentNodeId: target.nodeId });
+      this.closeNodeMenu();
+      return;
+    }
+
+    this.requestDeleteNode.emit({ topicId: target.topicId, nodeId: target.nodeId });
     this.closeNodeMenu();
   }
 
   protected onNodeFocus(nodeId: string, label: string): void {
-    if (this.isDraggingSubtopic || Date.now() < this.suppressNodeFocusUntil) {
+    if (this.isDraggingNode || Date.now() < this.suppressNodeFocusUntil) {
       return;
     }
 
@@ -318,8 +413,8 @@ export class TreeCanvasComponent {
     return label;
   }
 
-  protected onSubtopicDragStarted(_event: CdkDragStart<TreeSubtopic>): void {
-    this.isDraggingSubtopic = true;
+  protected onNodeDragStarted(_event: CdkDragStart<TreeNode>): void {
+    this.isDraggingNode = true;
     this.editingNodeId.set(null);
     this.editingNodeLabel.set('');
     const activeInput = document.activeElement as HTMLInputElement | null;
@@ -328,10 +423,78 @@ export class TreeCanvasComponent {
     }
   }
 
-  protected onSubtopicDragEnded(_event: CdkDragEnd<TreeSubtopic>): void {
-    this.isDraggingSubtopic = false;
-    // Ignore synthetic focus/click transfer immediately after dropping.
+  protected onNodeDragEnded(_event: CdkDragEnd<TreeNode>): void {
+    this.isDraggingNode = false;
     this.suppressNodeFocusUntil = Date.now() + 180;
+  }
+
+  protected nodeGroupHeight(nodeId: string): number {
+    const leafCount = this.leafCounts().get(nodeId) ?? 1;
+    return Math.max(1, leafCount) * this.rowHeight;
+  }
+
+  protected listAriaLabel(parentNodeId: string | null): string {
+    if (!parentNodeId) {
+      return `Nodes for ${this.topic().label}`;
+    }
+    return 'Child nodes';
+  }
+
+  protected nodeInputSize(nodeId: string, label: string): number {
+    const rendered = this.nodeInputValue(nodeId, label);
+    return Math.max(8, Math.min(64, rendered.length + 2));
+  }
+
+  protected showListSpine(nodes: TreeNode[], isRoot: boolean): boolean {
+    if (nodes.length === 0) {
+      return false;
+    }
+
+    if (isRoot) {
+      return true;
+    }
+
+    return nodes.length > 1;
+  }
+
+  protected listSpineTop(nodes: TreeNode[], isRoot: boolean): number {
+    if (nodes.length === 0) {
+      return 0;
+    }
+
+    if (isRoot) {
+      return -this.rootListTopGap;
+    }
+
+    return this.nodeHeight / 2;
+  }
+
+  protected listSpineHeight(nodes: TreeNode[], isRoot: boolean): number {
+    if (nodes.length === 0) {
+      return 0;
+    }
+
+    const top = this.listSpineTop(nodes, isRoot);
+    const lastCenter = this.nodeCenterY(nodes, nodes.length - 1);
+    return Math.max(0, lastCenter - top);
+  }
+
+  protected incomingConnectorWidth(parentNodeId: string | null): string {
+    const gap = this.levelGapPx();
+    if (parentNodeId === null) {
+      return `${gap}px`;
+    }
+    return `${gap / 2}px`;
+  }
+
+  protected outgoingConnectorWidth(node: TreeNode): string {
+    const gap = this.levelGapPx();
+    if (node.children.length > 0) {
+      return `${gap / 2}px`;
+    }
+
+    const leafWidth = this.leafConnectorWidths()[node.id];
+    return `${Math.max(gap, leafWidth ?? gap)}px`;
   }
 
   private commitNodeRename(nodeId: string, originalLabel: string): void {
@@ -377,8 +540,6 @@ export class TreeCanvasComponent {
       return;
     }
 
-    // Keep this canvas menu active when right-clicking inside the same canvas,
-    // but close it when right-clicking another card/canvas.
     if (root?.contains(target)) {
       return;
     }
@@ -408,11 +569,6 @@ export class TreeCanvasComponent {
     this.selectNode.emit(null);
   }
 
-  protected nodeWidthCh(label: string): number {
-    const base = Math.max(8, label.trim().length + 2);
-    return Math.min(base, 40);
-  }
-
   private broadcastMenuOpened(): void {
     document.dispatchEvent(
       new CustomEvent<{ ownerId: string }>('tree-graph-menu-opened', {
@@ -435,5 +591,82 @@ export class TreeCanvasComponent {
     }
     releaseMenuScrollLock();
     this.isScrollLocked = false;
+  }
+
+  protected onWindowResize(): void {
+    this.scheduleConnectorMeasure();
+  }
+
+  private nodeCenterY(nodes: TreeNode[], nodeIndex: number): number {
+    let offset = 0;
+    for (let index = 0; index < nodeIndex; index += 1) {
+      const current = nodes[index];
+      if (!current) {
+        continue;
+      }
+      offset += this.nodeGroupHeight(current.id);
+    }
+    return offset + this.nodeHeight / 2;
+  }
+
+  private scheduleConnectorMeasure(): void {
+    if (this.measureFrameId !== null) {
+      cancelAnimationFrame(this.measureFrameId);
+    }
+    this.measureFrameId = requestAnimationFrame(() => {
+      this.measureFrameId = null;
+      this.measureConnectorLayout();
+    });
+  }
+
+  private measureConnectorLayout(): void {
+    const root = this.canvasRootRef()?.nativeElement;
+    if (!root) {
+      return;
+    }
+
+    const topicCard = this.topicCardRef()?.nativeElement;
+    if (topicCard) {
+      const topicWidth = topicCard.getBoundingClientRect().width;
+      if (topicWidth > 0) {
+        this.topicHalfWidthPx.set(topicWidth / 2);
+      }
+    }
+
+    const computedStyles = getComputedStyle(root);
+    const parsedGap = Number.parseFloat(computedStyles.getPropertyValue('--tree-level-gap').trim());
+    const gap = Number.isFinite(parsedGap) && parsedGap > 0 ? parsedGap : 28;
+    this.levelGapPx.set(gap);
+
+    const leafIds = new Set(collectLeaves(this.topic().children).map((leaf) => leaf.id));
+    if (leafIds.size === 0) {
+      this.leafConnectorWidths.set({});
+      return;
+    }
+
+    const rootRect = root.getBoundingClientRect();
+    const nodeCards = Array.from(root.querySelectorAll<HTMLElement>('[data-node-id]'));
+    const leafRightById: Record<string, number> = {};
+    let anchorX = 0;
+
+    for (const card of nodeCards) {
+      const nodeId = card.dataset['nodeId'];
+      if (!nodeId || !leafIds.has(nodeId)) {
+        continue;
+      }
+
+      const right = card.getBoundingClientRect().right - rootRect.left;
+      leafRightById[nodeId] = right;
+      if (right > anchorX) {
+        anchorX = right;
+      }
+    }
+
+    anchorX += gap;
+    const nextWidths: Record<string, number> = {};
+    for (const [nodeId, right] of Object.entries(leafRightById)) {
+      nextWidths[nodeId] = Math.max(gap, anchorX - right);
+    }
+    this.leafConnectorWidths.set(nextWidths);
   }
 }

@@ -21,6 +21,16 @@ import { ChangeDetectionStrategy, Component, ElementRef, effect, input, output, 
           >
             Cancel
           </button>
+          @if (secondaryConfirmLabel()) {
+            <button
+              #secondaryConfirmButton
+              class="rounded-lg border border-amber-300 bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+              value="confirm-secondary"
+              type="submit"
+            >
+              {{ secondaryConfirmLabel() }}
+            </button>
+          }
           <button
             #confirmButton
             class="rounded-lg border border-rose-300 bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-600"
@@ -39,12 +49,15 @@ export class ConfirmDialogComponent {
   readonly open = input(false);
   readonly title = input('Confirm');
   readonly message = input('Are you sure?');
+  readonly secondaryConfirmLabel = input('');
 
   readonly confirmed = output<void>();
+  readonly secondaryConfirmed = output<void>();
   readonly cancelled = output<void>();
 
   private readonly dialogElement = viewChild<ElementRef<HTMLDialogElement>>('dialog');
   private readonly cancelButtonElement = viewChild<ElementRef<HTMLButtonElement>>('cancelButton');
+  private readonly secondaryConfirmButtonElement = viewChild<ElementRef<HTMLButtonElement>>('secondaryConfirmButton');
   private readonly confirmButtonElement = viewChild<ElementRef<HTMLButtonElement>>('confirmButton');
 
   constructor() {
@@ -73,6 +86,11 @@ export class ConfirmDialogComponent {
       return;
     }
 
+    if (dialog.returnValue === 'confirm-secondary') {
+      this.secondaryConfirmed.emit();
+      return;
+    }
+
     if (dialog.returnValue === 'confirm') {
       this.confirmed.emit();
       return;
@@ -87,18 +105,25 @@ export class ConfirmDialogComponent {
     }
 
     const cancelButton = this.cancelButtonElement()?.nativeElement;
+    const secondaryButton = this.secondaryConfirmButtonElement()?.nativeElement;
     const confirmButton = this.confirmButtonElement()?.nativeElement;
     if (!cancelButton || !confirmButton) {
       return;
     }
 
-    event.preventDefault();
-    const activeElement = document.activeElement;
-    if (activeElement === cancelButton) {
-      confirmButton.focus();
+    const orderedButtons = [cancelButton, secondaryButton, confirmButton].filter(
+      (button): button is HTMLButtonElement => button instanceof HTMLButtonElement,
+    );
+    if (orderedButtons.length < 2) {
       return;
     }
 
-    cancelButton.focus();
+    event.preventDefault();
+    const activeElement = document.activeElement;
+    const currentIndex = orderedButtons.findIndex((button) => button === activeElement);
+    const move = event.key === 'ArrowRight' ? 1 : -1;
+    const nextIndex = (currentIndex + move + orderedButtons.length) % orderedButtons.length;
+    const nextButton = orderedButtons[nextIndex];
+    nextButton?.focus();
   }
 }

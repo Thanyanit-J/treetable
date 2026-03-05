@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { CellData, TableColumn, TreeSubtopic } from '../models/tree-table.model';
+import { CellData, TableColumn, TreeNode } from '../models/tree-table.model';
 
 interface FormulaSuccess {
   value: number;
@@ -65,13 +65,14 @@ export class FormulaEngineService {
         id: '__row__',
         topicId: '__topic__',
         label: '__row__',
+        children: [],
         cells: structuredClone(cells),
       },
     ]);
     return evaluated?.cells ?? structuredClone(cells);
   }
 
-  evaluateTopicRows(columns: TableColumn[], rows: TreeSubtopic[]): TreeSubtopic[] {
+  evaluateTopicRows(columns: TableColumn[], rows: TreeNode[]): TreeNode[] {
     const nextRows = structuredClone(rows);
     const rowById = new Map(nextRows.map((row) => [row.id, row]));
     const cache = new Map<string, FormulaResult>();
@@ -150,7 +151,7 @@ export class FormulaEngineService {
   }
 
   private resolveColumnSeries(
-    rows: TreeSubtopic[],
+    rows: TreeNode[],
     resolveCell: (rowId: string, columnId: string) => FormulaResult,
     columnId: string,
   ): FormulaSeriesResult {
@@ -331,7 +332,7 @@ export class FormulaEngineService {
     if (firstIdentifier === 'children' && this.match(state, 'dot')) {
       return {
         value: null,
-        error: 'children.* is not supported in subtopic-only table mode',
+        error: 'children.* is not supported in node-only table mode',
       };
     }
 
@@ -412,7 +413,7 @@ export class FormulaEngineService {
     if (token?.type === 'identifier' && token.lexeme === 'children') {
       return {
         ok: false,
-        error: 'children.* is not supported in subtopic-only table mode',
+        error: 'children.* is not supported in node-only table mode',
       };
     }
 

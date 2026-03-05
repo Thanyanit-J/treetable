@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { TableColumn, TreeSubtopic, createCellData } from '../models/tree-table.model';
+import { TableColumn, TreeNode, createCellData } from '../models/tree-table.model';
 import { FormulaEngineService } from './formula-engine.service';
 
 function evaluateSingleFormula(raw: string): ReturnType<FormulaEngineService['evaluateRow']>['$Value'] {
@@ -10,7 +10,7 @@ function evaluateSingleFormula(raw: string): ReturnType<FormulaEngineService['ev
   return result['$Value'];
 }
 
-function evaluateTopicRows(columns: TableColumn[], rows: TreeSubtopic[]): TreeSubtopic[] {
+function evaluateTopicRows(columns: TableColumn[], rows: TreeNode[]): TreeNode[] {
   const service = TestBed.inject(FormulaEngineService);
   return service.evaluateTopicRows(columns, rows);
 }
@@ -35,7 +35,7 @@ describe('FormulaEngineService', () => {
     expect(result['$Value']?.error).toBeNull();
   });
 
-  it('rejects children.* formulas in subtopic-only mode', () => {
+  it('rejects children.* formulas in node-only mode', () => {
     const service = TestBed.inject(FormulaEngineService);
     const columns = [{ id: '$Amount', name: 'Amount', type: 'number' as const }];
 
@@ -117,11 +117,12 @@ describe('FormulaEngineService', () => {
       { id: '$Min', name: 'Min', type: 'number' },
       { id: '$Max', name: 'Max', type: 'number' },
     ];
-    const rows: TreeSubtopic[] = [
+    const rows: TreeNode[] = [
       {
         id: 'row-1',
         topicId: 'topic-1',
         label: 'Row 1',
+        children: [],
         cells: {
           $A: createCellData('1'),
           $Sum: createCellData('=SUM($A)'),
@@ -134,6 +135,7 @@ describe('FormulaEngineService', () => {
         id: 'row-2',
         topicId: 'topic-1',
         label: 'Row 2',
+        children: [],
         cells: {
           $A: createCellData('2'),
           $Sum: createCellData('=SUM($A)'),
@@ -146,6 +148,7 @@ describe('FormulaEngineService', () => {
         id: 'row-3',
         topicId: 'topic-1',
         label: 'Row 3',
+        children: [],
         cells: {
           $A: createCellData('3'),
           $Sum: createCellData('=SUM($A)'),
@@ -175,11 +178,12 @@ describe('FormulaEngineService', () => {
       { id: '$E', name: 'E', type: 'number' },
       { id: '$F', name: 'F', type: 'number' },
     ];
-    const rows: TreeSubtopic[] = [
+    const rows: TreeNode[] = [
       {
         id: 'row-1',
         topicId: 'topic-1',
         label: 'Row 1',
+        children: [],
         cells: {
           $A: createCellData('2'),
           $B: createCellData('3'),
@@ -193,6 +197,7 @@ describe('FormulaEngineService', () => {
         id: 'row-2',
         topicId: 'topic-1',
         label: 'Row 2',
+        children: [],
         cells: {
           $A: createCellData('4'),
           $B: createCellData('5'),
@@ -220,11 +225,12 @@ describe('FormulaEngineService', () => {
       { id: '$A', name: 'A', type: 'number' },
       { id: '$B', name: 'B', type: 'number' },
     ];
-    const rows: TreeSubtopic[] = [
+    const rows: TreeNode[] = [
       {
         id: 'row-1',
         topicId: 'topic-1',
         label: 'Row 1',
+        children: [],
         cells: {
           $A: createCellData('=10/0'),
           $B: createCellData('=SUM($A)'),
@@ -234,6 +240,7 @@ describe('FormulaEngineService', () => {
         id: 'row-2',
         topicId: 'topic-1',
         label: 'Row 2',
+        children: [],
         cells: {
           $A: createCellData('2'),
           $B: createCellData('=SUM($A)'),
@@ -248,11 +255,12 @@ describe('FormulaEngineService', () => {
 
   it('detects circular references involving whole-column aggregation', () => {
     const columns: TableColumn[] = [{ id: '$A', name: 'A', type: 'number' }];
-    const rows: TreeSubtopic[] = [
+    const rows: TreeNode[] = [
       {
         id: 'row-1',
         topicId: 'topic-1',
         label: 'Row 1',
+        children: [],
         cells: {
           $A: createCellData('=SUM($A)'),
         },
@@ -261,6 +269,7 @@ describe('FormulaEngineService', () => {
         id: 'row-2',
         topicId: 'topic-1',
         label: 'Row 2',
+        children: [],
         cells: {
           $A: createCellData('2'),
         },
@@ -276,11 +285,12 @@ describe('FormulaEngineService', () => {
       { id: '$A', name: 'A', type: 'number' },
       { id: '$B', name: 'B', type: 'number' },
     ];
-    const rows: TreeSubtopic[] = [
+    const rows: TreeNode[] = [
       {
         id: 'row-1',
         topicId: 'topic-1',
         label: 'Row 1',
+        children: [],
         cells: {
           $A: createCellData('1'),
           $B: createCellData('=SUM($A)'),
@@ -290,6 +300,7 @@ describe('FormulaEngineService', () => {
         id: 'row-2',
         topicId: 'topic-1',
         label: 'Row 2',
+        children: [],
         cells: {
           $A: createCellData('abc'),
           $B: createCellData('=SUM($A)'),
@@ -332,11 +343,12 @@ describe('FormulaEngineService', () => {
       { id: '$B', name: 'B', type: 'number' },
       { id: '$C', name: 'C', type: 'number' },
     ];
-    const rows: TreeSubtopic[] = [
+    const rows: TreeNode[] = [
       {
         id: 'row-1',
         topicId: 'topic-1',
         label: 'Row 1',
+        children: [],
         cells: {
           $A: createCellData('1'),
           $B: createCellData('abc'),
