@@ -44,7 +44,7 @@ interface ParseState {
 }
 
 type FunctionArgumentResult =
-  | { ok: true; value: number | number[] }
+  | { ok: true; value: number }
   | { ok: false; error: string };
 
 interface FormulaSeriesSuccess {
@@ -83,13 +83,26 @@ interface FormulaRawFailure {
 
 type FormulaRawResult = FormulaRawSuccess | FormulaRawFailure;
 
-type CountFunctionArgsResult =
-  | { ok: true; args: CountFunctionArg[] }
+type ParsedFunctionArgsResult =
+  | { ok: true; args: FormulaFunctionArg[] }
   | { ok: false; error: string };
 
-interface CountFunctionArg {
+interface FormulaFunctionArg {
+  numericValue: number;
   isBlank: boolean;
 }
+
+interface WholeColumnFunctionArgsSuccess {
+  args: FormulaFunctionArg[];
+  error: null;
+}
+
+interface WholeColumnFunctionArgsFailure {
+  args: null;
+  error: string;
+}
+
+type WholeColumnFunctionArgsResult = WholeColumnFunctionArgsSuccess | WholeColumnFunctionArgsFailure;
 
 @Injectable({ providedIn: 'root' })
 export class FormulaEngineService {
@@ -413,55 +426,24 @@ export class FormulaEngineService {
   }
 
   private parseFunctionCall(state: ParseState, functionName: string): FormulaResult {
-    if (this.isCountFunction(functionName)) {
-      const wholeColumnArgument = this.tryParseWholeColumnCountArg(state);
-      if (wholeColumnArgument) {
-        if (wholeColumnArgument.values === null) {
-          return { value: null, error: wholeColumnArgument.error };
-        }
-        return this.runCountFunction(functionName, wholeColumnArgument.values, null);
-      }
-
-      const countArgs = this.parseCountFunctionArgs(state);
-      if (!countArgs.ok) {
-        return { value: null, error: countArgs.error };
-      }
-      return this.runCountFunction(functionName, null, countArgs.args);
-    }
-
-    const wholeColumnArgument = this.tryParseWholeColumnAggregateArg(state, functionName);
+    const wholeColumnArgument = this.tryParseWholeColumnFunctionArgs(state, functionName);
     if (wholeColumnArgument) {
-      if (wholeColumnArgument.values === null) {
+      if (wholeColumnArgument.args === null) {
         return { value: null, error: wholeColumnArgument.error };
       }
-      return this.runFunction(functionName, [wholeColumnArgument.values]);
+      return this.runFunction(functionName, wholeColumnArgument.args);
     }
 
-    const args: Array<number | number[]> = [];
-    if (!this.match(state, 'rightParen')) {
-      while (true) {
-        const parsedArgument = this.parseFunctionArg(state);
-        if (!parsedArgument.ok) {
-          return { value: null, error: parsedArgument.error };
-        }
-        args.push(parsedArgument.value);
-
-        if (this.match(state, 'rightParen')) {
-          break;
-        }
-
-        const comma = this.expect(state, 'comma', 'Expected comma between function arguments');
-        if ('error' in comma) {
-          return comma;
-        }
-      }
+    const args = this.parseFunctionArgs(state, functionName);
+    if (!args.ok) {
+      return { value: null, error: args.error };
     }
 
-    return this.runFunction(functionName, args);
+    return this.runFunction(functionName, args.args);
   }
 
-  private tryParseWholeColumnAggregateArg(state: ParseState, functionName: string): FormulaSeriesResult | null {
-    if (!this.isAggregateFunction(functionName)) {
+  private tryParseWholeColumnFunctionArgs(state: ParseState, functionName: string): WholeColumnFunctionArgsResult | null {
+    if (!this.supportsWholeColumnSingleArg(functionName)) {
       return null;
     }
 
@@ -471,12 +453,36 @@ export class FormulaEngineService {
       return null;
     }
 
-    if (!/^\$[A-Za-z_]\w*$/.test(firstToken.lexeme)) {
+    if (!this.isColumnId(firstToken.lexeme)) {
       return null;
     }
 
     state.cursor += 2;
-    return state.context.resolveColumnSeries(firstToken.lexeme);
+    if (this.isCountFunction(functionName)) {
+      const rawSeries = state.context.resolveColumnRawSeries(firstToken.lexeme);
+      if (rawSeries.values === null) {
+        return { args: null, error: rawSeries.error };
+      }
+      return {
+        args: rawSeries.values.map((rawValue) => ({
+          numericValue: 0,
+          isBlank: rawValue.trim().length === 0,
+        })),
+        error: null,
+      };
+    }
+
+    const numericSeries = state.context.resolveColumnSeries(firstToken.lexeme);
+    if (numericSeries.values === null) {
+      return { args: null, error: numericSeries.error };
+    }
+    return {
+      args: numericSeries.values.map((numericValue) => ({
+        numericValue,
+        isBlank: false,
+      })),
+      error: null,
+    };
   }
 
   private parseFunctionArg(state: ParseState): FunctionArgumentResult {
@@ -495,41 +501,40 @@ export class FormulaEngineService {
     return { ok: true, value: parsed.value ?? 0 };
   }
 
-  private tryParseWholeColumnCountArg(state: ParseState): FormulaRawSeriesResult | null {
-    const firstToken = this.peek(state);
-    const secondToken = state.tokens[state.cursor + 1];
-    if (firstToken?.type !== 'identifier' || secondToken?.type !== 'rightParen') {
-      return null;
-    }
-
-    if (!this.isColumnId(firstToken.lexeme)) {
-      return null;
-    }
-
-    state.cursor += 2;
-    return state.context.resolveColumnRawSeries(firstToken.lexeme);
-  }
-
-  private parseCountFunctionArgs(state: ParseState): CountFunctionArgsResult {
-    const args: CountFunctionArg[] = [];
+  private parseFunctionArgs(state: ParseState, functionName: string): ParsedFunctionArgsResult {
+    const args: FormulaFunctionArg[] = [];
     if (this.match(state, 'rightParen')) {
-      return { ok: false, error: 'Expected function argument' };
+      if (this.isCountFunction(functionName)) {
+        return { ok: false, error: 'Expected function argument' };
+      }
+      return { ok: true, args: [] };
     }
 
     while (true) {
-      const bareColumnId = this.tryParseBareColumnId(state);
-      if (bareColumnId) {
-        const rawCell = state.context.resolveColumnRawInRow(bareColumnId);
-        if (rawCell.value === null) {
-          return { ok: false, error: rawCell.error };
+      if (this.isCountFunction(functionName)) {
+        const bareColumnId = this.tryParseBareColumnId(state);
+        if (bareColumnId) {
+          const rawCell = state.context.resolveColumnRawInRow(bareColumnId);
+          if (rawCell.value === null) {
+            return { ok: false, error: rawCell.error };
+          }
+          args.push({
+            numericValue: 0,
+            isBlank: rawCell.value.trim().length === 0,
+          });
+        } else {
+          const parsedArgument = this.parseFunctionArg(state);
+          if (!parsedArgument.ok) {
+            return { ok: false, error: parsedArgument.error };
+          }
+          args.push({ numericValue: parsedArgument.value, isBlank: false });
         }
-        args.push({ isBlank: rawCell.value.trim().length === 0 });
       } else {
         const parsedArgument = this.parseFunctionArg(state);
         if (!parsedArgument.ok) {
           return { ok: false, error: parsedArgument.error };
         }
-        args.push({ isBlank: false });
+        args.push({ numericValue: parsedArgument.value, isBlank: false });
       }
 
       if (this.match(state, 'rightParen')) {
@@ -630,13 +635,12 @@ export class FormulaEngineService {
     return /^\$[A-Za-z_]\w*$/.test(value);
   }
 
-  private runCountFunction(name: string, columnRawSeries: string[] | null, rowArgs: CountFunctionArg[] | null): FormulaResult {
-    const functionName = name.toUpperCase();
-    const args =
-      columnRawSeries !== null
-        ? columnRawSeries.map((rawValue) => ({ isBlank: rawValue.trim().length === 0 }))
-        : rowArgs ?? [];
+  private supportsWholeColumnSingleArg(functionName: string): boolean {
+    return this.isAggregateFunction(functionName) || this.isCountFunction(functionName);
+  }
 
+  private runFunction(name: string, args: FormulaFunctionArg[]): FormulaResult {
+    const functionName = name.toUpperCase();
     if (functionName === 'COUNT') {
       return { value: args.length, error: null };
     }
@@ -649,35 +653,30 @@ export class FormulaEngineService {
       return { value: args.filter((arg) => arg.isBlank).length, error: null };
     }
 
-    return { value: null, error: `Unknown function: ${name}` };
-  }
+    const numericValues = args.map((arg) => arg.numericValue);
 
-  private runFunction(name: string, args: Array<number | number[]>): FormulaResult {
-    const functionName = name.toUpperCase();
-    const flattened = args.flatMap((arg) => (Array.isArray(arg) ? arg : [arg]));
-
-    if (flattened.length === 0) {
+    if (numericValues.length === 0) {
       return { value: 0, error: null };
     }
 
-    if (flattened.some((value) => !Number.isFinite(value))) {
+    if (numericValues.some((value) => !Number.isFinite(value))) {
       return { value: null, error: `Invalid numeric argument for ${functionName}` };
     }
 
     if (functionName === 'SUM') {
-      return { value: flattened.reduce((sum, value) => sum + value, 0), error: null };
+      return { value: numericValues.reduce((sum, value) => sum + value, 0), error: null };
     }
 
     if (functionName === 'AVG') {
-      return { value: flattened.reduce((sum, value) => sum + value, 0) / flattened.length, error: null };
+      return { value: numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length, error: null };
     }
 
     if (functionName === 'MIN') {
-      return { value: Math.min(...flattened), error: null };
+      return { value: Math.min(...numericValues), error: null };
     }
 
     if (functionName === 'MAX') {
-      return { value: Math.max(...flattened), error: null };
+      return { value: Math.max(...numericValues), error: null };
     }
 
     return { value: null, error: `Unknown function: ${name}` };
