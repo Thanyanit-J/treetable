@@ -40,6 +40,8 @@ type PendingDelete = PendingDeleteTopic | PendingDeleteNode;
         --subtopic-gap: 13px;
         --subtopic-table-offset-top: 5px;
         --subtopic-table-header-height: 44px;
+        --tree-node-border-width: 1px;
+        --tree-topic-branch-gap: 12px;
         --tree-level-gap: 28px;
       "
     >

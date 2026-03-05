@@ -47,7 +47,8 @@ type MenuTarget = TopicMenuTarget | NodeMenuTarget;
         <div class="relative flex items-center gap-2">
           <div
             #topicCard
-            class="relative inline-flex rounded-full border border-sky-300 bg-sky-100"
+            class="relative z-10 mx-1 inline-flex rounded-full border border-sky-300 bg-sky-100"
+            [style.border-width]="'var(--tree-node-border-width)'"
             [class.ring-2]="selectedNodeId() === topic().id"
             [class.ring-sky-400]="selectedNodeId() === topic().id"
             (contextmenu)="openTopicMenu($event, topic().id)"
@@ -67,7 +68,7 @@ type MenuTarget = TopicMenuTarget | NodeMenuTarget;
         </div>
 
         @if (topic().children.length > 0) {
-          <div class="relative mt-3" [style.margin-left.px]="topicHalfWidthPx()">
+          <div class="relative" [style.margin-left.px]="topicHalfWidthPx()" [style.margin-top]="'var(--tree-topic-branch-gap)'">
             <ng-container
               [ngTemplateOutlet]="nodeList"
               [ngTemplateOutletContext]="{ nodes: topic().children, parentNodeId: null, isRoot: true }"
@@ -88,7 +89,7 @@ type MenuTarget = TopicMenuTarget | NodeMenuTarget;
           @if (showListSpine(nodes, isRoot)) {
             <div
               aria-hidden="true"
-              class="pointer-events-none absolute left-0 w-px bg-slate-300"
+              class="pointer-events-none absolute left-0 z-0 w-px bg-slate-300"
               [style.top.px]="listSpineTop(nodes, isRoot)"
               [style.height.px]="listSpineHeight(nodes, isRoot)"
             ></div>
@@ -110,11 +111,12 @@ type MenuTarget = TopicMenuTarget | NodeMenuTarget;
                   <div
                     aria-hidden="true"
                     data-testid="node-connector-left"
-                    class="h-px bg-slate-300"
+                    class="z-0 h-px bg-slate-300"
                     [style.width]="incomingConnectorWidth(parentNodeId)"
                   ></div>
                   <div
-                    class="cursor-grab rounded-xl border border-amber-300 bg-amber-100"
+                    class="relative z-10 cursor-grab rounded-xl border border-amber-300 bg-amber-100"
+                    [style.border-width]="'var(--tree-node-border-width)'"
                     [attr.data-node-id]="node.id"
                     [class.ring-2]="selectedNodeId() === node.id"
                     [class.ring-amber-400]="selectedNodeId() === node.id"
@@ -135,7 +137,7 @@ type MenuTarget = TopicMenuTarget | NodeMenuTarget;
                   <div
                     aria-hidden="true"
                     data-testid="node-connector-right"
-                    class="h-px bg-slate-300"
+                    class="z-0 h-px bg-slate-300"
                     [style.width]="outgoingConnectorWidth(node)"
                   ></div>
                 </div>
@@ -237,9 +239,9 @@ export class TreeCanvasComponent implements AfterViewInit, OnDestroy {
   private readonly canvasRootRef = viewChild<ElementRef<HTMLElement>>('canvasRoot');
   private readonly topicCardRef = viewChild<ElementRef<HTMLElement>>('topicCard');
   private readonly nodeMenuRef = viewChild<ElementRef<HTMLElement>>('nodeMenu');
-  private readonly rowHeight = 54;
-  private readonly nodeHeight = 40;
-  private readonly rootListTopGap = 12;
+  private readonly rowHeightPx = signal(54);
+  private readonly nodeHeightPx = signal(42);
+  private readonly rootListTopGapPx = signal(12);
   private readonly levelGapPx = signal(28);
   private readonly leafConnectorWidths = signal<Record<string, number>>({});
   private isScrollLocked = false;
@@ -430,7 +432,7 @@ export class TreeCanvasComponent implements AfterViewInit, OnDestroy {
 
   protected nodeGroupHeight(nodeId: string): number {
     const leafCount = this.leafCounts().get(nodeId) ?? 1;
-    return Math.max(1, leafCount) * this.rowHeight;
+    return Math.max(1, leafCount) * this.rowHeightPx();
   }
 
   protected listAriaLabel(parentNodeId: string | null): string {
@@ -463,10 +465,10 @@ export class TreeCanvasComponent implements AfterViewInit, OnDestroy {
     }
 
     if (isRoot) {
-      return -this.rootListTopGap;
+      return -this.rootListTopGapPx();
     }
 
-    return this.nodeHeight / 2;
+    return this.nodeHeightPx() / 2;
   }
 
   protected listSpineHeight(nodes: TreeNode[], isRoot: boolean): number {
@@ -606,7 +608,7 @@ export class TreeCanvasComponent implements AfterViewInit, OnDestroy {
       }
       offset += this.nodeGroupHeight(current.id);
     }
-    return offset + this.nodeHeight / 2;
+    return offset + this.nodeHeightPx() / 2;
   }
 
   private scheduleConnectorMeasure(): void {
@@ -634,6 +636,15 @@ export class TreeCanvasComponent implements AfterViewInit, OnDestroy {
     }
 
     const computedStyles = getComputedStyle(root);
+    const subtopicNodeHeight = this.readCssPxVar(computedStyles, '--subtopic-node-height', 40);
+    const subtopicGap = this.readCssPxVar(computedStyles, '--subtopic-gap', 13);
+    const nodeBorderWidth = this.readCssPxVar(computedStyles, '--tree-node-border-width', 1);
+    const topicBranchGap = this.readCssPxVar(computedStyles, '--tree-topic-branch-gap', 12);
+    const nodeCardHeight = subtopicNodeHeight + nodeBorderWidth * 2;
+    this.nodeHeightPx.set(nodeCardHeight);
+    this.rowHeightPx.set(subtopicNodeHeight + subtopicGap + 1);
+    this.rootListTopGapPx.set(topicBranchGap);
+
     const parsedGap = Number.parseFloat(computedStyles.getPropertyValue('--tree-level-gap').trim());
     const gap = Number.isFinite(parsedGap) && parsedGap > 0 ? parsedGap : 28;
     this.levelGapPx.set(gap);
@@ -668,5 +679,14 @@ export class TreeCanvasComponent implements AfterViewInit, OnDestroy {
       nextWidths[nodeId] = Math.max(gap, anchorX - right);
     }
     this.leafConnectorWidths.set(nextWidths);
+  }
+
+  private readCssPxVar(styles: CSSStyleDeclaration, cssVariable: string, fallback: number): number {
+    const raw = styles.getPropertyValue(cssVariable).trim();
+    const parsed = Number.parseFloat(raw);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+    return fallback;
   }
 }
