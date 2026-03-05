@@ -80,6 +80,81 @@ describe('FormulaEngineService', () => {
     expect(evaluateSingleFormula('=MAX(3,1,2)')?.value).toBe(3);
   });
 
+  it('evaluates COUNT-family with single-arg whole-column mode and multi-arg row-local mode', () => {
+    const columns: TableColumn[] = [
+      { id: '$A', name: 'A', type: 'number' },
+      { id: '$B', name: 'B', type: 'number' },
+      { id: '$CountA', name: 'Count A', type: 'number' },
+      { id: '$CountAll', name: 'Count All', type: 'number' },
+      { id: '$CountNonEmpty', name: 'Count Non Empty', type: 'number' },
+      { id: '$CountBlank', name: 'Count Blank', type: 'number' },
+    ];
+    const rows: TreeNode[] = [
+      {
+        id: 'row-1',
+        topicId: 'topic-1',
+        label: 'Row 1',
+        children: [],
+        cells: {
+          $A: createCellData('1'),
+          $B: createCellData(''),
+          $CountA: createCellData('=COUNT($A)'),
+          $CountAll: createCellData('=COUNT($A,$B)'),
+          $CountNonEmpty: createCellData('=COUNTA($A,$B)'),
+          $CountBlank: createCellData('=COUNTBLANK($A,$B)'),
+        },
+      },
+      {
+        id: 'row-2',
+        topicId: 'topic-1',
+        label: 'Row 2',
+        children: [],
+        cells: {
+          $A: createCellData(''),
+          $B: createCellData('x'),
+          $CountA: createCellData('=COUNT($A)'),
+          $CountAll: createCellData('=COUNT($A,$B)'),
+          $CountNonEmpty: createCellData('=COUNTA($A,$B)'),
+          $CountBlank: createCellData('=COUNTBLANK($A,$B)'),
+        },
+      },
+      {
+        id: 'row-3',
+        topicId: 'topic-1',
+        label: 'Row 3',
+        children: [],
+        cells: {
+          $A: createCellData('=1+1'),
+          $B: createCellData('  '),
+          $CountA: createCellData('=COUNT($A)'),
+          $CountAll: createCellData('=COUNT($A,$B)'),
+          $CountNonEmpty: createCellData('=COUNTA($A,$B)'),
+          $CountBlank: createCellData('=COUNTBLANK($A,$B)'),
+        },
+      },
+    ];
+
+    const evaluated = evaluateTopicRows(columns, rows);
+    expect(evaluated[0]?.cells['$CountA']?.value).toBe(3);
+    expect(evaluated[1]?.cells['$CountA']?.value).toBe(3);
+    expect(evaluated[2]?.cells['$CountA']?.value).toBe(3);
+    expect(evaluated[0]?.cells['$CountAll']?.value).toBe(2);
+    expect(evaluated[1]?.cells['$CountAll']?.value).toBe(2);
+    expect(evaluated[2]?.cells['$CountAll']?.value).toBe(2);
+    expect(evaluated[0]?.cells['$CountNonEmpty']?.value).toBe(1);
+    expect(evaluated[1]?.cells['$CountNonEmpty']?.value).toBe(1);
+    expect(evaluated[2]?.cells['$CountNonEmpty']?.value).toBe(1);
+    expect(evaluated[0]?.cells['$CountBlank']?.value).toBe(1);
+    expect(evaluated[1]?.cells['$CountBlank']?.value).toBe(1);
+    expect(evaluated[2]?.cells['$CountBlank']?.value).toBe(1);
+  });
+
+  it('validates COUNT-family argument structure and unknown columns', () => {
+    expect(evaluateSingleFormula('=COUNT()')?.error).toBe('Expected function argument');
+    expect(evaluateSingleFormula('=COUNTA(foo)')?.error).toBe('Unknown column: foo');
+    expect(evaluateSingleFormula('=COUNT($Unknown)')?.error).toBe('Unknown column: $Unknown');
+  });
+
   it('returns unknown function error', () => {
     expect(evaluateSingleFormula('=FOO(1)')?.error).toBe('Unknown function: FOO');
   });
