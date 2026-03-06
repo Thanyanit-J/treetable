@@ -554,7 +554,7 @@ export class FormulaEngineService {
     const firstToken = this.peek(state);
     const secondToken = state.tokens[state.cursor + 1];
     const isTerminator = secondToken?.type === 'comma' || secondToken?.type === 'rightParen';
-    if (!firstToken || firstToken.type !== 'identifier' || !isTerminator) {
+    if (firstToken?.type !== 'identifier' || !isTerminator) {
       return null;
     }
     if (!this.isColumnId(firstToken.lexeme)) {
