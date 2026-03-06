@@ -1,4 +1,6 @@
-# Treetable
+# TreeTable
+
+Organizing data in a tree structure where each node can have child nodes pointing to a cell in a table/spreadsheet layout. Table supports formula evaluation (SUM, AVG, COUNT, etc. across tree nodes). Data can be import/export as JSON.
 
 This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.2.0.
 
