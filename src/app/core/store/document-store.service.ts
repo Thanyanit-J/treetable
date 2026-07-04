@@ -11,6 +11,7 @@ import {
   AccentColor,
   CardV2,
   ChartCardV2,
+  ChartConfigV2,
   ChartType,
   ColumnV2,
   ConnectorStyle,
@@ -65,7 +66,9 @@ export type SelectionV2 =
   | { kind: 'node'; topicId: string; nodeId: string }
   | { kind: 'column'; topicId: string; columnId: string }
   | { kind: 'cell'; topicId: string; nodeId: string; columnId: string }
-  | { kind: 'range'; topicId: string; anchor: CellRef; focus: CellRef };
+  | { kind: 'range'; topicId: string; anchor: CellRef; focus: CellRef }
+  /** topicId is the OWNING card (Topic card or Chart Card). */
+  | { kind: 'chart'; topicId: string; chartId: string };
 
 export type ClipboardContent =
   | { kind: 'node'; topicId: string; node: NodeV2; cutSourceNodeId: string | null }
@@ -344,6 +347,9 @@ export class DocumentStoreService {
     }
     if (selection.kind === 'card') {
       return true;
+    }
+    if (selection.kind === 'chart') {
+      return (this.chartsOf(card) ?? []).some((chart) => chart.id === selection.chartId);
     }
     if (card.kind !== 'topic') {
       return false;
@@ -725,6 +731,45 @@ export class DocumentStoreService {
       }
       index = Math.max(0, Math.min(index, draftPage.stacks.length));
       draftPage.stacks.splice(index, 0, { id: makeId('stack'), cardIds: [cardId] });
+    });
+  }
+
+  /** Charts live on Topic cards and Chart Cards alike. */
+  chartsOf(card: CardV2): ChartConfigV2[] | undefined {
+    if (card.kind === 'topic') {
+      return card.charts;
+    }
+    if (card.kind === 'chartcard') {
+      return card.charts;
+    }
+    return undefined;
+  }
+
+  setChartType(ownerCardId: string, chartId: string, type: ChartType): void {
+    const owner = this.cardById(ownerCardId);
+    const chart = owner ? this.chartsOf(owner)?.find((c) => c.id === chartId) : undefined;
+    if (!chart || chart.type === type) {
+      return;
+    }
+    this.mutate((document) => {
+      const draftOwner = document.cards.find((candidate) => candidate.id === ownerCardId);
+      const draftChart = draftOwner
+        ? this.chartsOf(draftOwner)?.find((candidate) => candidate.id === chartId)
+        : undefined;
+      if (draftChart) {
+        draftChart.type = type;
+      }
+    });
+  }
+
+  removeOwnedChart(ownerCardId: string, chartId: string): void {
+    this.mutate((document) => {
+      const draftOwner = document.cards.find((candidate) => candidate.id === ownerCardId);
+      if (draftOwner?.kind === 'topic') {
+        draftOwner.charts = (draftOwner.charts ?? []).filter((chart) => chart.id !== chartId);
+      } else if (draftOwner?.kind === 'chartcard') {
+        draftOwner.charts = draftOwner.charts.filter((chart) => chart.id !== chartId);
+      }
     });
   }
 

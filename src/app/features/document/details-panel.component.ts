@@ -9,6 +9,7 @@ import {
 import {
   ACCENT_COLORS,
   AccentColor,
+  ChartConfigV2,
   ColumnV2,
   NodeV2,
   RollupMode,
@@ -52,7 +53,37 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
       </div>
 
       <div class="flex-1 space-y-4 p-3">
-        @if (topic(); as topic) {
+        @if (chartContext(); as ctx) {
+          <p class="section-label">Chart</p>
+          <fieldset class="field">
+            <legend>Type</legend>
+            <div class="flex gap-1">
+              <button
+                type="button"
+                class="choice"
+                [class.choice-active]="ctx.chart.type === 'bar'"
+                (click)="store.setChartType(ctx.ownerId, ctx.chart.id, 'bar')"
+              >
+                Bar
+              </button>
+              <button
+                type="button"
+                class="choice"
+                [class.choice-active]="ctx.chart.type === 'pie'"
+                (click)="store.setChartType(ctx.ownerId, ctx.chart.id, 'pie')"
+              >
+                Pie
+              </button>
+            </div>
+          </fieldset>
+          <button
+            type="button"
+            class="danger-button"
+            (click)="store.removeOwnedChart(ctx.ownerId, ctx.chart.id)"
+          >
+            Delete chart
+          </button>
+        } @else if (topic(); as topic) {
           @switch (selectionKind()) {
             @case ('card') {
               <p class="section-label">Topic</p>
@@ -643,6 +674,21 @@ export class DetailsPanelComponent {
   } | null>(null);
 
   protected readonly selectionKind = computed(() => this.store.selection()?.kind ?? null);
+
+  /** Selected chart with its owning card (Topic card or Chart Card). */
+  protected readonly chartContext = computed<{ ownerId: string; chart: ChartConfigV2 } | null>(
+    () => {
+      const selection = this.store.selection();
+      if (selection?.kind !== 'chart') {
+        return null;
+      }
+      const owner = this.store.cardById(selection.topicId);
+      const chart = owner
+        ? this.store.chartsOf(owner)?.find((candidate) => candidate.id === selection.chartId)
+        : undefined;
+      return chart ? { ownerId: selection.topicId, chart } : null;
+    },
+  );
 
   protected readonly topic = computed<TopicCardV2 | null>(() => {
     const selection = this.store.selection();

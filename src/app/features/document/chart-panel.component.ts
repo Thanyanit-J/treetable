@@ -56,21 +56,14 @@ interface RenderedChart {
   selector: 'app-chart-panel',
   template: `
     <section class="mt-3 border-t border-slate-200 pt-3" aria-label="Charts">
-      <div class="mb-2 flex items-center gap-2">
-        <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Charts</span>
-        <button type="button" class="panel-button" (click)="addChart('bar')">+ Bar</button>
-        <button type="button" class="panel-button" (click)="addChart('pie')">+ Pie</button>
-      </div>
-
-      @if (renderedCharts().length === 0) {
-        <p class="text-sm text-slate-400">
-          No charts yet — add a bar or pie chart of your columns.
-        </p>
-      }
-
       <div class="flex flex-wrap items-start gap-4">
         @for (chart of renderedCharts(); track chart.config.id) {
-          <figure class="rounded-xl border border-slate-200 bg-white p-3">
+          <figure
+            class="rounded-xl border border-slate-200 bg-white p-3"
+            [class.ring-2]="isChartSelected(chart.config.id)"
+            [class.ring-sky-400]="isChartSelected(chart.config.id)"
+            (click)="selectChart(chart.config.id, $event)"
+          >
             <figcaption class="mb-1 flex items-center justify-between gap-3">
               <span class="text-xs font-medium text-slate-600">
                 {{ chart.config.type === 'pie' ? 'Pie' : 'Bar' }} ·
@@ -189,6 +182,12 @@ interface RenderedChart {
           </figure>
         }
       </div>
+
+      <!-- The single affordance for creating charts, centered. -->
+      <div class="flex justify-center gap-2 py-2">
+        <button type="button" class="panel-button" (click)="addChart('bar')">+ Bar chart</button>
+        <button type="button" class="panel-button" (click)="addChart('pie')">+ Pie chart</button>
+      </div>
     </section>
   `,
   styles: `
@@ -224,6 +223,30 @@ export class ChartPanelComponent {
   protected readonly barWidth = BAR_WIDTH;
   protected readonly barHeight = BAR_HEIGHT;
   protected readonly pieSize = PIE_SIZE;
+
+  /** The card owning these charts (the Topic itself unless a Chart Card). */
+  protected ownerId(): string {
+    return this.owner()?.id ?? this.topic().id;
+  }
+
+  protected isChartSelected(chartId: string): boolean {
+    const selection = this.store.selection();
+    return (
+      selection?.kind === 'chart' &&
+      selection.topicId === this.ownerId() &&
+      selection.chartId === chartId
+    );
+  }
+
+  /** Click selects the chart for the Details panel (buttons keep their jobs). */
+  protected selectChart(chartId: string, event: Event): void {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('button')) {
+      return;
+    }
+    event.stopPropagation();
+    this.store.select({ kind: 'chart', topicId: this.ownerId(), chartId });
+  }
 
   protected addChart(type: ChartType): void {
     const owner = this.owner();
