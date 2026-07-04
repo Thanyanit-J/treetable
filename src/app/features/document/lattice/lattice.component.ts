@@ -167,95 +167,112 @@ interface ConnectorPath {
                 />
               </div>
             }
-            @for (column of renderColumns(); track column.id; let columnIndex = $index) {
+            @if (row.kind === 'collapsed' && !hasFooter()) {
+              <!-- No Summary configured anywhere: one merged cell counts the hidden rows. -->
               <div
                 role="gridcell"
-                class="p-0"
-                [class.border-b]="row.kind !== 'collapsed' || hasFooter()"
-                [class.border-r]="row.kind !== 'collapsed' || hasFooter()"
-                [class.border-slate-200]="row.kind !== 'collapsed' || hasFooter()"
-                [class.border-l]="columnIndex === 0 && (row.kind !== 'collapsed' || hasFooter())"
-                [class.bg-sky-50]="
-                  selectedNodeId() === row.nodeId && !cellInRange(row.nodeId, column)
-                "
-                [class.bg-sky-100]="cellInRange(row.nodeId, column)"
-                [class.opacity-40]="draggingColumnId() === column.id"
-                [class.formula-target]="isRefTarget(column)"
+                tabindex="0"
+                class="flex h-full min-h-9 items-center border-b border-l border-r border-slate-200 px-2 py-1.5 text-xs italic text-slate-400 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                [class.bg-sky-50]="selectedNodeId() === row.nodeId"
                 [style.grid-row]="rowIndex + 2"
-                [style.grid-column]="dataGridColumn(columnIndex)"
-                [attr.data-cell-node]="row.nodeId"
-                [attr.data-cell-col]="column.id"
-                [cdkContextMenuTriggerFor]="row.kind === 'leaf' ? cellMenu : collapsedMenu"
-                (contextmenu)="onCellContextMenu(row, column)"
-                (pointerenter)="onRefHover(column, true)"
-                (pointerleave)="onRefHover(column, false)"
+                [style.grid-column]="hiddenRowGridColumn()"
+                [attr.aria-colspan]="renderColumns().length"
+                [cdkContextMenuTriggerFor]="collapsedMenu"
+                (contextmenu)="selectHiddenRow(row)"
+                (pointerdown)="onHiddenRowPointerDown(row, $event)"
               >
-                @if (row.kind === 'collapsed' && !hasFooter()) {
-                  <!-- No Rollup configured anywhere: a collapsed Branch shows no Row (CONTEXT.md). -->
-                } @else if (row.kind === 'collapsed') {
-                  <div
-                    tabindex="0"
-                    class="h-full min-h-9 px-2 py-1.5 text-right text-sm italic text-slate-500 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
-                    [class.cell-selected]="isCellSelected(row.nodeId, column)"
-                    [attr.title]="rollupTitle(column)"
-                    [attr.aria-label]="rollupAriaLabel(row.nodeId, column)"
-                    (pointerdown)="onCellPointerDown(row, column, $event)"
-                  >
-                    {{ collapsedRollupDisplay(row.nodeId, column) }}
-                  </div>
-                } @else if (isEditingCell(row.nodeId, column)) {
-                  <input
-                    class="edit-input h-full min-h-9 w-full min-w-24 max-w-72 field-sizing-content bg-white px-2 py-1.5 text-sm text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
-                    [class.text-right]="column.kind !== 'input' || column.valueType === 'number'"
-                    [value]="cellEditValue(row.nodeId, column)"
-                    [attr.aria-label]="cellAriaLabel(row.nodeId, column)"
-                    (focus)="syncCellFormulaSession(column, $event)"
-                    (input)="syncCellFormulaSession(column, $event)"
-                    (blur)="commitCellEdit(row.nodeId, column, $event)"
-                    (keydown.enter)="commitCellEditAndBlur(row.nodeId, column, $event)"
-                    (keydown.escape)="cancelEditing($event)"
-                    (contextmenu)="$event.stopPropagation()"
-                  />
-                } @else if (column.kind === 'chart') {
-                  <div
-                    tabindex="0"
-                    class="flex h-full min-h-9 w-44 items-center gap-1.5 px-2 py-1.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
-                    [class.cell-selected]="isCellSelected(row.nodeId, column)"
-                    [attr.aria-label]="chartBarAria(row.nodeId, column)"
-                    (pointerdown)="onCellPointerDown(row, column, $event)"
-                  >
-                    <div class="h-3 flex-1 overflow-hidden rounded-sm bg-slate-100">
-                      <div
-                        class="h-full rounded-sm"
-                        [class.bg-sky-400]="!chartBarNegative(row.nodeId, column)"
-                        [class.bg-rose-400]="chartBarNegative(row.nodeId, column)"
-                        [style.width.%]="chartBarPercent(row.nodeId, column)"
-                      ></div>
-                    </div>
-                    <span class="w-14 shrink-0 text-right text-[10px] tabular-nums text-slate-400">
-                      {{ chartBarLabel(row.nodeId, column) }}
-                    </span>
-                  </div>
-                } @else {
-                  <div
-                    tabindex="0"
-                    class="h-full min-h-9 w-full min-w-24 max-w-72 cursor-default truncate px-2 py-1.5 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
-                    [class.text-right]="column.kind === 'computed' || column.valueType === 'number'"
-                    [class.text-slate-700]="!cellHasError(row.nodeId, column)"
-                    [class.text-rose-700]="cellHasError(row.nodeId, column)"
-                    [class.bg-slate-50]="
-                      column.kind === 'computed' && !cellInRange(row.nodeId, column)
-                    "
-                    [class.cell-selected]="isCellSelected(row.nodeId, column)"
-                    [attr.aria-label]="cellAriaLabel(row.nodeId, column)"
-                    [attr.title]="cellTitle(row.nodeId, column)"
-                    (pointerdown)="onCellPointerDown(row, column, $event)"
-                    (keydown.enter)="beginCellEditIfSelected(row.nodeId, column, $event)"
-                  >
-                    {{ cellDisplay(row.nodeId, column) }}
-                  </div>
-                }
+                {{ hiddenRowLabel(row.nodeId) }}
               </div>
+            } @else {
+              @for (column of renderColumns(); track column.id; let columnIndex = $index) {
+                <div
+                  role="gridcell"
+                  class="border-b border-r border-slate-200 p-0"
+                  [class.border-l]="columnIndex === 0"
+                  [class.bg-sky-50]="
+                    selectedNodeId() === row.nodeId && !cellInRange(row.nodeId, column)
+                  "
+                  [class.bg-sky-100]="cellInRange(row.nodeId, column)"
+                  [class.opacity-40]="draggingColumnId() === column.id"
+                  [class.formula-target]="isRefTarget(column)"
+                  [style.grid-row]="rowIndex + 2"
+                  [style.grid-column]="dataGridColumn(columnIndex)"
+                  [attr.data-cell-node]="row.nodeId"
+                  [attr.data-cell-col]="column.id"
+                  [cdkContextMenuTriggerFor]="row.kind === 'leaf' ? cellMenu : collapsedMenu"
+                  (contextmenu)="onCellContextMenu(row, column)"
+                  (pointerenter)="onRefHover(column, true)"
+                  (pointerleave)="onRefHover(column, false)"
+                >
+                  @if (row.kind === 'collapsed') {
+                    <div
+                      tabindex="0"
+                      class="h-full min-h-9 px-2 py-1.5 text-right text-sm italic text-slate-500 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                      [class.cell-selected]="isCellSelected(row.nodeId, column)"
+                      [attr.title]="rollupTitle(column)"
+                      [attr.aria-label]="rollupAriaLabel(row.nodeId, column)"
+                      (pointerdown)="onCellPointerDown(row, column, $event)"
+                    >
+                      {{ collapsedRollupDisplay(row.nodeId, column) }}
+                    </div>
+                  } @else if (isEditingCell(row.nodeId, column)) {
+                    <input
+                      class="edit-input h-full min-h-9 w-full min-w-24 max-w-72 field-sizing-content bg-white px-2 py-1.5 text-sm text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                      [class.text-right]="column.kind !== 'input' || column.valueType === 'number'"
+                      [value]="cellEditValue(row.nodeId, column)"
+                      [attr.aria-label]="cellAriaLabel(row.nodeId, column)"
+                      (focus)="syncCellFormulaSession(column, $event)"
+                      (input)="syncCellFormulaSession(column, $event)"
+                      (blur)="commitCellEdit(row.nodeId, column, $event)"
+                      (keydown.enter)="commitCellEditAndBlur(row.nodeId, column, $event)"
+                      (keydown.escape)="cancelEditing($event)"
+                      (contextmenu)="$event.stopPropagation()"
+                    />
+                  } @else if (column.kind === 'chart') {
+                    <div
+                      tabindex="0"
+                      class="flex h-full min-h-9 w-44 items-center gap-1.5 px-2 py-1.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                      [class.cell-selected]="isCellSelected(row.nodeId, column)"
+                      [attr.aria-label]="chartBarAria(row.nodeId, column)"
+                      (pointerdown)="onCellPointerDown(row, column, $event)"
+                    >
+                      <div class="h-3 flex-1 overflow-hidden rounded-sm bg-slate-100">
+                        <div
+                          class="h-full rounded-sm"
+                          [class.bg-sky-400]="!chartBarNegative(row.nodeId, column)"
+                          [class.bg-rose-400]="chartBarNegative(row.nodeId, column)"
+                          [style.width.%]="chartBarPercent(row.nodeId, column)"
+                        ></div>
+                      </div>
+                      <span
+                        class="w-14 shrink-0 text-right text-[10px] tabular-nums text-slate-400"
+                      >
+                        {{ chartBarLabel(row.nodeId, column) }}
+                      </span>
+                    </div>
+                  } @else {
+                    <div
+                      tabindex="0"
+                      class="h-full min-h-9 w-full min-w-24 max-w-72 cursor-default truncate px-2 py-1.5 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                      [class.text-right]="
+                        column.kind === 'computed' || column.valueType === 'number'
+                      "
+                      [class.text-slate-700]="!cellHasError(row.nodeId, column)"
+                      [class.text-rose-700]="cellHasError(row.nodeId, column)"
+                      [class.bg-slate-50]="
+                        column.kind === 'computed' && !cellInRange(row.nodeId, column)
+                      "
+                      [class.cell-selected]="isCellSelected(row.nodeId, column)"
+                      [attr.aria-label]="cellAriaLabel(row.nodeId, column)"
+                      [attr.title]="cellTitle(row.nodeId, column)"
+                      (pointerdown)="onCellPointerDown(row, column, $event)"
+                      (keydown.enter)="beginCellEditIfSelected(row.nodeId, column, $event)"
+                    >
+                      {{ cellDisplay(row.nodeId, column) }}
+                    </div>
+                  }
+                </div>
+              }
             }
           </div>
         }
@@ -841,12 +858,37 @@ export class LatticeComponent {
     }
   }
 
-  /** Expand from the collapsed Rollup Row's context menu. */
+  /** Expand from the collapsed row's context menu (cells or the merged row). */
   protected expandSelectedRow(): void {
     const selection = this.store.selection();
-    if (selection?.kind === 'cell') {
+    if (selection?.kind === 'cell' || selection?.kind === 'node') {
       this.store.expandNode(selection.nodeId);
     }
+  }
+
+  // Merged hidden-row cell (collapsed Branch without any Summary) ------------
+
+  protected hiddenRowLabel(nodeId: string): string {
+    const node = this.findNode(nodeId);
+    const count = node ? hiddenLeavesOf(node).length : 0;
+    return count === 1 ? '1 row hidden' : `${count} rows hidden`;
+  }
+
+  protected hiddenRowGridColumn(): string {
+    return `${this.lattice().depthCount + 1} / span ${Math.max(1, this.renderColumns().length)}`;
+  }
+
+  protected selectHiddenRow(row: LatticeRow): void {
+    this.store.select({ kind: 'node', topicId: this.topic().id, nodeId: row.nodeId });
+  }
+
+  protected onHiddenRowPointerDown(row: LatticeRow, event: PointerEvent): void {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    this.selectHiddenRow(row);
+    (event.currentTarget as HTMLElement | null)?.focus({ preventScroll: true });
   }
 
   protected menuCellEditable(): boolean {
