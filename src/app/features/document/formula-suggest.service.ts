@@ -40,8 +40,15 @@ export class FormulaSuggestService {
     this.state.set(null);
   }
 
+  /** Opens the dropdown on demand (Ctrl/Cmd+I), even on an empty token. */
+  toggle(): void {
+    if (!this.closeIfOpen()) {
+      this.refresh(true);
+    }
+  }
+
   /** Recomputes suggestions for the token at the current caret. */
-  refresh(): void {
+  refresh(force = false): void {
     const input = this.input;
     if (!input || !this.topicId || !input.isConnected) {
       this.state.set(null);
@@ -54,7 +61,7 @@ export class FormulaSuggestService {
     }
     const at = formulaTokenAt(input.value, caret);
     const items =
-      at && at.token.length > 0
+      at && (force || at.token.length > 0)
         ? suggestForToken(this.store.document(), this.topicId, at.token)
         : [];
     if (items.length === 0) {

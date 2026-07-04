@@ -72,6 +72,13 @@ describe('suggestForToken', () => {
     expect(labels('topic_wealth', 'Bus')).toEqual(['Business']);
   });
 
+  it('lists functions before references on an empty token (Ctrl+I)', () => {
+    const all = labels('topic_wealth', '');
+    expect(all[0]).toBe('SUM(…)');
+    expect(all).toHaveLength(8);
+    expect(all).toContain('$Amount');
+  });
+
   it('never suggests chart columns', () => {
     expect(labels('topic_wealth', '$B')).toEqual([]);
   });

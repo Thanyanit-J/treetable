@@ -319,6 +319,8 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                         (keydown.enter)="onFormulaEnter($event)"
                         (keydown.arrowdown)="onSuggestMove($event, 1)"
                         (keydown.arrowup)="onSuggestMove($event, -1)"
+                        (keydown.control.i)="onSuggestToggle($event)"
+                        (keydown.meta.i)="onSuggestToggle($event)"
                         (keydown.escape)="onFormulaEscape($event)"
                       />
                       <span class="mt-1 block text-[11px] font-normal text-slate-400">
@@ -731,6 +733,11 @@ export class DetailsPanelComponent {
     if (this.suggest.move(delta)) {
       event.preventDefault();
     }
+  }
+
+  protected onSuggestToggle(event: Event): void {
+    event.preventDefault();
+    this.suggest.toggle();
   }
 
   /** Caret moves need a suggestions refresh; plain typing runs through (input). */

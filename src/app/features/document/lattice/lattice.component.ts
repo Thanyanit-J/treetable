@@ -231,6 +231,8 @@ interface ConnectorPath {
                       (keydown.enter)="onCellEditorEnter(row.nodeId, column, $event)"
                       (keydown.arrowdown)="onSuggestMove($event, 1)"
                       (keydown.arrowup)="onSuggestMove($event, -1)"
+                      (keydown.control.i)="onSuggestToggle($event)"
+                      (keydown.meta.i)="onSuggestToggle($event)"
                       (keydown.escape)="cancelEditing($event)"
                       (contextmenu)="$event.stopPropagation()"
                     />
@@ -761,6 +763,11 @@ export class LatticeComponent {
     if (this.suggest.move(delta)) {
       event.preventDefault();
     }
+  }
+
+  protected onSuggestToggle(event: Event): void {
+    event.preventDefault();
+    this.suggest.toggle();
   }
 
   /** Caret moves need a suggestions refresh; plain typing runs through (input). */

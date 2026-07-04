@@ -44,7 +44,7 @@ export function suggestForToken(
   token: string,
 ): FormulaSuggestion[] {
   const topic = document.cards.find((card) => card.id === topicId);
-  if (!topic || token.length === 0) {
+  if (!topic) {
     return [];
   }
 
@@ -69,9 +69,12 @@ export function suggestForToken(
   return matches;
 }
 
-/** Unqualified position: own columns, functions, own nodes, other topics. */
+/** Unqualified position: functions first, then columns, nodes, other topics. */
 function rootCandidates(document: DocumentV2, topic: TopicCardV2): FormulaSuggestion[] {
   const out: FormulaSuggestion[] = [];
+  for (const name of [...AGGREGATE_FUNCTIONS, ...COUNT_FUNCTIONS]) {
+    out.push({ label: `${name}(…)`, detail: 'function', insert: `${name}()`, caretShift: -1 });
+  }
   for (const column of topic.columns) {
     if (column.kind !== 'chart') {
       out.push({
@@ -81,9 +84,6 @@ function rootCandidates(document: DocumentV2, topic: TopicCardV2): FormulaSugges
         caretShift: 0,
       });
     }
-  }
-  for (const name of [...AGGREGATE_FUNCTIONS, ...COUNT_FUNCTIONS]) {
-    out.push({ label: `${name}(…)`, detail: 'function', insert: `${name}()`, caretShift: -1 });
   }
   walkNodes(topic.children, (node) => {
     out.push({
