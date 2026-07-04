@@ -78,6 +78,7 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
           (blur)="commit($event)"
           (keydown.enter)="commitAndBlur($event)"
           (keydown.escape)="cancelEdit($event)"
+          (contextmenu)="$event.stopPropagation()"
         />
       } @else {
         <button

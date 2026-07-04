@@ -103,6 +103,7 @@ interface ConnectorPath {
                       (blur)="commitHeaderEdit(column, $event)"
                       (keydown.enter)="commitHeaderEditAndBlur(column, $event)"
                       (keydown.escape)="cancelEditing($event)"
+                      (contextmenu)="$event.stopPropagation()"
                     />
                   } @else {
                     <div
@@ -209,6 +210,7 @@ interface ConnectorPath {
                     (blur)="commitCellEdit(row.nodeId, column, $event)"
                     (keydown.enter)="commitCellEditAndBlur(row.nodeId, column, $event)"
                     (keydown.escape)="cancelEditing($event)"
+                    (contextmenu)="$event.stopPropagation()"
                   />
                 } @else if (column.kind === 'chart') {
                   <div
@@ -326,7 +328,6 @@ interface ConnectorPath {
           <path [attr.d]="path.d" fill="none" stroke="var(--color-slate-300)" stroke-width="1.5" />
         }
       </svg>
-
     </div>
 
     <ng-template #columnMenu>
@@ -1157,7 +1158,7 @@ export class LatticeComponent {
 
   // -------------------------------------------------------------------------
   // Column header drag: horizontal reorder with live preview (click still
-  // selects/edits)
+  // selects/edits; while a formula editor is active, click inserts a ref)
   // -------------------------------------------------------------------------
 
   private readonly columnDragPreview = signal<{ columnId: string; toIndex: number } | null>(null);
