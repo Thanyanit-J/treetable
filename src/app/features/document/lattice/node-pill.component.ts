@@ -54,10 +54,6 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
           <span aria-hidden="true" class="text-[10px] leading-none">⠿</span>
         </button>
       }
-      @if (kind() === 'collapsed') {
-        <span aria-hidden="true" class="ml-1.5 text-[10px] leading-none text-slate-500">▸</span>
-      }
-
       @if (editing()) {
         <input
           #labelInput
