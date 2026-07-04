@@ -113,6 +113,27 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                     </button>
                   </div>
                 </fieldset>
+                <fieldset class="field">
+                  <legend>Connectors</legend>
+                  <div class="flex gap-1">
+                    <button
+                      type="button"
+                      class="choice"
+                      [class.choice-active]="(topic.connectorStyle ?? 'straight') === 'straight'"
+                      (click)="store.setConnectorStyle(topic.id, 'straight')"
+                    >
+                      Straight
+                    </button>
+                    <button
+                      type="button"
+                      class="choice"
+                      [class.choice-active]="topic.connectorStyle === 'curved'"
+                      (click)="store.setConnectorStyle(topic.id, 'curved')"
+                    >
+                      Curved
+                    </button>
+                  </div>
+                </fieldset>
                 <button
                   type="button"
                   class="danger-button"

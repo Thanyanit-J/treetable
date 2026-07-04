@@ -10,6 +10,7 @@ import {
   AccentColor,
   ChartType,
   ColumnV2,
+  ConnectorStyle,
   DocumentV2,
   ImportResult,
   NodeV2,
@@ -1154,6 +1155,15 @@ export class DocumentStoreService {
       const topic = this.findTopic(document, topicId);
       if (topic) {
         topic.pillAlignment = alignment;
+      }
+    });
+  }
+
+  setConnectorStyle(topicId: string, style: ConnectorStyle): void {
+    this.mutate((document) => {
+      const topic = this.findTopic(document, topicId);
+      if (topic) {
+        topic.connectorStyle = style;
       }
     });
   }

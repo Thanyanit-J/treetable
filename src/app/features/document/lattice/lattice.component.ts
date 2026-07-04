@@ -1320,6 +1320,7 @@ export class LatticeComponent {
 
     const paths: ConnectorPath[] = [];
     const dataRegionLeft = this.measureDataRegionLeft(root);
+    const curved = (this.topic().connectorStyle ?? 'straight') === 'curved';
 
     for (const pill of this.lattice().pills) {
       if (pill.kind === 'root') {
@@ -1331,7 +1332,9 @@ export class LatticeComponent {
         const dx = Math.max(12, (to.left - from.right) / 2);
         paths.push({
           id: `edge-${pill.nodeId}`,
-          d: `M ${from.right} ${from.centerY} C ${from.right + dx} ${from.centerY}, ${to.left - dx} ${to.centerY}, ${to.left} ${to.centerY}`,
+          d: curved
+            ? `M ${from.right} ${from.centerY} C ${from.right + dx} ${from.centerY}, ${to.left - dx} ${to.centerY}, ${to.left} ${to.centerY}`
+            : `M ${from.right} ${from.centerY} L ${to.left} ${to.centerY}`,
         });
       }
 

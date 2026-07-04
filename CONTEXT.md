@@ -101,6 +101,7 @@ A standalone card in the rail holding Charts, which may combine data from any To
 - One click selects (Node, cell, Column, card — shown in the **Inspector**); a second click begins text editing. Selection never edits by itself
 - Copying a **Node** copies its whole subtree and Rows; pasting inserts a deep clone with fresh internal ids and uniquified Reference Names as a child of the target; cut removes the original only when the paste happens (atomic move)
 - A **Topic** may render its Branch pills centered in their span (default) or aligned to the top row — a per-Topic option, part of the Document
+- A **Topic** may draw its tree connectors as straight segments (default) or curves — a per-Topic option, part of the Document
 - Compound edits are atomic in history: a Reference Name edit undoes together with all the formula rewrites it caused; a re-parent undoes together with any auto-created child Leaf
 - **Collapse** is persisted in the Document (reload and Reports respect it) yet is not an undo step; when undo/redo changes Nodes or Rows hidden under a collapsed Branch, the ancestor Branches auto-expand to reveal the change — and that expansion is itself just navigation, so redo never re-collapses anything
 
