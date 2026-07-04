@@ -356,6 +356,15 @@ interface ConnectorPath {
           <button
             cdkMenuItem
             type="button"
+            class="menu-item"
+            [disabled]="column.kind === 'chart'"
+            (cdkMenuItemTriggered)="addChartColumn(column)"
+          >
+            Add chart column
+          </button>
+          <button
+            cdkMenuItem
+            type="button"
             class="menu-item text-rose-700"
             (cdkMenuItemTriggered)="deleteColumn(column)"
           >
@@ -1451,6 +1460,10 @@ export class LatticeComponent {
 
   protected insertColumn(column: ColumnV2, side: 'left' | 'right'): void {
     this.store.insertColumn(this.topic().id, column.id, side);
+  }
+
+  protected addChartColumn(column: ColumnV2): void {
+    this.store.addChartColumn(this.topic().id, column.id);
   }
 
   protected deleteColumn(column: ColumnV2): void {

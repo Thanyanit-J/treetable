@@ -262,20 +262,16 @@ describe('DocumentStoreService', () => {
       expect(ids()).toEqual(['$Amount', '$Rate', '$Yield']);
     });
 
-    it('switches column kinds: value → formula → chart → value', () => {
+    it('switches column kinds between value and formula', () => {
       const rate = () => wealth().columns.find((column) => column.refName === '$Rate')!;
 
       store.setColumnKind(wealth().id, rate().id, 'computed');
       expect(rate().kind).toBe('computed');
       expect(rate().expression).toBe('= ');
 
-      store.setColumnKind(wealth().id, rate().id, 'chart');
-      expect(rate().kind).toBe('chart');
-      expect(rate().chartSource).toBe('$Amount');
-
       store.setColumnKind(wealth().id, rate().id, 'input');
       expect(rate().kind).toBe('input');
-      expect(rate().chartSource).toBeNull();
+      expect(rate().expression).toBeNull();
     });
   });
 
@@ -356,7 +352,7 @@ describe('DocumentStoreService', () => {
   });
 
   describe('chart columns', () => {
-    it('converts a column to a bar chart and back, guarding invalid sources', () => {
+    it('converts a column to a bar chart, guarding invalid sources', () => {
       const rate = wealth().columns.find((column) => column.refName === '$Rate')!;
       store.setColumnChart(wealth().id, rate.id, '$Amount');
       expect(wealth().columns.find((column) => column.id === rate.id)).toMatchObject({
@@ -372,12 +368,36 @@ describe('DocumentStoreService', () => {
         'computed',
       );
 
-      store.setColumnChart(wealth().id, rate.id, null);
-      expect(wealth().columns.find((column) => column.id === rate.id)!.kind).toBe('input');
+      // Chart Columns never change type — re-point or delete them instead.
+      store.setColumnKind(wealth().id, rate.id, 'input');
+      expect(wealth().columns.find((column) => column.id === rate.id)!.kind).toBe('chart');
 
       store.undo();
-      store.undo();
       expect(wealth().columns.find((column) => column.id === rate.id)!.kind).toBe('input');
+    });
+
+    it('adds a chart column right after its source', () => {
+      const rate = wealth().columns.find((column) => column.refName === '$Rate')!;
+      store.addChartColumn(wealth().id, rate.id);
+
+      expect(wealth().columns.map((column) => column.refName)).toEqual([
+        '$Amount',
+        '$Rate',
+        '$Ratechart',
+        '$Yield',
+      ]);
+      expect(wealth().columns[2]).toMatchObject({
+        kind: 'chart',
+        chartSource: '$Rate',
+        displayName: 'Rate chart',
+      });
+
+      // Charting a chart is refused.
+      store.addChartColumn(wealth().id, wealth().columns[2]!.id);
+      expect(wealth().columns).toHaveLength(4);
+
+      store.undo();
+      expect(wealth().columns).toHaveLength(3);
     });
 
     it('keeps chartSource in sync with column Reference Name edits', () => {

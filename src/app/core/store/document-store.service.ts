@@ -712,32 +712,26 @@ export class DocumentStoreService {
   }
 
   /**
-   * Turns a column into a bar Chart Column visualizing `sourceRefName`
-   * (same Topic), or back into an input column when null.
+   * Points a Chart Column at `sourceRefName` (same Topic), or turns a
+   * value/formula column into one.
    */
-  setColumnChart(topicId: string, columnId: string, sourceRefName: string | null): void {
+  setColumnChart(topicId: string, columnId: string, sourceRefName: string): void {
     // Validate first — a refused conversion must not pollute undo history.
     const currentTopic = this.findTopic(this.documentSignal(), topicId);
     const currentColumn = currentTopic?.columns.find((candidate) => candidate.id === columnId);
     if (!currentTopic || !currentColumn) {
       return;
     }
-    if (sourceRefName !== null) {
-      const source = currentTopic.columns.find((candidate) => candidate.refName === sourceRefName);
-      if (!source || source.id === columnId || source.kind === 'chart') {
-        return;
-      }
+    const source = currentTopic.columns.find((candidate) => candidate.refName === sourceRefName);
+    if (!source || source.id === columnId || source.kind === 'chart') {
+      return;
     }
 
     this.mutate((document) => {
-      const topic = this.findTopic(document, topicId);
-      const column = topic?.columns.find((candidate) => candidate.id === columnId);
+      const column = this.findTopic(document, topicId)?.columns.find(
+        (candidate) => candidate.id === columnId,
+      );
       if (!column) {
-        return;
-      }
-      if (sourceRefName === null) {
-        column.kind = 'input';
-        column.chartSource = null;
         return;
       }
       column.kind = 'chart';
@@ -745,6 +739,37 @@ export class DocumentStoreService {
       column.expression = null;
       column.rollup = 'none';
     });
+  }
+
+  /** Inserts a new bar Chart Column right after the column it visualizes. */
+  addChartColumn(topicId: string, sourceColumnId: string): void {
+    const topic = this.findTopic(this.documentSignal(), topicId);
+    const source = topic?.columns.find((candidate) => candidate.id === sourceColumnId);
+    if (!topic || !source || source.kind === 'chart') {
+      return;
+    }
+    let newColumnId: string | null = null;
+    this.mutate((document) => {
+      const draftTopic = this.findTopic(document, topicId);
+      const index =
+        draftTopic?.columns.findIndex((candidate) => candidate.id === sourceColumnId) ?? -1;
+      if (!draftTopic || index < 0) {
+        return;
+      }
+      const taken = new Set(draftTopic.columns.map((candidate) => candidate.refName));
+      const displayName = `${source.displayName} chart`;
+      const column = createInputColumn(
+        displayName,
+        uniqueRefName(slugifyColumnRefName(displayName), taken),
+      );
+      column.kind = 'chart';
+      column.chartSource = source.refName;
+      draftTopic.columns.splice(index + 1, 0, column);
+      newColumnId = column.id;
+    });
+    if (newColumnId) {
+      this.selectionSignal.set({ kind: 'column', topicId, columnId: newColumnId });
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -1149,22 +1174,16 @@ export class DocumentStoreService {
   }
 
   /**
-   * Switches a column between its three kinds (CONTEXT.md): value (input),
-   * formula (computed) and chart. Converting a formula to values freezes its
-   * current results into the cells — destructive to the formula, so the UI
-   * confirms first; a new formula starts empty; a chart defaults to the
-   * first other non-chart column.
+   * Switches a column between value (input) and formula (computed). Chart
+   * Columns never change type — re-point or delete them instead. Converting
+   * a formula to values freezes its current results into the cells —
+   * destructive to the formula, so the UI confirms first; a new formula
+   * starts empty.
    */
-  setColumnKind(topicId: string, columnId: string, kind: 'input' | 'computed' | 'chart'): void {
+  setColumnKind(topicId: string, columnId: string, kind: 'input' | 'computed'): void {
     const topic = this.findTopic(this.documentSignal(), topicId);
     const column = topic?.columns.find((candidate) => candidate.id === columnId);
-    if (!topic || !column || column.kind === kind) {
-      return;
-    }
-    const defaultChartSource = topic.columns.find(
-      (candidate) => candidate.id !== columnId && candidate.kind !== 'chart',
-    );
-    if (kind === 'chart' && !defaultChartSource) {
+    if (!topic || !column || column.kind === kind || column.kind === 'chart') {
       return;
     }
 
@@ -1179,10 +1198,6 @@ export class DocumentStoreService {
       }
       draftColumn.kind = kind;
       draftColumn.expression = kind === 'computed' ? (draftColumn.expression ?? '= ') : null;
-      draftColumn.chartSource = kind === 'chart' ? (defaultChartSource?.refName ?? null) : null;
-      if (kind === 'chart') {
-        draftColumn.rollup = 'none';
-      }
     });
   }
 

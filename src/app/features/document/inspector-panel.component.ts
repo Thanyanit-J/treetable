@@ -282,36 +282,29 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                       (keydown.enter)="blurTarget($event)"
                     />
                   </label>
-                  <fieldset class="field">
-                    <legend>Type</legend>
-                    <div class="flex gap-1">
-                      <button
-                        type="button"
-                        class="choice"
-                        [class.choice-active]="column.kind === 'input'"
-                        (click)="requestValueKind(topic, column)"
-                      >
-                        Value
-                      </button>
-                      <button
-                        type="button"
-                        class="choice"
-                        [class.choice-active]="column.kind === 'computed'"
-                        (click)="store.setColumnKind(topic.id, column.id, 'computed')"
-                      >
-                        Formula
-                      </button>
-                      <button
-                        type="button"
-                        class="choice"
-                        [class.choice-active]="column.kind === 'chart'"
-                        [disabled]="!hasChartSourceCandidate(topic, column)"
-                        (click)="store.setColumnKind(topic.id, column.id, 'chart')"
-                      >
-                        Chart
-                      </button>
-                    </div>
-                  </fieldset>
+                  @if (column.kind !== 'chart') {
+                    <fieldset class="field">
+                      <legend>Type</legend>
+                      <div class="flex gap-1">
+                        <button
+                          type="button"
+                          class="choice"
+                          [class.choice-active]="column.kind === 'input'"
+                          (click)="requestValueKind(topic, column)"
+                        >
+                          Value
+                        </button>
+                        <button
+                          type="button"
+                          class="choice"
+                          [class.choice-active]="column.kind === 'computed'"
+                          (click)="store.setColumnKind(topic.id, column.id, 'computed')"
+                        >
+                          Formula
+                        </button>
+                      </div>
+                    </fieldset>
+                  }
                   @switch (column.kind) {
                     @case ('input') {
                       <fieldset class="field">
@@ -365,6 +358,9 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                           }
                         </select>
                       </label>
+                      <p class="text-xs text-slate-400">
+                        A chart column visualizes another column — re-point it or delete it.
+                      </p>
                     }
                   }
                   @if (column.kind !== 'chart') {
@@ -760,10 +756,6 @@ export class InspectorPanelComponent {
     return topic.columns.filter(
       (candidate) => candidate.id !== column.id && candidate.kind !== 'chart',
     );
-  }
-
-  protected hasChartSourceCandidate(topic: TopicCardV2, column: ColumnV2): boolean {
-    return this.chartSourceOptions(topic, column).length > 0;
   }
 
   protected deleteColumn(topic: TopicCardV2, column: ColumnV2): void {
