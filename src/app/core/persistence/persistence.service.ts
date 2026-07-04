@@ -9,6 +9,7 @@ import {
   DocumentViewState,
   ImportResult,
   NodeV2,
+  RollupMode,
   makeId,
   walkNodes,
 } from '../model/document.model';
@@ -219,7 +220,7 @@ export class PersistenceService {
       })
       .filter((chart): chart is ChartConfigV2 => chart !== null);
 
-    return {
+    const card: CardV2 = {
       kind: 'topic',
       id:
         typeof candidate.id === 'string' && candidate.id.length > 0
@@ -230,9 +231,25 @@ export class PersistenceService {
       columns,
       children,
       charts,
-      pillAlignment:
-        (candidate as { pillAlignment?: unknown }).pillAlignment === 'top' ? 'top' : 'center',
     };
+    const pillAlignment = (candidate as { pillAlignment?: unknown }).pillAlignment;
+    if (pillAlignment === 'top' || pillAlignment === 'center') {
+      card.pillAlignment = pillAlignment;
+    }
+    const connectorStyle = (candidate as { connectorStyle?: unknown }).connectorStyle;
+    if (connectorStyle === 'elbow' || connectorStyle === 'straight' || connectorStyle === 'curved') {
+      card.connectorStyle = connectorStyle;
+    }
+    if (typeof candidate.cardTitle === 'string' && candidate.cardTitle.trim().length > 0) {
+      card.cardTitle = candidate.cardTitle;
+    }
+    if ((candidate as { showRoot?: unknown }).showRoot === false) {
+      card.showRoot = false;
+    }
+    if (candidate.customRefName === true) {
+      card.customRefName = true;
+    }
+    return card;
   }
 
   private normalizeColumn(
@@ -270,7 +287,13 @@ export class PersistenceService {
           ? 'chart'
           : 'input';
 
-    return {
+    const rollupModes: readonly RollupMode[] = ['sum', 'avg', 'min', 'max', 'count'];
+    const rollup =
+      kind !== 'chart' && rollupModes.includes(candidate.rollup as RollupMode)
+        ? (candidate.rollup as RollupMode)
+        : 'none';
+
+    const column: ColumnV2 = {
       id:
         typeof candidate.id === 'string' && candidate.id.length > 0 ? candidate.id : makeId('col'),
       refName,
@@ -278,9 +301,13 @@ export class PersistenceService {
       kind,
       valueType: candidate.valueType === 'text' ? 'text' : 'number',
       expression: kind === 'computed' ? expression : null,
-      rollup: kind === 'chart' ? 'none' : candidate.rollup === 'sum' ? 'sum' : 'none',
+      rollup,
       chartSource: kind === 'chart' ? chartSource : null,
     };
+    if (candidate.customRefName === true) {
+      column.customRefName = true;
+    }
+    return column;
   }
 
   private normalizeNode(
@@ -323,7 +350,7 @@ export class PersistenceService {
       ? (candidate.accent as AccentColor)
       : null;
 
-    return {
+    const node: NodeV2 = {
       id:
         typeof candidate.id === 'string' && candidate.id.length > 0 ? candidate.id : makeId('node'),
       refName,
@@ -332,5 +359,9 @@ export class PersistenceService {
       values,
       children,
     };
+    if (candidate.customRefName === true) {
+      node.customRefName = true;
+    }
+    return node;
   }
 }
