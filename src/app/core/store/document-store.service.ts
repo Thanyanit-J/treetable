@@ -773,6 +773,45 @@ export class DocumentStoreService {
     });
   }
 
+  /** Adds/removes a source column on a chart, whichever card owns it. */
+  toggleOwnedChartColumn(ownerCardId: string, chartId: string, columnRefName: string): void {
+    const owner = this.cardById(ownerCardId);
+    if (owner?.kind === 'topic') {
+      this.toggleChartColumn(ownerCardId, chartId, columnRefName);
+    } else if (owner?.kind === 'chartcard') {
+      this.toggleChartCardColumn(ownerCardId, chartId, columnRefName);
+    }
+  }
+
+  /** Reorders a chart's visible source columns (drag in the Details panel). */
+  moveChartColumn(ownerCardId: string, chartId: string, fromIndex: number, toIndex: number): void {
+    const owner = this.cardById(ownerCardId);
+    const chart = owner ? this.chartsOf(owner)?.find((c) => c.id === chartId) : undefined;
+    if (
+      !chart ||
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= chart.columns.length ||
+      toIndex >= chart.columns.length
+    ) {
+      return;
+    }
+    this.mutate((document) => {
+      const draftOwner = document.cards.find((candidate) => candidate.id === ownerCardId);
+      const draftChart = draftOwner
+        ? this.chartsOf(draftOwner)?.find((candidate) => candidate.id === chartId)
+        : undefined;
+      if (!draftChart) {
+        return;
+      }
+      const [ref] = draftChart.columns.splice(fromIndex, 1);
+      if (ref !== undefined) {
+        draftChart.columns.splice(toIndex, 0, ref);
+      }
+    });
+  }
+
   /** Number of cards living on a Page (for delete confirmations). */
   pageCardCount(pageId: string): number {
     const page = this.documentSignal().pages.find((candidate) => candidate.id === pageId);

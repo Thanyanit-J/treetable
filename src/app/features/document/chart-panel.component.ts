@@ -161,24 +161,6 @@ interface RenderedChart {
                 </ul>
               </div>
             }
-
-            <div class="mt-2 flex flex-wrap gap-1" role="group" aria-label="Chart columns">
-              @for (option of columnOptions(); track option.id) {
-                <button
-                  type="button"
-                  class="rounded-full border px-2 py-0.5 text-[10px] font-medium focus-visible:outline-2 focus-visible:outline-sky-600"
-                  [class.border-sky-300]="chart.config.columns.includes(option.refName)"
-                  [class.bg-sky-50]="chart.config.columns.includes(option.refName)"
-                  [class.text-sky-700]="chart.config.columns.includes(option.refName)"
-                  [class.border-slate-200]="!chart.config.columns.includes(option.refName)"
-                  [class.text-slate-500]="!chart.config.columns.includes(option.refName)"
-                  [attr.aria-pressed]="chart.config.columns.includes(option.refName)"
-                  (click)="toggleColumn(chart.config.id, option.refName)"
-                >
-                  {{ option.displayName }}
-                </button>
-              }
-            </div>
           </figure>
         }
       </div>
@@ -266,19 +248,6 @@ export class ChartPanelComponent {
     }
   }
 
-  protected toggleColumn(chartId: string, refName: string): void {
-    const owner = this.owner();
-    if (owner?.kind === 'chartcard') {
-      this.store.toggleChartCardColumn(owner.id, chartId, refName);
-    } else {
-      this.store.toggleChartColumn(this.topic().id, chartId, refName);
-    }
-  }
-
-  protected readonly columnOptions = computed(() =>
-    this.topic().columns.filter((column) => column.kind !== 'chart'),
-  );
-
   protected readonly renderedCharts = computed<RenderedChart[]>(() => {
     const topic = this.topic();
     const evaluation = this.evaluation();
@@ -317,8 +286,8 @@ export class ChartPanelComponent {
           categories: [],
           ...this.renderPie(
             leaves.map((leaf) => leaf.displayName),
-            values[0] ?? [],
-            series[0]?.displayName ?? '',
+            values,
+            series.map((entry) => entry.displayName),
           ),
         };
       }
@@ -392,54 +361,95 @@ export class ChartPanelComponent {
     };
   }
 
+  /**
+   * One ring per source column: a single source draws the classic pie, more
+   * sources stack as concentric rings (inner = first source). Slice colors
+   * follow the Leaf, so rings align visually; each ring's angles are its own
+   * distribution.
+   */
   private renderPie(
     labels: string[],
-    values: number[],
-    seriesName: string,
+    valuesPerSeries: number[][],
+    seriesNames: string[],
   ): { slices: PieSlice[]; legend: { color: string; label: string }[] } {
-    const positives = values
-      .map((value, index) => ({ value, label: labels[index] ?? '' }))
-      .filter((entry) => entry.value > 0);
-    const total = positives.reduce((sum, entry) => sum + entry.value, 0);
-    if (total <= 0) {
-      return {
-        slices: [],
-        legend: [{ color: '#e2e8f0', label: `${seriesName}: no positive values` }],
-      };
+    const rings = valuesPerSeries.length;
+    if (rings === 0) {
+      return { slices: [], legend: [] };
     }
-
     const cx = PIE_SIZE / 2;
     const cy = PIE_SIZE / 2;
-    const radius = PIE_SIZE / 2 - 4;
+    const outer = PIE_SIZE / 2 - 4;
+    const band = outer / rings;
     const slices: PieSlice[] = [];
-    const legend: { color: string; label: string }[] = [];
+    const seenLeaves = new Set<number>();
 
-    let angle = -Math.PI / 2;
-    for (const [index, entry] of positives.entries()) {
-      const fraction = entry.value / total;
-      const nextAngle = angle + fraction * Math.PI * 2;
-      const color = SERIES_COLORS[index % SERIES_COLORS.length]!;
-      const largeArc = fraction > 0.5 ? 1 : 0;
-      const x1 = cx + radius * Math.cos(angle);
-      const y1 = cy + radius * Math.sin(angle);
-      const x2 = cx + radius * Math.cos(nextAngle);
-      const y2 = cy + radius * Math.sin(nextAngle);
-      const path =
-        fraction >= 0.999
-          ? `M ${cx} ${cy - radius} A ${radius} ${radius} 0 1 1 ${cx - 0.01} ${cy - radius} Z`
-          : `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`;
-      slices.push({
-        path,
-        color,
-        label: `${entry.label}: ${formatNumericValue(entry.value)} (${Math.round(fraction * 100)}%)`,
-      });
-      legend.push({
-        color,
-        label: `${entry.label} · ${Math.round(fraction * 100)}%`,
-      });
-      angle = nextAngle;
+    for (const [ring, values] of valuesPerSeries.entries()) {
+      const positives = values
+        .map((value, index) => ({ value, index }))
+        .filter((entry) => entry.value > 0);
+      const total = positives.reduce((sum, entry) => sum + entry.value, 0);
+      if (total <= 0) {
+        continue;
+      }
+      const innerRadius = ring * band;
+      const outerRadius = (ring + 1) * band;
+      let angle = -Math.PI / 2;
+      for (const entry of positives) {
+        const fraction = entry.value / total;
+        const nextAngle = angle + fraction * Math.PI * 2;
+        seenLeaves.add(entry.index);
+        slices.push({
+          path: this.piePath(cx, cy, innerRadius, outerRadius, angle, nextAngle, fraction),
+          color: SERIES_COLORS[entry.index % SERIES_COLORS.length]!,
+          label: `${labels[entry.index]} — ${seriesNames[ring]}: ${formatNumericValue(entry.value)} (${Math.round(fraction * 100)}%)`,
+        });
+        angle = nextAngle;
+      }
     }
 
+    if (slices.length === 0) {
+      return { slices: [], legend: [{ color: '#e2e8f0', label: 'no positive values' }] };
+    }
+    const legend = [...seenLeaves]
+      .sort((a, b) => a - b)
+      .map((index) => ({
+        color: SERIES_COLORS[index % SERIES_COLORS.length]!,
+        label: labels[index] ?? '',
+      }));
     return { slices, legend };
+  }
+
+  /** Wedge (innerRadius 0) or annular sector between two angles. */
+  private piePath(
+    cx: number,
+    cy: number,
+    innerRadius: number,
+    outerRadius: number,
+    start: number,
+    end: number,
+    fraction: number,
+  ): string {
+    if (fraction >= 0.999) {
+      const outerRing = `M ${cx} ${cy - outerRadius} A ${outerRadius} ${outerRadius} 0 1 1 ${cx - 0.01} ${cy - outerRadius} Z`;
+      if (innerRadius <= 0) {
+        return outerRing;
+      }
+      // Counter-wound inner circle carves the hole (nonzero fill rule).
+      return `${outerRing} M ${cx} ${cy - innerRadius} A ${innerRadius} ${innerRadius} 0 1 0 ${cx - 0.01} ${cy - innerRadius} Z`;
+    }
+
+    const large = fraction > 0.5 ? 1 : 0;
+    const x1 = cx + outerRadius * Math.cos(start);
+    const y1 = cy + outerRadius * Math.sin(start);
+    const x2 = cx + outerRadius * Math.cos(end);
+    const y2 = cy + outerRadius * Math.sin(end);
+    if (innerRadius <= 0) {
+      return `M ${cx} ${cy} L ${x1} ${y1} A ${outerRadius} ${outerRadius} 0 ${large} 1 ${x2} ${y2} Z`;
+    }
+    const xi1 = cx + innerRadius * Math.cos(start);
+    const yi1 = cy + innerRadius * Math.sin(start);
+    const xi2 = cx + innerRadius * Math.cos(end);
+    const yi2 = cy + innerRadius * Math.sin(end);
+    return `M ${x1} ${y1} A ${outerRadius} ${outerRadius} 0 ${large} 1 ${x2} ${y2} L ${xi2} ${yi2} A ${innerRadius} ${innerRadius} 0 ${large} 0 ${xi1} ${yi1} Z`;
   }
 }

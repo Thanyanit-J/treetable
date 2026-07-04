@@ -1,3 +1,4 @@
+import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList } from '@angular/cdk/drag-drop';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -42,7 +43,7 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
  */
 @Component({
   selector: 'app-details-panel',
-  imports: [ConfirmDialogComponent],
+  imports: [CdkDrag, CdkDragHandle, CdkDropList, ConfirmDialogComponent],
   template: `
     <aside
       class="flex h-full w-72 shrink-0 flex-col overflow-y-auto border-l border-slate-200 bg-white"
@@ -75,6 +76,49 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                 Pie
               </button>
             </div>
+          </fieldset>
+          <fieldset class="field">
+            <legend>Sources</legend>
+            <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Visible
+            </p>
+            <div cdkDropList (cdkDropListDropped)="onSourceDrop(ctx, $event)">
+              @for (ref of ctx.chart.columns; track ref) {
+                <div cdkDrag [cdkDragData]="ref" class="group/source relative flex items-center">
+                  <button
+                    cdkDragHandle
+                    type="button"
+                    class="flex h-5 w-4 shrink-0 cursor-grab items-center justify-center rounded text-slate-300 hover:bg-slate-100 hover:text-slate-500 focus-visible:outline-2 focus-visible:outline-sky-600"
+                    [attr.aria-label]="'Reorder source ' + sourceLabel(ctx, ref)"
+                  >
+                    <span aria-hidden="true" class="text-[10px] leading-none">⠿</span>
+                  </button>
+                  <label class="flex min-w-0 flex-1 items-center gap-2 py-1 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked
+                      [disabled]="ctx.chart.columns.length <= 1"
+                      (change)="store.toggleOwnedChartColumn(ctx.ownerId, ctx.chart.id, ref)"
+                    />
+                    <span class="truncate">{{ sourceLabel(ctx, ref) }}</span>
+                  </label>
+                </div>
+              }
+            </div>
+            <p class="mb-1 mt-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Hidden
+            </p>
+            @for (option of hiddenSources(ctx); track option.refName) {
+              <label class="flex min-w-0 items-center gap-2 py-1 pl-4 text-sm text-slate-500">
+                <input
+                  type="checkbox"
+                  (change)="store.toggleOwnedChartColumn(ctx.ownerId, ctx.chart.id, option.refName)"
+                />
+                <span class="truncate">{{ option.displayName }}</span>
+              </label>
+            } @empty {
+              <p class="pl-4 text-xs text-slate-400">None</p>
+            }
           </fieldset>
           <button
             type="button"
@@ -675,20 +719,67 @@ export class DetailsPanelComponent {
 
   protected readonly selectionKind = computed(() => this.store.selection()?.kind ?? null);
 
-  /** Selected chart with its owning card (Topic card or Chart Card). */
-  protected readonly chartContext = computed<{ ownerId: string; chart: ChartConfigV2 } | null>(
-    () => {
-      const selection = this.store.selection();
-      if (selection?.kind !== 'chart') {
-        return null;
-      }
-      const owner = this.store.cardById(selection.topicId);
-      const chart = owner
-        ? this.store.chartsOf(owner)?.find((candidate) => candidate.id === selection.chartId)
-        : undefined;
-      return chart ? { ownerId: selection.topicId, chart } : null;
-    },
-  );
+  /** Selected chart with its owning card and the Topic feeding it. */
+  protected readonly chartContext = computed<{
+    ownerId: string;
+    chart: ChartConfigV2;
+    sourceTopic: TopicCardV2 | null;
+  } | null>(() => {
+    const selection = this.store.selection();
+    if (selection?.kind !== 'chart') {
+      return null;
+    }
+    const owner = this.store.cardById(selection.topicId);
+    const chart = owner
+      ? this.store.chartsOf(owner)?.find((candidate) => candidate.id === selection.chartId)
+      : undefined;
+    if (!owner || !chart) {
+      return null;
+    }
+    const sourceTopic =
+      owner.kind === 'topic'
+        ? owner
+        : owner.kind === 'chartcard'
+          ? (this.store.topicById(owner.sourceTopicId) ?? null)
+          : null;
+    return { ownerId: selection.topicId, chart, sourceTopic };
+  });
+
+  /** Source columns not currently on the chart. */
+  protected hiddenSources(context: {
+    chart: ChartConfigV2;
+    sourceTopic: TopicCardV2 | null;
+  }): { refName: string; displayName: string }[] {
+    if (!context.sourceTopic) {
+      return [];
+    }
+    return context.sourceTopic.columns
+      .filter(
+        (column) => column.kind !== 'chart' && !context.chart.columns.includes(column.refName),
+      )
+      .map((column) => ({ refName: column.refName, displayName: column.displayName }));
+  }
+
+  protected sourceLabel(context: { sourceTopic: TopicCardV2 | null }, refName: string): string {
+    return (
+      context.sourceTopic?.columns.find((column) => column.refName === refName)?.displayName ??
+      refName
+    );
+  }
+
+  protected onSourceDrop(
+    context: { ownerId: string; chart: ChartConfigV2 },
+    event: CdkDragDrop<unknown>,
+  ): void {
+    if (event.previousIndex !== event.currentIndex) {
+      this.store.moveChartColumn(
+        context.ownerId,
+        context.chart.id,
+        event.previousIndex,
+        event.currentIndex,
+      );
+    }
+  }
 
   protected readonly topic = computed<TopicCardV2 | null>(() => {
     const selection = this.store.selection();
