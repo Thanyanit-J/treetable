@@ -275,6 +275,54 @@ describe('DocumentStoreService', () => {
     });
   });
 
+  describe('reference name sync', () => {
+    it('renaming a column re-derives its Reference Name and rewrites formulas', () => {
+      const columnId = amountColumn().id;
+      store.renameColumn(wealth().id, columnId, 'Cash Total');
+
+      const renamed = wealth().columns.find((column) => column.id === columnId)!;
+      expect(renamed.displayName).toBe('Cash Total');
+      expect(renamed.refName).toBe('$CashTotal');
+      const yieldColumn = wealth().columns.find((column) => column.displayName === 'Yield')!;
+      expect(yieldColumn.expression).toBe('= $CashTotal * $Rate');
+
+      store.undo();
+      expect(wealth().columns.find((column) => column.id === columnId)!.refName).toBe('$Amount');
+      expect(wealth().columns.find((column) => column.displayName === 'Yield')!.expression).toBe(
+        '= $Amount * $Rate',
+      );
+    });
+
+    it('unsynced Reference Names ignore display renames until re-synced', () => {
+      const columnId = amountColumn().id;
+      const target = { kind: 'column' as const, topicId: wealth().id, entityId: columnId };
+
+      store.setRefNameSync(target, false);
+      store.renameColumn(wealth().id, columnId, 'Cash');
+      expect(wealth().columns.find((column) => column.id === columnId)!.refName).toBe('$Amount');
+
+      store.setRefNameSync(target, true);
+      expect(wealth().columns.find((column) => column.id === columnId)!.refName).toBe('$Cash');
+      expect(wealth().columns.find((column) => column.id === columnId)!.customRefName).toBeFalsy();
+    });
+
+    it('manual setRefName marks the name custom so later renames keep it', () => {
+      const columnId = amountColumn().id;
+      store.setRefName({ kind: 'column', topicId: wealth().id, entityId: columnId }, '$Money');
+      store.renameColumn(wealth().id, columnId, 'Something Else');
+      expect(wealth().columns.find((column) => column.id === columnId)!.refName).toBe('$Money');
+    });
+
+    it('node and topic renames keep their Reference Names in sync', () => {
+      const bankId = bankA().id;
+      store.renameNode(wealth().id, bankId, 'Bank Alpha');
+      expect(savings().children.find((node) => node.id === bankId)!.refName).toBe('BankAlpha');
+
+      store.renameCard(wealth().id, 'Fortune');
+      expect(store.cards().find((card) => card.displayName === 'Fortune')!.refName).toBe('Fortune');
+    });
+  });
+
   it('guards the last remaining column', () => {
     const business = store.cards().find((card) => card.refName === 'Business')!;
     const result = store.deleteColumn(business.id, business.columns[0]!.id);

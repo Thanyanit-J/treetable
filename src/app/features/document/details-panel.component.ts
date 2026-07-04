@@ -80,12 +80,23 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                 <input
                   class="field-input font-mono"
                   [value]="topic.refName"
+                  [disabled]="!topic.customRefName"
                   [attr.aria-invalid]="refNameError() ? 'true' : null"
                   (blur)="
                     commitRefName({ kind: 'topic', topicId: topic.id, entityId: topic.id }, $event)
                   "
                   (keydown.enter)="blurTarget($event)"
                 />
+              </label>
+              <label class="flex items-center gap-2 text-xs text-slate-500">
+                <input
+                  type="checkbox"
+                  [checked]="!topic.customRefName"
+                  (change)="
+                    toggleRefSync({ kind: 'topic', topicId: topic.id, entityId: topic.id }, $event)
+                  "
+                />
+                Auto-sync with name
               </label>
               <fieldset class="field">
                 <legend>Tree layout</legend>
@@ -162,12 +173,23 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                   <input
                     class="field-input font-mono"
                     [value]="node.refName"
+                    [disabled]="!node.customRefName"
                     [attr.aria-invalid]="refNameError() ? 'true' : null"
                     (blur)="
                       commitRefName({ kind: 'node', topicId: topic.id, entityId: node.id }, $event)
                     "
                     (keydown.enter)="blurTarget($event)"
                   />
+                </label>
+                <label class="flex items-center gap-2 text-xs text-slate-500">
+                  <input
+                    type="checkbox"
+                    [checked]="!node.customRefName"
+                    (change)="
+                      toggleRefSync({ kind: 'node', topicId: topic.id, entityId: node.id }, $event)
+                    "
+                  />
+                  Auto-sync with name
                 </label>
                 <fieldset class="field">
                   <legend>Color</legend>
@@ -257,6 +279,7 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                   <input
                     class="field-input font-mono"
                     [value]="column.refName"
+                    [disabled]="!column.customRefName"
                     [attr.aria-invalid]="refNameError() ? 'true' : null"
                     (blur)="
                       commitRefName(
@@ -266,6 +289,19 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                     "
                     (keydown.enter)="blurTarget($event)"
                   />
+                </label>
+                <label class="flex items-center gap-2 text-xs text-slate-500">
+                  <input
+                    type="checkbox"
+                    [checked]="!column.customRefName"
+                    (change)="
+                      toggleRefSync(
+                        { kind: 'column', topicId: topic.id, entityId: column.id },
+                        $event
+                      )
+                    "
+                  />
+                  Auto-sync with name
                 </label>
                 @if (column.kind !== 'chart') {
                   <fieldset class="field">
@@ -522,6 +558,10 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
       outline: 2px solid var(--color-sky-600);
       outline-offset: -1px;
     }
+    .field-input:disabled {
+      background: var(--color-slate-50);
+      color: var(--color-slate-400);
+    }
     .choice {
       border-radius: 0.5rem;
       border: 1px solid var(--color-slate-300);
@@ -676,6 +716,13 @@ export class DetailsPanelComponent {
       return;
     }
     this.refNameError.set(null);
+  }
+
+  /** Re-syncing derives the Reference Name from the display name in one step. */
+  protected toggleRefSync(target: RefNameTarget, event: Event): void {
+    const synced = (event.target as HTMLInputElement).checked;
+    const result = this.store.setRefNameSync(target, synced);
+    this.refNameError.set(result.ok ? null : (result.error ?? 'Invalid reference name.'));
   }
 
   /**

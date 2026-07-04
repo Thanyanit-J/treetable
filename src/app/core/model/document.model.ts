@@ -23,6 +23,8 @@ export interface ColumnV2 {
   id: string;
   /** Formula-addressable Reference Name, e.g. `$Amount`. Unique per Topic. */
   refName: string;
+  /** True once the user detached the Reference Name from the display name. */
+  customRefName?: boolean;
   displayName: string;
   kind: ColumnKind;
   /** Meaningful for input columns; computed columns always produce numbers. */
@@ -38,6 +40,8 @@ export interface NodeV2 {
   id: string;
   /** Formula-addressable Reference Name, e.g. `Savings`. Unique per Topic. */
   refName: string;
+  /** True once the user detached the Reference Name from the display name. */
+  customRefName?: boolean;
   displayName: string;
   accent: AccentColor | null;
   children: NodeV2[];
@@ -62,6 +66,8 @@ export interface TopicCardV2 {
   id: string;
   /** Reference Name unique per Document, e.g. `Wealth`. */
   refName: string;
+  /** True once the user detached the Reference Name from the display name. */
+  customRefName?: boolean;
   /** The Root Node's name (the root pill label). */
   displayName: string;
   /** Card title shown in the chrome strip; absent = follows the Root's name. */

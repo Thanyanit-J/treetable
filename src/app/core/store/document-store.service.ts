@@ -390,13 +390,30 @@ export class DocumentStoreService {
 
   renameCard(cardId: string, displayName: string): void {
     const next = displayName.trim();
-    if (next.length === 0) {
+    const topic = this.topicById(cardId);
+    if (next.length === 0 || !topic || topic.displayName === next) {
       return;
     }
+    const target: RefNameTarget = { kind: 'topic', topicId: cardId, entityId: cardId };
+    const taken = new Set(
+      this.documentSignal()
+        .cards.filter((card) => card.id !== cardId)
+        .map((card) => card.refName),
+    );
+    const plan = this.planSyncedRefRename(
+      target,
+      topic.customRefName,
+      topic.refName,
+      uniqueRefName(slugifyEntityRefName(next), taken),
+    );
     this.mutate((document) => {
-      const card = document.cards.find((candidate) => candidate.id === cardId);
-      if (card) {
-        card.displayName = next;
+      const card = this.findTopic(document, cardId);
+      if (!card) {
+        return;
+      }
+      card.displayName = next;
+      if (plan) {
+        this.applyRefRename(document, card, target, plan);
       }
     });
   }
@@ -486,14 +503,33 @@ export class DocumentStoreService {
 
   renameNode(topicId: string, nodeId: string, displayName: string): void {
     const next = displayName.trim();
-    if (next.length === 0) {
+    const topic = this.topicById(topicId);
+    const located = topic ? findNodeAndParent(topic.children, nodeId) : null;
+    if (next.length === 0 || !topic || !located || located.node.displayName === next) {
       return;
     }
+    const target: RefNameTarget = { kind: 'node', topicId, entityId: nodeId };
+    const taken = new Set<string>();
+    walkNodes(topic.children, (node) => {
+      if (node.id !== nodeId) {
+        taken.add(node.refName);
+      }
+    });
+    const plan = this.planSyncedRefRename(
+      target,
+      located.node.customRefName,
+      located.node.refName,
+      uniqueRefName(slugifyEntityRefName(next), taken),
+    );
     this.mutate((document) => {
-      const topic = this.findTopic(document, topicId);
-      const located = topic ? findNodeAndParent(topic.children, nodeId) : null;
-      if (located && located.node.displayName !== next) {
-        located.node.displayName = next;
+      const draftTopic = this.findTopic(document, topicId);
+      const draftLocated = draftTopic ? findNodeAndParent(draftTopic.children, nodeId) : null;
+      if (!draftTopic || !draftLocated) {
+        return;
+      }
+      draftLocated.node.displayName = next;
+      if (plan) {
+        this.applyRefRename(document, draftTopic, target, plan);
       }
     });
   }
@@ -715,14 +751,32 @@ export class DocumentStoreService {
 
   renameColumn(topicId: string, columnId: string, displayName: string): void {
     const next = displayName.trim();
-    if (next.length === 0) {
+    const topic = this.topicById(topicId);
+    const column = topic?.columns.find((candidate) => candidate.id === columnId);
+    if (next.length === 0 || !topic || !column || column.displayName === next) {
       return;
     }
+    const target: RefNameTarget = { kind: 'column', topicId, entityId: columnId };
+    const taken = new Set(
+      topic.columns
+        .filter((candidate) => candidate.id !== columnId)
+        .map((candidate) => candidate.refName),
+    );
+    const plan = this.planSyncedRefRename(
+      target,
+      column.customRefName,
+      column.refName,
+      uniqueRefName(slugifyColumnRefName(next), taken),
+    );
     this.mutate((document) => {
-      const topic = this.findTopic(document, topicId);
-      const column = topic?.columns.find((candidate) => candidate.id === columnId);
-      if (column) {
-        column.displayName = next;
+      const draftTopic = this.findTopic(document, topicId);
+      const draftColumn = draftTopic?.columns.find((candidate) => candidate.id === columnId);
+      if (!draftTopic || !draftColumn) {
+        return;
+      }
+      draftColumn.displayName = next;
+      if (plan) {
+        this.applyRefRename(document, draftTopic, target, plan);
       }
     });
   }
@@ -1342,9 +1396,14 @@ export class DocumentStoreService {
    * resolves to the renamed entity — one atomic undo step. Rewriting works on
    * the AST (resolve → substitute → print), so a Business-local `$Amount`
    * survives a rename of Wealth's `$Amount` untouched, while `Wealth.$Amount`
-   * follows it from anywhere.
+   * follows it from anywhere. `markCustom` records whether the Reference
+   * Name is now hand-picked (true), auto-synced (false) or unchanged (null).
    */
-  setRefName(target: RefNameTarget, nextRefNameRaw: string): ImportResult {
+  setRefName(
+    target: RefNameTarget,
+    nextRefNameRaw: string,
+    markCustom: boolean | null = true,
+  ): ImportResult {
     const nextRefName = nextRefNameRaw.trim();
     const document = this.documentSignal();
     const topic = document.cards.find((card) => card.id === target.topicId);
@@ -1361,11 +1420,98 @@ export class DocumentStoreService {
     if (currentRefName === null) {
       return { ok: false, error: 'Entity not found.' };
     }
-    if (currentRefName === nextRefName) {
+    const flagChanges =
+      markCustom !== null && (this.currentCustomFlag(topic, target) ?? false) !== markCustom;
+    if (currentRefName === nextRefName && !flagChanges) {
       return { ok: true };
     }
 
-    // Plan formula rewrites against the pre-rename Document.
+    const plan =
+      currentRefName === nextRefName
+        ? null
+        : {
+            currentRefName,
+            nextRefName,
+            rewrites: this.planRefRewrites(document, target, nextRefName),
+          };
+
+    this.mutate((draft) => {
+      const draftTopic = this.findTopic(draft, target.topicId);
+      if (!draftTopic) {
+        return;
+      }
+      if (plan) {
+        this.applyRefRename(draft, draftTopic, target, plan);
+      }
+      if (markCustom !== null) {
+        this.writeCustomFlag(draftTopic, target, markCustom);
+      }
+    });
+
+    return { ok: true };
+  }
+
+  /**
+   * Re-syncs a Reference Name to its Display Name (synced = true, rewriting
+   * formulas as needed) or detaches it for manual editing (synced = false).
+   */
+  setRefNameSync(target: RefNameTarget, synced: boolean): ImportResult {
+    const topic = this.topicById(target.topicId);
+    if (!topic) {
+      return { ok: false, error: 'Topic not found.' };
+    }
+    const currentRefName = this.currentRefNameOf(topic, target);
+    if (currentRefName === null) {
+      return { ok: false, error: 'Entity not found.' };
+    }
+    if (!synced) {
+      return this.setRefName(target, currentRefName, true);
+    }
+    const derived = this.deriveRefName(topic, target) ?? currentRefName;
+    return this.setRefName(target, derived, false);
+  }
+
+  /** The auto-derived (slugified, uniquified) Reference Name for an entity. */
+  private deriveRefName(topic: TopicCardV2, target: RefNameTarget): string | null {
+    if (target.kind === 'column') {
+      const column = topic.columns.find((candidate) => candidate.id === target.entityId);
+      if (!column) {
+        return null;
+      }
+      const taken = new Set(
+        topic.columns
+          .filter((candidate) => candidate.id !== target.entityId)
+          .map((candidate) => candidate.refName),
+      );
+      return uniqueRefName(slugifyColumnRefName(column.displayName), taken);
+    }
+    if (target.kind === 'topic') {
+      const taken = new Set(
+        this.documentSignal()
+          .cards.filter((card) => card.id !== target.entityId)
+          .map((card) => card.refName),
+      );
+      return uniqueRefName(slugifyEntityRefName(topic.displayName), taken);
+    }
+    const located = findNodeAndParent(topic.children, target.entityId);
+    if (!located) {
+      return null;
+    }
+    const taken = new Set<string>();
+    walkNodes(topic.children, (node) => {
+      if (node.id !== target.entityId) {
+        taken.add(node.refName);
+      }
+    });
+    return uniqueRefName(slugifyEntityRefName(located.node.displayName), taken);
+  }
+
+  /** Plans formula rewrites against the pre-rename Document. */
+  private planRefRewrites(
+    document: DocumentV2,
+    target: RefNameTarget,
+    nextRefName: string,
+  ): Map<string, string> {
     const expressionRewrites = new Map<string, string>();
     for (const card of document.cards) {
       for (const column of card.columns) {
@@ -1397,50 +1543,103 @@ export class DocumentStoreService {
         }
       }
     }
+    return expressionRewrites;
+  }
 
-    this.mutate((draft) => {
-      const draftTopic = this.findTopic(draft, target.topicId);
-      if (!draftTopic) {
+  /** Applies a planned rename to the draft: entity, formulas, chart bindings. */
+  private applyRefRename(
+    draft: DocumentV2,
+    draftTopic: TopicCardV2,
+    target: RefNameTarget,
+    plan: { currentRefName: string; nextRefName: string; rewrites: Map<string, string> },
+  ): void {
+    if (target.kind === 'topic') {
+      draftTopic.refName = plan.nextRefName;
+    } else if (target.kind === 'column') {
+      const column = draftTopic.columns.find((candidate) => candidate.id === target.entityId);
+      if (column) {
+        column.refName = plan.nextRefName;
+      }
+    } else {
+      const located = findNodeAndParent(draftTopic.children, target.entityId);
+      if (located) {
+        located.node.refName = plan.nextRefName;
+      }
+    }
+
+    for (const card of draft.cards) {
+      for (const column of card.columns) {
+        const rewritten = plan.rewrites.get(column.id);
+        if (rewritten !== undefined) {
+          column.expression = rewritten;
+        }
+      }
+    }
+
+    // Chart Columns and Chart Panel configs bind to columns by Reference Name too.
+    if (target.kind === 'column') {
+      for (const column of draftTopic.columns) {
+        if (column.kind === 'chart' && column.chartSource === plan.currentRefName) {
+          column.chartSource = plan.nextRefName;
+        }
+      }
+      for (const chart of draftTopic.charts ?? []) {
+        chart.columns = chart.columns.map((ref) =>
+          ref === plan.currentRefName ? plan.nextRefName : ref,
+        );
+      }
+    }
+  }
+
+  /**
+   * Rename plan for a synced entity whose Display Name is changing: derive
+   * the new Reference Name and the formula rewrites, or null when the name
+   * is custom (detached) or the derivation lands on the current name.
+   */
+  private planSyncedRefRename(
+    target: RefNameTarget,
+    custom: boolean | undefined,
+    currentRefName: string,
+    derivedRefName: string,
+  ): { currentRefName: string; nextRefName: string; rewrites: Map<string, string> } | null {
+    if (custom || derivedRefName === currentRefName) {
+      return null;
+    }
+    return {
+      currentRefName,
+      nextRefName: derivedRefName,
+      rewrites: this.planRefRewrites(this.documentSignal(), target, derivedRefName),
+    };
+  }
+
+  private currentCustomFlag(topic: TopicCardV2, target: RefNameTarget): boolean | undefined {
+    if (target.kind === 'topic') {
+      return topic.customRefName;
+    }
+    if (target.kind === 'column') {
+      return topic.columns.find((candidate) => candidate.id === target.entityId)?.customRefName;
+    }
+    return findNodeAndParent(topic.children, target.entityId)?.node.customRefName;
+  }
+
+  private writeCustomFlag(draftTopic: TopicCardV2, target: RefNameTarget, custom: boolean): void {
+    const write = (entity: { customRefName?: boolean } | undefined): void => {
+      if (!entity) {
         return;
       }
-
-      if (target.kind === 'topic') {
-        draftTopic.refName = nextRefName;
-      } else if (target.kind === 'column') {
-        const column = draftTopic.columns.find((candidate) => candidate.id === target.entityId);
-        if (column) {
-          column.refName = nextRefName;
-        }
+      if (custom) {
+        entity.customRefName = true;
       } else {
-        const located = findNodeAndParent(draftTopic.children, target.entityId);
-        if (located) {
-          located.node.refName = nextRefName;
-        }
+        delete entity.customRefName;
       }
-
-      for (const card of draft.cards) {
-        for (const column of card.columns) {
-          const rewritten = expressionRewrites.get(column.id);
-          if (rewritten !== undefined) {
-            column.expression = rewritten;
-          }
-        }
-      }
-
-      // Chart Columns and Chart Panel configs bind to columns by Reference Name too.
-      if (target.kind === 'column') {
-        for (const column of draftTopic.columns) {
-          if (column.kind === 'chart' && column.chartSource === currentRefName) {
-            column.chartSource = nextRefName;
-          }
-        }
-        for (const chart of draftTopic.charts ?? []) {
-          chart.columns = chart.columns.map((ref) => (ref === currentRefName ? nextRefName : ref));
-        }
-      }
-    });
-
-    return { ok: true };
+    };
+    if (target.kind === 'topic') {
+      write(draftTopic);
+    } else if (target.kind === 'column') {
+      write(draftTopic.columns.find((candidate) => candidate.id === target.entityId));
+    } else {
+      write(findNodeAndParent(draftTopic.children, target.entityId)?.node);
+    }
   }
 
   private validateRefName(
