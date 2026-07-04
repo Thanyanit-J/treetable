@@ -192,7 +192,8 @@ interface ConnectorPath {
                   class="border-b border-r border-slate-200 p-0"
                   [class.border-l]="columnIndex === 0"
                   [class.bg-sky-50]="
-                    selectedNodeId() === row.nodeId && !cellInRange(row.nodeId, column)
+                    (selectedNodeId() === row.nodeId || isColumnSelected(column)) &&
+                    !cellInRange(row.nodeId, column)
                   "
                   [class.bg-sky-100]="cellInRange(row.nodeId, column)"
                   [class.opacity-40]="draggingColumnId() === column.id"
