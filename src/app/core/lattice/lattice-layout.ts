@@ -1,4 +1,4 @@
-import { NodeV2, TopicCardV2 } from '../../../core/model/document.model';
+import { NodeV2, TopicCardV2 } from '../model/document.model';
 
 /**
  * Pure lattice layout (ADR-0001).

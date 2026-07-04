@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NodeV2, TopicCardV2 } from '../../../core/model/document.model';
+import { NodeV2, TopicCardV2 } from '../model/document.model';
 import { ROOT_PILL_ID, computeTopicLattice, hiddenLeavesOf } from './lattice-layout';
 
 function node(id: string, children: NodeV2[] = []): NodeV2 {

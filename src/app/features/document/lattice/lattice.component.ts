@@ -19,15 +19,20 @@ import {
   rollupSum,
 } from '../../../core/engine/formula-evaluator';
 import {
-  AccentColor,
+  LatticePill,
+  LatticeRow,
+  ROOT_PILL_ID,
+  computeTopicLattice,
+  hiddenLeavesOf,
+} from '../../../core/lattice/lattice-layout';
+import {
   ColumnV2,
   NodeV2,
   TopicCardV2,
   collectLeaves,
   findNodeAndParent,
 } from '../../../core/model/document.model';
-import { DocumentStoreService, RefNameTarget } from '../../../core/store/document-store.service';
-import { LatticePill, ROOT_PILL_ID, computeTopicLattice, hiddenLeavesOf } from './lattice-layout';
+import { DocumentStoreService } from '../../../core/store/document-store.service';
 import { NodePillComponent } from './node-pill.component';
 
 interface ConnectorPath {
@@ -39,8 +44,9 @@ interface ConnectorPath {
  * The unified row lattice (ADR-0001): tree pills and table cells are cells of
  * ONE CSS grid, so a Leaf and its Row are the same grid row by construction.
  * All pixel geometry belongs to the browser; this component only assigns
- * integer grid coordinates. The SVG connector overlay is decorative — if it
- * lags a frame, nothing can misalign.
+ * integer grid coordinates, always measured in layout units so per-card zoom
+ * cannot skew anything. Interaction follows the selection-first contract
+ * (CONTEXT.md): one click selects, a second click edits.
  */
 @Component({
   selector: 'app-lattice',
@@ -59,7 +65,6 @@ interface ConnectorPath {
         <div role="row" class="contents" aria-rowindex="1">
           <div
             role="columnheader"
-            class="border-b border-slate-200"
             [style.grid-row]="1"
             [style.grid-column]="'1 / span ' + lattice().depthCount"
             [attr.aria-colspan]="lattice().depthCount"
@@ -69,23 +74,40 @@ interface ConnectorPath {
           @for (column of topic().columns; track column.id; let columnIndex = $index) {
             <div
               role="columnheader"
-              class="group border-y border-r border-slate-200 bg-slate-100 p-0 align-top"
+              class="group border-y border-r border-slate-200 p-0 align-top"
               [class.border-l]="columnIndex === 0"
+              [class.bg-slate-100]="!isColumnSelected(column)"
+              [class.bg-sky-100]="isColumnSelected(column)"
               [style.grid-row]="1"
               [style.grid-column]="dataGridColumn(columnIndex)"
+              [attr.data-header-col]="column.id"
               [cdkContextMenuTriggerFor]="columnMenu"
-              (contextmenu)="menuColumn.set(column)"
+              (contextmenu)="menuColumn.set(column); selectColumn(column)"
             >
               <div class="flex items-start">
                 <div class="min-w-0 flex-1">
-                  <input
-                    class="w-full bg-transparent px-2 pt-1.5 text-center text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
-                    [value]="column.displayName"
-                    [attr.aria-label]="'Rename column ' + column.displayName"
-                    (blur)="commitColumnRename(column, $event)"
-                    (keydown.enter)="commitColumnRenameAndBlur(column, $event)"
-                    (keydown.escape)="revertInput($event, column.displayName)"
-                  />
+                  @if (isEditingHeader(column)) {
+                    <input
+                      class="edit-input w-full bg-transparent px-2 pt-1.5 text-center text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                      [value]="column.displayName"
+                      [attr.aria-label]="'Rename column ' + column.displayName"
+                      (blur)="commitHeaderEdit(column, $event)"
+                      (keydown.enter)="commitHeaderEditAndBlur(column, $event)"
+                      (keydown.escape)="cancelEditing($event)"
+                    />
+                  } @else {
+                    <div
+                      tabindex="0"
+                      class="w-full cursor-default px-2 pt-1.5 text-center text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                      [attr.aria-label]="
+                        'Column ' + column.displayName + ' (click again to rename, drag to reorder)'
+                      "
+                      (pointerdown)="onHeaderPointerDown(column, $event)"
+                      (keydown.enter)="beginHeaderEdit(column, $event)"
+                    >
+                      {{ column.displayName }}
+                    </div>
+                  }
                   <div class="px-2 pb-1 text-center font-mono text-[10px] text-slate-400">
                     {{ column.refName }}
                     @if (column.kind === 'computed') {
@@ -102,7 +124,7 @@ interface ConnectorPath {
                   type="button"
                   class="mr-1 mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-500 opacity-0 transition-opacity hover:bg-white/80 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover:opacity-100"
                   [cdkMenuTriggerFor]="columnMenu"
-                  (click)="menuColumn.set(column)"
+                  (click)="menuColumn.set(column); selectColumn(column)"
                   [attr.aria-label]="'Actions for column ' + column.displayName"
                 >
                   <span aria-hidden="true" class="text-xs leading-none">⋯</span>
@@ -118,7 +140,9 @@ interface ConnectorPath {
             @for (pill of pillsStartingAt(rowIndex + 1); track pill.nodeId) {
               <div
                 role="gridcell"
-                class="z-10 flex items-center px-2 py-1"
+                class="z-10 flex px-2 py-1"
+                [class.items-center]="pillAlignment() === 'center'"
+                [class.items-start]="pillAlignment() === 'top'"
                 [class.pr-6]="pill.rowSpan === 1 && pill.kind !== 'root'"
                 [class.opacity-40]="draggingPill()?.nodeId === pill.nodeId"
                 [style.grid-row]="pillGridRow(pill)"
@@ -130,21 +154,23 @@ interface ConnectorPath {
                   [label]="pill.node?.displayName ?? topic().displayName"
                   [kind]="pill.kind"
                   [accent]="pill.node?.accent ?? null"
-                  [selected]="selectedNodeId() === pill.nodeId"
+                  [selected]="isPillSelected(pill)"
                   [dropTarget]="dropPillId() === pill.nodeId"
                   [canMoveUp]="canMovePill(pill, -1)"
                   [canMoveDown]="canMovePill(pill, 1)"
+                  [canPaste]="canPasteNode()"
                   (renamed)="renamePill(pill, $event)"
                   (selectedChange)="selectPill(pill)"
                   (toggleCollapse)="store.toggleCollapse(pill.nodeId)"
                   (addChild)="addChild(pill)"
                   (addSibling)="addSibling(pill)"
                   (remove)="removePill(pill)"
-                  (setAccent)="setPillAccent(pill, $event)"
-                  (editRefName)="editPillRefName(pill)"
                   (dragStarted)="startPillDrag(pill, $event)"
                   (moveUp)="movePill(pill, -1)"
                   (moveDown)="movePill(pill, 1)"
+                  (cut)="cutPill(pill)"
+                  (copy)="copyPill(pill)"
+                  (pasteAsChild)="pasteIntoPill(pill)"
                 />
               </div>
             }
@@ -156,9 +182,16 @@ interface ConnectorPath {
                 [class.border-r]="row.kind !== 'collapsed' || hasFooter()"
                 [class.border-slate-200]="row.kind !== 'collapsed' || hasFooter()"
                 [class.border-l]="columnIndex === 0 && (row.kind !== 'collapsed' || hasFooter())"
-                [class.bg-sky-50]="selectedNodeId() === row.nodeId"
+                [class.bg-sky-50]="
+                  selectedNodeId() === row.nodeId && !cellInRange(row.nodeId, column)
+                "
+                [class.bg-sky-100]="cellInRange(row.nodeId, column)"
                 [style.grid-row]="rowIndex + 2"
                 [style.grid-column]="dataGridColumn(columnIndex)"
+                [attr.data-cell-node]="row.kind === 'leaf' ? row.nodeId : null"
+                [attr.data-cell-col]="row.kind === 'leaf' ? column.id : null"
+                [cdkContextMenuTriggerFor]="row.kind === 'leaf' ? cellMenu : null"
+                (contextmenu)="onCellContextMenu(row, column)"
               >
                 @if (row.kind === 'collapsed' && !hasFooter()) {
                   <!-- No Rollup configured anywhere: a collapsed Branch shows no Row (CONTEXT.md). -->
@@ -170,22 +203,23 @@ interface ConnectorPath {
                   >
                     {{ collapsedRollupDisplay(row.nodeId, column) }}
                   </div>
-                } @else if (column.kind === 'input') {
+                } @else if (isEditingCell(row.nodeId, column)) {
                   <input
-                    class="min-h-9 w-full min-w-24 max-w-72 field-sizing-content bg-transparent px-2 py-1.5 text-sm text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
-                    [class.text-right]="column.valueType === 'number'"
-                    [class.text-rose-700]="isInvalidNumber(row.nodeId, column)"
-                    [value]="inputCellRaw(row.nodeId, column)"
+                    class="edit-input min-h-9 w-full min-w-24 max-w-72 field-sizing-content bg-white px-2 py-1.5 text-sm text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                    [class.text-right]="column.kind !== 'input' || column.valueType === 'number'"
+                    [value]="cellEditValue(row.nodeId, column)"
                     [attr.aria-label]="cellAriaLabel(row.nodeId, column)"
-                    (focus)="store.selectNode(row.nodeId)"
-                    (blur)="commitCell(row.nodeId, column, $event)"
-                    (keydown.enter)="commitCellAndBlur(row.nodeId, column, $event)"
-                    (keydown.escape)="revertInput($event, inputCellRaw(row.nodeId, column))"
+                    (blur)="commitCellEdit(row.nodeId, column, $event)"
+                    (keydown.enter)="commitCellEditAndBlur(row.nodeId, column, $event)"
+                    (keydown.escape)="cancelEditing($event)"
                   />
                 } @else if (column.kind === 'chart') {
                   <div
-                    class="flex min-h-9 w-44 items-center gap-1.5 px-2 py-1.5"
+                    tabindex="0"
+                    class="flex min-h-9 w-44 items-center gap-1.5 px-2 py-1.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                    [class.cell-selected]="isCellSelected(row.nodeId, column)"
                     [attr.aria-label]="chartBarAria(row.nodeId, column)"
+                    (pointerdown)="onCellPointerDown(row, column, $event)"
                   >
                     <div class="h-3 flex-1 overflow-hidden rounded-sm bg-slate-100">
                       <div
@@ -200,22 +234,23 @@ interface ConnectorPath {
                     </span>
                   </div>
                 } @else {
-                  <input
-                    class="min-h-9 w-full min-w-24 max-w-72 field-sizing-content bg-transparent px-2 py-1.5 text-right text-sm"
-                    [class.text-slate-700]="!computedCellError(row.nodeId, column)"
-                    [class.text-rose-700]="!!computedCellError(row.nodeId, column)"
-                    [class.bg-slate-50]="!isEditingExpression(row.nodeId, column)"
-                    [readOnly]="!isEditingExpression(row.nodeId, column)"
-                    [value]="computedCellDisplay(row.nodeId, column)"
+                  <div
+                    tabindex="0"
+                    class="min-h-9 w-full min-w-24 max-w-72 cursor-default truncate px-2 py-1.5 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                    [class.text-right]="column.kind === 'computed' || column.valueType === 'number'"
+                    [class.text-slate-700]="!cellHasError(row.nodeId, column)"
+                    [class.text-rose-700]="cellHasError(row.nodeId, column)"
+                    [class.bg-slate-50]="
+                      column.kind === 'computed' && !cellInRange(row.nodeId, column)
+                    "
+                    [class.cell-selected]="isCellSelected(row.nodeId, column)"
                     [attr.aria-label]="cellAriaLabel(row.nodeId, column)"
-                    [attr.aria-invalid]="computedCellError(row.nodeId, column) ? 'true' : null"
-                    [attr.title]="computedCellError(row.nodeId, column) ?? column.expression"
-                    (focus)="store.selectNode(row.nodeId)"
-                    (dblclick)="startExpressionEdit(row.nodeId, column)"
-                    (keydown.enter)="onComputedEnter(row.nodeId, column, $event)"
-                    (keydown.escape)="cancelExpressionEdit($event, row.nodeId, column)"
-                    (blur)="commitExpression(row.nodeId, column, $event)"
-                  />
+                    [attr.title]="cellTitle(row.nodeId, column)"
+                    (pointerdown)="onCellPointerDown(row, column, $event)"
+                    (keydown.enter)="beginCellEditIfSelected(row.nodeId, column, $event)"
+                  >
+                    {{ cellDisplay(row.nodeId, column) }}
+                  </div>
                 }
               </div>
             }
@@ -236,11 +271,13 @@ interface ConnectorPath {
                   [pillId]="pill.nodeId"
                   [label]="topic().displayName"
                   [kind]="pill.kind"
-                  [selected]="false"
+                  [selected]="isPillSelected(pill)"
+                  [canPaste]="canPasteNode()"
                   (renamed)="store.renameCard(topic().id, $event)"
+                  (selectedChange)="selectPill(pill)"
                   (addChild)="store.addChildNode(topic().id, null)"
                   (remove)="requestDeleteTopic.emit(topic().id)"
-                  (editRefName)="editPillRefName(pill)"
+                  (pasteAsChild)="store.pasteNode(topic().id, null)"
                 />
               </div>
             }
@@ -301,6 +338,13 @@ interface ConnectorPath {
           [style.top.px]="dropLineTop()"
         ></div>
       }
+      @if (columnDropLineLeft() !== null) {
+        <div
+          aria-hidden="true"
+          class="pointer-events-none absolute bottom-0 top-0 z-20 w-0.5 rounded bg-sky-500"
+          [style.left.px]="columnDropLineLeft()"
+        ></div>
+      }
     </div>
 
     <ng-template #columnMenu>
@@ -325,37 +369,6 @@ interface ConnectorPath {
           >
             Insert column right
           </button>
-          @if (column.kind !== 'chart') {
-            <button
-              cdkMenuItem
-              type="button"
-              class="menu-item"
-              (cdkMenuItemTriggered)="toggleRollup(column)"
-            >
-              {{ column.rollup === 'sum' ? 'Remove sum rollup' : 'Sum rollup' }}
-            </button>
-          }
-          <button cdkMenuItem type="button" class="menu-item" [cdkMenuTriggerFor]="chartSourceMenu">
-            {{ column.kind === 'chart' ? 'Change chart source…' : 'Bar chart of…' }}
-          </button>
-          @if (column.kind === 'chart') {
-            <button
-              cdkMenuItem
-              type="button"
-              class="menu-item"
-              (cdkMenuItemTriggered)="store.setColumnChart(topic().id, column.id, null)"
-            >
-              Remove chart
-            </button>
-          }
-          <button
-            cdkMenuItem
-            type="button"
-            class="menu-item"
-            (cdkMenuItemTriggered)="editColumnRefName(column)"
-          >
-            Edit reference name…
-          </button>
           <button
             cdkMenuItem
             type="button"
@@ -368,27 +381,47 @@ interface ConnectorPath {
       }
     </ng-template>
 
-    <ng-template #chartSourceMenu>
-      @if (menuColumn(); as column) {
-        <div
-          cdkMenu
-          class="z-50 w-56 rounded-lg border border-slate-200 bg-white p-1 text-sm text-slate-700 shadow-xl"
+    <ng-template #cellMenu>
+      <div
+        cdkMenu
+        class="z-50 w-48 rounded-lg border border-slate-200 bg-white p-1 text-sm text-slate-700 shadow-xl"
+      >
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          [disabled]="!menuCellEditable()"
+          (cdkMenuItemTriggered)="store.copySelection(true)"
         >
-          @for (source of chartSourceOptions(column); track source.id) {
-            <button
-              cdkMenuItem
-              type="button"
-              class="menu-item"
-              (cdkMenuItemTriggered)="store.setColumnChart(topic().id, column.id, source.refName)"
-            >
-              {{ source.displayName }}
-              <span class="ml-1 font-mono text-[10px] text-slate-400">{{ source.refName }}</span>
-            </button>
-          } @empty {
-            <div class="px-3 py-2 text-sm text-slate-400">No source columns available</div>
-          }
-        </div>
-      }
+          Cut
+        </button>
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          (cdkMenuItemTriggered)="store.copySelection()"
+        >
+          Copy
+        </button>
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          [disabled]="!canPasteCells()"
+          (cdkMenuItemTriggered)="store.pasteSelection()"
+        >
+          Paste
+        </button>
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          [disabled]="!menuCellEditable()"
+          (cdkMenuItemTriggered)="store.clearSelectedCells()"
+        >
+          Clear
+        </button>
+      </div>
     </ng-template>
   `,
   styles: `
@@ -399,10 +432,17 @@ interface ConnectorPath {
       padding: 0.5rem 0.75rem;
       text-align: left;
     }
-    .menu-item:hover,
+    .menu-item:hover:not(:disabled),
     .menu-item:focus-visible {
       background: var(--color-slate-100);
       outline: none;
+    }
+    .menu-item:disabled {
+      opacity: 0.4;
+    }
+    .cell-selected {
+      outline: 2px solid var(--color-sky-500);
+      outline-offset: -2px;
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -416,16 +456,16 @@ export class LatticeComponent {
 
   readonly requestDeleteTopic = output<string>();
   readonly requestDeleteNode = output<{ topicId: string; nodeId: string }>();
-  readonly requestEditRefName = output<RefNameTarget>();
   readonly notify = output<string>();
 
   protected readonly selectedNodeId = this.store.selectedNodeId;
   protected readonly lattice = computed(() =>
     computeTopicLattice(this.topic(), this.store.collapsedNodeIds()),
   );
+  protected readonly pillAlignment = computed(() => this.topic().pillAlignment ?? 'center');
   protected readonly connectorPaths = signal<ConnectorPath[]>([]);
-  protected readonly editingExpressionKey = signal<string | null>(null);
-  /** Column whose actions menu is open (set just before the CDK trigger fires). */
+  /** `header:<colId>` or `cell:<nodeId>:<colId>` — at most one editor at a time. */
+  protected readonly editingKey = signal<string | null>(null);
   protected readonly menuColumn = signal<ColumnV2 | null>(null);
 
   private readonly latticeRootRef = viewChild.required<ElementRef<HTMLElement>>('latticeRoot');
@@ -438,6 +478,15 @@ export class LatticeComponent {
       this.topic();
       this.scheduleConnectorMeasure();
       this.observeResize();
+    });
+
+    afterRenderEffect(() => {
+      if (this.editingKey() !== null) {
+        const input =
+          this.latticeRootRef().nativeElement.querySelector<HTMLInputElement>('.edit-input');
+        input?.focus();
+        input?.select();
+      }
     });
 
     this.destroyRef.onDestroy(() => {
@@ -489,12 +538,256 @@ export class LatticeComponent {
   }
 
   // -------------------------------------------------------------------------
-  // Pill actions
+  // Selection
   // -------------------------------------------------------------------------
 
-  protected selectPill(pill: LatticePill): void {
-    this.store.selectNode(pill.kind === 'root' ? null : pill.nodeId);
+  protected isPillSelected(pill: LatticePill): boolean {
+    const selection = this.store.selection();
+    if (!selection || selection.topicId !== this.topic().id) {
+      return false;
+    }
+    if (pill.kind === 'root') {
+      return selection.kind === 'card';
+    }
+    return selection.kind === 'node' && selection.nodeId === pill.nodeId;
   }
+
+  protected isCellSelected(nodeId: string, column: ColumnV2): boolean {
+    const selection = this.store.selection();
+    return (
+      selection?.kind === 'cell' &&
+      selection.topicId === this.topic().id &&
+      selection.nodeId === nodeId &&
+      selection.columnId === column.id
+    );
+  }
+
+  protected isColumnSelected(column: ColumnV2): boolean {
+    const selection = this.store.selection();
+    return (
+      selection?.kind === 'column' &&
+      selection.topicId === this.topic().id &&
+      selection.columnId === column.id
+    );
+  }
+
+  protected cellInRange(nodeId: string, column: ColumnV2): boolean {
+    const selection = this.store.selection();
+    if (selection?.kind !== 'range' || selection.topicId !== this.topic().id) {
+      return false;
+    }
+    const rows = this.lattice().rows;
+    const rowIndex = rows.findIndex((row) => row.nodeId === nodeId);
+    const anchorRow = rows.findIndex((row) => row.nodeId === selection.anchor.nodeId);
+    const focusRow = rows.findIndex((row) => row.nodeId === selection.focus.nodeId);
+    const columns = this.topic().columns;
+    const columnIndex = columns.findIndex((candidate) => candidate.id === column.id);
+    const anchorColumn = columns.findIndex(
+      (candidate) => candidate.id === selection.anchor.columnId,
+    );
+    const focusColumn = columns.findIndex((candidate) => candidate.id === selection.focus.columnId);
+    if (
+      [rowIndex, anchorRow, focusRow, columnIndex, anchorColumn, focusColumn].some((i) => i < 0)
+    ) {
+      return false;
+    }
+    return (
+      rowIndex >= Math.min(anchorRow, focusRow) &&
+      rowIndex <= Math.max(anchorRow, focusRow) &&
+      columnIndex >= Math.min(anchorColumn, focusColumn) &&
+      columnIndex <= Math.max(anchorColumn, focusColumn)
+    );
+  }
+
+  protected selectPill(pill: LatticePill): void {
+    const topicId = this.topic().id;
+    this.store.select(
+      pill.kind === 'root'
+        ? { kind: 'card', topicId }
+        : { kind: 'node', topicId, nodeId: pill.nodeId },
+    );
+  }
+
+  protected selectColumn(column: ColumnV2): void {
+    this.store.select({ kind: 'column', topicId: this.topic().id, columnId: column.id });
+  }
+
+  private selectCell(nodeId: string, column: ColumnV2): void {
+    this.store.select({ kind: 'cell', topicId: this.topic().id, nodeId, columnId: column.id });
+  }
+
+  // -------------------------------------------------------------------------
+  // Editing (click-again / Enter)
+  // -------------------------------------------------------------------------
+
+  protected isEditingHeader(column: ColumnV2): boolean {
+    return this.editingKey() === `header:${column.id}`;
+  }
+
+  protected isEditingCell(nodeId: string, column: ColumnV2): boolean {
+    return this.editingKey() === `cell:${nodeId}:${column.id}`;
+  }
+
+  protected beginHeaderEdit(column: ColumnV2, event?: Event): void {
+    event?.preventDefault();
+    this.editingKey.set(`header:${column.id}`);
+  }
+
+  protected beginCellEditIfSelected(nodeId: string, column: ColumnV2, event: Event): void {
+    event.preventDefault();
+    if (column.kind === 'chart') {
+      return;
+    }
+    this.editingKey.set(`cell:${nodeId}:${column.id}`);
+  }
+
+  protected cancelEditing(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.editingKey.set(null);
+    (event.target as HTMLElement | null)?.blur();
+  }
+
+  protected cellEditValue(nodeId: string, column: ColumnV2): string {
+    if (column.kind === 'computed') {
+      return column.expression ?? '=';
+    }
+    return this.inputCellRaw(nodeId, column);
+  }
+
+  protected commitCellEdit(nodeId: string, column: ColumnV2, event: Event): void {
+    if (!this.isEditingCell(nodeId, column)) {
+      return;
+    }
+    const value = (event.target as HTMLInputElement).value;
+    this.editingKey.set(null);
+    const previous = this.cellEditValue(nodeId, column);
+    if (value === previous) {
+      return;
+    }
+    if (column.kind === 'computed' && value.trim().length === 0) {
+      return;
+    }
+    this.store.setCellValue(this.topic().id, nodeId, column.id, value);
+  }
+
+  protected commitCellEditAndBlur(nodeId: string, column: ColumnV2, event: Event): void {
+    event.preventDefault();
+    this.commitCellEdit(nodeId, column, event);
+    (event.target as HTMLInputElement | null)?.blur();
+  }
+
+  protected commitHeaderEdit(column: ColumnV2, event: Event): void {
+    if (!this.isEditingHeader(column)) {
+      return;
+    }
+    const value = (event.target as HTMLInputElement).value;
+    this.editingKey.set(null);
+    if (value.trim().length > 0 && value !== column.displayName) {
+      this.store.renameColumn(this.topic().id, column.id, value);
+    }
+  }
+
+  protected commitHeaderEditAndBlur(column: ColumnV2, event: Event): void {
+    event.preventDefault();
+    this.commitHeaderEdit(column, event);
+    (event.target as HTMLInputElement | null)?.blur();
+  }
+
+  // -------------------------------------------------------------------------
+  // Cell pointer interaction: click select, click-again edit, drag = range
+  // -------------------------------------------------------------------------
+
+  protected onCellPointerDown(row: LatticeRow, column: ColumnV2, event: PointerEvent): void {
+    if (event.button !== 0 || row.kind !== 'leaf') {
+      return;
+    }
+    event.preventDefault();
+    const wasSelected = this.isCellSelected(row.nodeId, column);
+    const cellElement = event.currentTarget as HTMLElement;
+    cellElement.setPointerCapture(event.pointerId);
+
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let dragging = false;
+
+    const onMove = (moveEvent: PointerEvent): void => {
+      if (!dragging && Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 4) {
+        return;
+      }
+      dragging = true;
+      const hit = this.cellUnderPointer(moveEvent);
+      if (hit) {
+        this.store.select({
+          kind: 'range',
+          topicId: this.topic().id,
+          anchor: { nodeId: row.nodeId, columnId: column.id },
+          focus: hit,
+        });
+      }
+    };
+    const onUp = (): void => {
+      cleanup();
+      if (dragging) {
+        return;
+      }
+      if (wasSelected && column.kind !== 'chart') {
+        this.editingKey.set(`cell:${row.nodeId}:${column.id}`);
+      } else {
+        this.selectCell(row.nodeId, column);
+        cellElement.focus({ preventScroll: true });
+      }
+    };
+    const cleanup = (): void => {
+      cellElement.removeEventListener('pointermove', onMove);
+      cellElement.removeEventListener('pointerup', onUp);
+      cellElement.removeEventListener('pointercancel', cleanup);
+    };
+    cellElement.addEventListener('pointermove', onMove);
+    cellElement.addEventListener('pointerup', onUp);
+    cellElement.addEventListener('pointercancel', cleanup);
+  }
+
+  private cellUnderPointer(event: PointerEvent): { nodeId: string; columnId: string } | null {
+    const element = document.elementFromPoint(event.clientX, event.clientY);
+    const cell = element?.closest<HTMLElement>('[data-cell-node]');
+    if (!cell || !this.latticeRootRef().nativeElement.contains(cell)) {
+      return null;
+    }
+    const nodeId = cell.dataset['cellNode'];
+    const columnId = cell.dataset['cellCol'];
+    return nodeId && columnId ? { nodeId, columnId } : null;
+  }
+
+  protected onCellContextMenu(row: LatticeRow, column: ColumnV2): void {
+    if (row.kind !== 'leaf') {
+      return;
+    }
+    if (!this.isCellSelected(row.nodeId, column) && !this.cellInRange(row.nodeId, column)) {
+      this.selectCell(row.nodeId, column);
+    }
+  }
+
+  protected menuCellEditable(): boolean {
+    const selection = this.store.selection();
+    if (selection?.kind === 'cell') {
+      const column = this.topic().columns.find((candidate) => candidate.id === selection.columnId);
+      return column?.kind === 'input';
+    }
+    return selection?.kind === 'range';
+  }
+
+  protected canPasteCells(): boolean {
+    return this.store.clipboard()?.kind === 'cells';
+  }
+
+  protected canPasteNode(): boolean {
+    return this.store.clipboard()?.kind === 'node';
+  }
+
+  // -------------------------------------------------------------------------
+  // Pill actions
+  // -------------------------------------------------------------------------
 
   protected renamePill(pill: LatticePill, displayName: string): void {
     if (pill.kind === 'root') {
@@ -522,19 +815,20 @@ export class LatticeComponent {
     }
   }
 
-  protected setPillAccent(pill: LatticePill, accent: AccentColor | null): void {
+  protected cutPill(pill: LatticePill): void {
     if (pill.kind !== 'root') {
-      this.store.setNodeAccent(this.topic().id, pill.nodeId, accent);
+      this.store.copyNode(this.topic().id, pill.nodeId, true);
     }
   }
 
-  protected editPillRefName(pill: LatticePill): void {
-    const topicId = this.topic().id;
-    this.requestEditRefName.emit(
-      pill.kind === 'root'
-        ? { kind: 'topic', topicId, entityId: topicId }
-        : { kind: 'node', topicId, entityId: pill.nodeId },
-    );
+  protected copyPill(pill: LatticePill): void {
+    if (pill.kind !== 'root') {
+      this.store.copyNode(this.topic().id, pill.nodeId, false);
+    }
+  }
+
+  protected pasteIntoPill(pill: LatticePill): void {
+    this.store.pasteNode(this.topic().id, pill.kind === 'root' ? null : pill.nodeId);
   }
 
   // -------------------------------------------------------------------------
@@ -595,8 +889,6 @@ export class LatticeComponent {
 
     const root = this.latticeRootRef().nativeElement;
     const rootRect = root.getBoundingClientRect();
-    // Visual px → layout px conversion; self-calibrating against any ancestor
-    // CSS zoom applied by the per-card viewport.
     const zoomRatio = root.offsetWidth > 0 ? rootRect.width / root.offsetWidth : 1;
 
     const descendants = new Set<string>();
@@ -682,7 +974,6 @@ export class LatticeComponent {
     const x = (event.clientX - rootRect.left) / zoomRatio;
     const y = (event.clientY - rootRect.top) / zoomRatio;
 
-    // Re-parent: hovering another pill (never self, a descendant, or the current parent-as-noop).
     const hit = session.pillRects.find(
       (candidate) =>
         candidate.pill.nodeId !== session.pill.nodeId &&
@@ -700,7 +991,6 @@ export class LatticeComponent {
       return;
     }
 
-    // Reorder among current siblings: insertion point from pointer Y.
     let rawIndex = 0;
     for (const band of session.siblingBands) {
       if (y > (band.top + band.bottom) / 2) {
@@ -774,12 +1064,89 @@ export class LatticeComponent {
     return pill.parentPillId === ROOT_PILL_ID ? null : pill.parentPillId;
   }
 
-  protected editColumnRefName(column: ColumnV2): void {
-    this.requestEditRefName.emit({ kind: 'column', topicId: this.topic().id, entityId: column.id });
+  // -------------------------------------------------------------------------
+  // Column header drag: horizontal reorder (click still selects/edits)
+  // -------------------------------------------------------------------------
+
+  protected readonly columnDropLineLeft = signal<number | null>(null);
+
+  protected onHeaderPointerDown(column: ColumnV2, event: PointerEvent): void {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    const wasSelected = this.isColumnSelected(column);
+    const headerElement = event.currentTarget as HTMLElement;
+    headerElement.setPointerCapture(event.pointerId);
+
+    const root = this.latticeRootRef().nativeElement;
+    const rootRect = root.getBoundingClientRect();
+    const zoomRatio = root.offsetWidth > 0 ? rootRect.width / root.offsetWidth : 1;
+    const columns = this.topic().columns;
+    const bands = columns.map((candidate) => {
+      const element = root.querySelector<HTMLElement>(
+        `[data-header-col="${CSS.escape(candidate.id)}"]`,
+      );
+      const rect = element ? layoutRectWithin(root, element) : null;
+      return { left: rect?.left ?? 0, right: rect?.right ?? 0 };
+    });
+    const fromIndex = columns.findIndex((candidate) => candidate.id === column.id);
+
+    const startX = event.clientX;
+    let dragging = false;
+    let pendingIndex: number | null = null;
+
+    const onMove = (moveEvent: PointerEvent): void => {
+      if (!dragging && Math.abs(moveEvent.clientX - startX) < 4) {
+        return;
+      }
+      dragging = true;
+      const x = (moveEvent.clientX - rootRect.left) / zoomRatio;
+      let rawIndex = 0;
+      for (const band of bands) {
+        if (x > (band.left + band.right) / 2) {
+          rawIndex += 1;
+        }
+      }
+      const adjusted = rawIndex > fromIndex ? rawIndex - 1 : rawIndex;
+      if (adjusted === fromIndex) {
+        pendingIndex = null;
+        this.columnDropLineLeft.set(null);
+        return;
+      }
+      pendingIndex = adjusted;
+      this.columnDropLineLeft.set(
+        rawIndex === 0 ? (bands[0]?.left ?? 0) - 2 : (bands[rawIndex - 1]?.right ?? 0),
+      );
+    };
+    const onUp = (): void => {
+      cleanup();
+      this.columnDropLineLeft.set(null);
+      if (dragging) {
+        if (pendingIndex !== null) {
+          this.store.moveColumn(this.topic().id, column.id, pendingIndex);
+        }
+        return;
+      }
+      if (wasSelected) {
+        this.beginHeaderEdit(column);
+      } else {
+        this.selectColumn(column);
+        headerElement.focus({ preventScroll: true });
+      }
+    };
+    const cleanup = (): void => {
+      headerElement.removeEventListener('pointermove', onMove);
+      headerElement.removeEventListener('pointerup', onUp);
+      headerElement.removeEventListener('pointercancel', cleanup);
+    };
+    headerElement.addEventListener('pointermove', onMove);
+    headerElement.addEventListener('pointerup', onUp);
+    headerElement.addEventListener('pointercancel', cleanup);
   }
 
   // -------------------------------------------------------------------------
-  // Cells
+  // Cells: display values
   // -------------------------------------------------------------------------
 
   protected inputCellRaw(nodeId: string, column: ColumnV2): string {
@@ -787,7 +1154,10 @@ export class LatticeComponent {
     return node?.values[column.id] ?? '';
   }
 
-  protected isInvalidNumber(nodeId: string, column: ColumnV2): boolean {
+  protected cellHasError(nodeId: string, column: ColumnV2): boolean {
+    if (column.kind === 'computed') {
+      return this.computedCellError(nodeId, column) !== null;
+    }
     if (column.valueType !== 'number') {
       return false;
     }
@@ -795,27 +1165,29 @@ export class LatticeComponent {
     return raw.length > 0 && !Number.isFinite(Number(raw));
   }
 
-  protected commitCell(nodeId: string, column: ColumnV2, event: Event): void {
-    const value = (event.target as HTMLInputElement).value;
-    if (value !== this.inputCellRaw(nodeId, column)) {
-      this.store.setCellValue(this.topic().id, nodeId, column.id, value);
+  protected cellDisplay(nodeId: string, column: ColumnV2): string {
+    if (column.kind === 'computed') {
+      const cell = this.evaluation().computedCells.get(nodeId)?.get(column.id);
+      if (!cell) {
+        return '';
+      }
+      if (cell.error !== null) {
+        return '#ERR';
+      }
+      return cell.value === null ? '' : formatNumericValue(cell.value);
     }
+    return this.inputCellRaw(nodeId, column);
   }
 
-  protected commitCellAndBlur(nodeId: string, column: ColumnV2, event: Event): void {
-    event.preventDefault();
-    this.commitCell(nodeId, column, event);
-    (event.target as HTMLInputElement | null)?.blur();
+  protected cellTitle(nodeId: string, column: ColumnV2): string | null {
+    if (column.kind === 'computed') {
+      return this.computedCellError(nodeId, column) ?? column.expression;
+    }
+    return null;
   }
 
-  protected revertInput(event: Event, original: string): void {
-    event.preventDefault();
-    event.stopPropagation();
-    const input = event.target as HTMLInputElement | null;
-    if (input) {
-      input.value = original;
-      input.blur();
-    }
+  protected computedCellError(nodeId: string, column: ColumnV2): string | null {
+    return this.evaluation().computedCells.get(nodeId)?.get(column.id)?.error ?? null;
   }
 
   protected cellAriaLabel(nodeId: string, column: ColumnV2): string {
@@ -823,77 +1195,7 @@ export class LatticeComponent {
     return `${column.displayName} for ${node?.displayName ?? 'row'}`;
   }
 
-  // Computed cells -----------------------------------------------------------
-
-  protected computedCellError(nodeId: string, column: ColumnV2): string | null {
-    return this.evaluation().computedCells.get(nodeId)?.get(column.id)?.error ?? null;
-  }
-
-  protected computedCellDisplay(nodeId: string, column: ColumnV2): string {
-    if (this.isEditingExpression(nodeId, column)) {
-      return column.expression ?? '=';
-    }
-    const cell = this.evaluation().computedCells.get(nodeId)?.get(column.id);
-    if (!cell) {
-      return '';
-    }
-    if (cell.error !== null) {
-      return '#ERR';
-    }
-    return cell.value === null ? '' : formatNumericValue(cell.value);
-  }
-
-  protected isEditingExpression(nodeId: string, column: ColumnV2): boolean {
-    return this.editingExpressionKey() === `${nodeId}::${column.id}`;
-  }
-
-  protected startExpressionEdit(nodeId: string, column: ColumnV2): void {
-    this.editingExpressionKey.set(`${nodeId}::${column.id}`);
-  }
-
-  protected onComputedEnter(nodeId: string, column: ColumnV2, event: Event): void {
-    event.preventDefault();
-    if (this.isEditingExpression(nodeId, column)) {
-      this.commitExpression(nodeId, column, event);
-      (event.target as HTMLInputElement | null)?.blur();
-    } else {
-      this.startExpressionEdit(nodeId, column);
-    }
-  }
-
-  protected cancelExpressionEdit(event: Event, nodeId: string, column: ColumnV2): void {
-    if (!this.isEditingExpression(nodeId, column)) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    this.editingExpressionKey.set(null);
-    const input = event.target as HTMLInputElement | null;
-    if (input) {
-      input.value = this.computedCellDisplay(nodeId, column);
-      input.blur();
-    }
-  }
-
-  protected commitExpression(nodeId: string, column: ColumnV2, event: Event): void {
-    if (!this.isEditingExpression(nodeId, column)) {
-      return;
-    }
-    const value = (event.target as HTMLInputElement).value;
-    this.editingExpressionKey.set(null);
-    if (value.trim().length === 0 || value === column.expression) {
-      return;
-    }
-    this.store.setCellValue(this.topic().id, nodeId, column.id, value);
-  }
-
   // Chart Columns --------------------------------------------------------------
-
-  protected chartSourceOptions(column: ColumnV2): ColumnV2[] {
-    return this.topic().columns.filter(
-      (candidate) => candidate.id !== column.id && candidate.kind !== 'chart',
-    );
-  }
 
   private chartSourceColumn(column: ColumnV2): ColumnV2 | null {
     return (
@@ -973,31 +1275,8 @@ export class LatticeComponent {
 
   // Columns -------------------------------------------------------------------
 
-  protected commitColumnRename(column: ColumnV2, event: Event): void {
-    const value = (event.target as HTMLInputElement).value;
-    if (value.trim().length > 0 && value !== column.displayName) {
-      this.store.renameColumn(this.topic().id, column.id, value);
-    } else {
-      (event.target as HTMLInputElement).value = column.displayName;
-    }
-  }
-
-  protected commitColumnRenameAndBlur(column: ColumnV2, event: Event): void {
-    event.preventDefault();
-    this.commitColumnRename(column, event);
-    (event.target as HTMLInputElement | null)?.blur();
-  }
-
   protected insertColumn(column: ColumnV2, side: 'left' | 'right'): void {
     this.store.insertColumn(this.topic().id, column.id, side);
-  }
-
-  protected toggleRollup(column: ColumnV2): void {
-    this.store.setColumnRollup(
-      this.topic().id,
-      column.id,
-      column.rollup === 'sum' ? 'none' : 'sum',
-    );
   }
 
   protected deleteColumn(column: ColumnV2): void {
@@ -1029,11 +1308,6 @@ export class LatticeComponent {
     });
   }
 
-  /**
-   * All measurement uses layout coordinates (offsetLeft/offsetTop chains),
-   * never getBoundingClientRect — so per-card zoom (CSS `zoom` on an
-   * ancestor) cannot skew the overlay: layout units are zoom-independent.
-   */
   private measureConnectors(): void {
     const root = this.latticeRootRef().nativeElement;
     const pillRects = new Map<string, { left: number; right: number; centerY: number }>();

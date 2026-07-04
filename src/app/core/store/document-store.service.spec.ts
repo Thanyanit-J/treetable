@@ -148,12 +148,109 @@ describe('DocumentStoreService', () => {
   it('prunes selection and collapse when their nodes are deleted', () => {
     const savingsId = savings().id;
     store.toggleCollapse(savingsId);
-    store.selectNode(savingsId);
+    store.select({ kind: 'node', topicId: wealth().id, nodeId: savingsId });
 
     store.removeNode(wealth().id, savingsId);
 
     expect(store.collapsedNodeIds().has(savingsId)).toBe(false);
     expect(store.selectedNodeId()).toBeNull();
+    expect(store.selection()).toBeNull();
+  });
+
+  describe('clipboard', () => {
+    it('copies a node with subtree and rows; paste inserts a fresh clone as a child', () => {
+      const column = amountColumn();
+      const cashId = wealth().children.find((node) => node.refName === 'Cash')!.id;
+
+      store.copyNode(wealth().id, savings().id);
+      store.pasteNode(wealth().id, cashId);
+
+      const cash = wealth().children.find((node) => node.refName === 'Cash')!;
+      // Cash had data → carrier child spawned, then the pasted clone.
+      expect(cash.children.map((node) => node.displayName)).toEqual(['Cash', 'Savings']);
+      const pasted = cash.children[1]!;
+      expect(pasted.refName).toBe('Savings_2');
+      expect(pasted.children.map((node) => node.refName)).toEqual(['BankA_2', 'BankB_2']);
+      expect(pasted.children[0]!.values[column.id]).toBe('120000');
+      expect(pasted.id).not.toBe(savings().id);
+
+      // Original stays (it was a copy, not a cut).
+      expect(wealth().children.map((node) => node.refName)).toEqual(['Savings', 'Cash']);
+    });
+
+    it('cut moves on paste — atomically, and only once', () => {
+      const cashId = wealth().children.find((node) => node.refName === 'Cash')!.id;
+      const stepsBefore = store.canUndo();
+
+      store.copyNode(wealth().id, savings().id, true);
+      expect(store.canUndo()).toBe(stepsBefore); // cut alone edits nothing
+
+      store.pasteNode(wealth().id, cashId);
+      const cash = wealth().children.find((node) => node.refName === 'Cash')!;
+      expect(wealth().children.map((node) => node.refName)).toEqual(['Cash']);
+      expect(cash.children.some((node) => node.refName === 'Savings')).toBe(true);
+
+      store.undo();
+      expect(wealth().children.map((node) => node.refName)).toEqual(['Savings', 'Cash']);
+    });
+
+    it('copies and pastes cell blocks via the selection', () => {
+      const column = amountColumn();
+      const bankAId = bankA().id;
+      const bankBId = savings().children.find((node) => node.refName === 'BankB')!.id;
+
+      store.select({ kind: 'cell', topicId: wealth().id, nodeId: bankAId, columnId: column.id });
+      store.copySelection();
+      store.select({ kind: 'cell', topicId: wealth().id, nodeId: bankBId, columnId: column.id });
+      store.pasteSelection();
+
+      const bankB = savings().children.find((node) => node.refName === 'BankB')!;
+      expect(bankB.values[column.id]).toBe('120000');
+    });
+
+    it('clears a selected range of input cells', () => {
+      const column = amountColumn();
+      const bankAId = bankA().id;
+      const bankBId = savings().children.find((node) => node.refName === 'BankB')!.id;
+
+      store.select({
+        kind: 'range',
+        topicId: wealth().id,
+        anchor: { nodeId: bankAId, columnId: column.id },
+        focus: { nodeId: bankBId, columnId: column.id },
+      });
+      store.clearSelectedCells();
+
+      expect(bankA().values[column.id]).toBeUndefined();
+      expect(savings().children[1]!.values[column.id]).toBeUndefined();
+    });
+  });
+
+  describe('column ops', () => {
+    it('reorders columns', () => {
+      const ids = () => wealth().columns.map((column) => column.refName);
+      expect(ids()).toEqual(['$Amount', '$Rate', '$Yield']);
+      store.moveColumn(wealth().id, amountColumn().id, 2);
+      expect(ids()).toEqual(['$Rate', '$Yield', '$Amount']);
+      store.undo();
+      expect(ids()).toEqual(['$Amount', '$Rate', '$Yield']);
+    });
+
+    it('switches column kinds: value → formula → chart → value', () => {
+      const rate = () => wealth().columns.find((column) => column.refName === '$Rate')!;
+
+      store.setColumnKind(wealth().id, rate().id, 'computed');
+      expect(rate().kind).toBe('computed');
+      expect(rate().expression).toBe('= ');
+
+      store.setColumnKind(wealth().id, rate().id, 'chart');
+      expect(rate().kind).toBe('chart');
+      expect(rate().chartSource).toBe('$Amount');
+
+      store.setColumnKind(wealth().id, rate().id, 'input');
+      expect(rate().kind).toBe('input');
+      expect(rate().chartSource).toBeNull();
+    });
   });
 
   it('guards the last remaining column', () => {

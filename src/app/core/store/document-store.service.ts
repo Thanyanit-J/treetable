@@ -1,6 +1,11 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { parseExpressionSource, printExpression, transformRefPaths } from '../engine/formula-ast';
-import { evaluateDocument, resolveRefBindings } from '../engine/formula-evaluator';
+import {
+  evaluateDocument,
+  formatNumericValue,
+  resolveRefBindings,
+} from '../engine/formula-evaluator';
+import { computeTopicLattice } from '../lattice/lattice-layout';
 import {
   AccentColor,
   ChartType,
@@ -8,6 +13,7 @@ import {
   DocumentV2,
   ImportResult,
   NodeV2,
+  PillAlignment,
   TopicCardV2,
   cloneDocument,
   createInputColumn,
@@ -33,6 +39,23 @@ export interface RefNameTarget {
   entityId: string;
 }
 
+export interface CellRef {
+  nodeId: string;
+  columnId: string;
+}
+
+/** One click selects; the Inspector edits the selection (CONTEXT.md). */
+export type SelectionV2 =
+  | { kind: 'card'; topicId: string }
+  | { kind: 'node'; topicId: string; nodeId: string }
+  | { kind: 'column'; topicId: string; columnId: string }
+  | { kind: 'cell'; topicId: string; nodeId: string; columnId: string }
+  | { kind: 'range'; topicId: string; anchor: CellRef; focus: CellRef };
+
+export type ClipboardContent =
+  | { kind: 'node'; topicId: string; node: NodeV2; cutSourceNodeId: string | null }
+  | { kind: 'cells'; matrix: string[][]; cut: { topicId: string; cells: CellRef[] } | null };
+
 /**
  * Document store implementing the history contract from CONTEXT.md:
  *
@@ -51,14 +74,23 @@ export class DocumentStoreService {
 
   private readonly documentSignal;
   private readonly collapsedSignal;
-  private readonly selectedNodeIdSignal = signal<string | null>(null);
+  private readonly selectionSignal = signal<SelectionV2 | null>(null);
+  private readonly clipboardSignal = signal<ClipboardContent | null>(null);
   private readonly pastSignal = signal<DocumentV2[]>([]);
   private readonly futureSignal = signal<DocumentV2[]>([]);
 
   readonly document;
   readonly title;
   readonly cards;
-  readonly selectedNodeId = this.selectedNodeIdSignal.asReadonly();
+  readonly selection = this.selectionSignal.asReadonly();
+  readonly clipboard = this.clipboardSignal.asReadonly();
+  /** Node whose lattice row is highlighted, derived from the selection. */
+  readonly selectedNodeId = computed(() => {
+    const selection = this.selectionSignal();
+    return selection && (selection.kind === 'node' || selection.kind === 'cell')
+      ? selection.nodeId
+      : null;
+  });
   readonly collapsedNodeIds;
   readonly canUndo = computed(() => this.pastSignal().length > 0);
   readonly canRedo = computed(() => this.futureSignal().length > 0);
@@ -96,8 +128,8 @@ export class DocumentStoreService {
   // View state (never undoable)
   // -------------------------------------------------------------------------
 
-  selectNode(nodeId: string | null): void {
-    this.selectedNodeIdSignal.set(nodeId);
+  select(selection: SelectionV2 | null): void {
+    this.selectionSignal.set(selection);
   }
 
   toggleCollapse(nodeId: string): void {
@@ -219,9 +251,40 @@ export class DocumentStoreService {
       this.collapsedSignal.set(new Set([...collapsed].filter((id) => nodeIds.has(id))));
     }
 
-    const selected = this.selectedNodeIdSignal();
-    if (selected && !nodeIds.has(selected)) {
-      this.selectedNodeIdSignal.set(null);
+    const selection = this.selectionSignal();
+    if (selection && !this.selectionStillExists(selection, document, nodeIds)) {
+      this.selectionSignal.set(null);
+    }
+  }
+
+  private selectionStillExists(
+    selection: SelectionV2,
+    document: DocumentV2,
+    nodeIds: ReadonlySet<string>,
+  ): boolean {
+    const topic = document.cards.find((card) => card.id === selection.topicId);
+    if (!topic) {
+      return false;
+    }
+    switch (selection.kind) {
+      case 'card':
+        return true;
+      case 'node':
+      case 'cell':
+        return (
+          nodeIds.has(selection.nodeId) &&
+          (selection.kind === 'node' ||
+            topic.columns.some((column) => column.id === selection.columnId))
+        );
+      case 'column':
+        return topic.columns.some((column) => column.id === selection.columnId);
+      case 'range':
+        return (
+          nodeIds.has(selection.anchor.nodeId) &&
+          nodeIds.has(selection.focus.nodeId) &&
+          topic.columns.some((column) => column.id === selection.anchor.columnId) &&
+          topic.columns.some((column) => column.id === selection.focus.columnId)
+        );
     }
   }
 
@@ -241,6 +304,7 @@ export class DocumentStoreService {
 
   addTopic(displayName = 'New Topic'): void {
     let newNodeId: string | null = null;
+    let newTopicId: string | null = null;
     this.mutate((document) => {
       const takenRefs = new Set(document.cards.map((card) => card.refName));
       const refName = uniqueRefName(slugifyEntityRefName(displayName), takenRefs);
@@ -254,9 +318,12 @@ export class DocumentStoreService {
         columns: [createInputColumn('A', '$A'), createInputColumn('B', '$B')],
         children: [node],
       };
+      newTopicId = card.id;
       document.cards.push(card);
     });
-    this.selectedNodeIdSignal.set(newNodeId);
+    if (newTopicId && newNodeId) {
+      this.selectionSignal.set({ kind: 'node', topicId: newTopicId, nodeId: newNodeId });
+    }
   }
 
   removeCard(cardId: string): void {
@@ -308,7 +375,7 @@ export class DocumentStoreService {
       newNodeId = node.id;
     });
     if (newNodeId) {
-      this.selectedNodeIdSignal.set(newNodeId);
+      this.selectionSignal.set({ kind: 'node', topicId, nodeId: newNodeId });
     }
   }
 
@@ -329,7 +396,7 @@ export class DocumentStoreService {
       newNodeId = node.id;
     });
     if (newNodeId) {
-      this.selectedNodeIdSignal.set(newNodeId);
+      this.selectionSignal.set({ kind: 'node', topicId, nodeId: newNodeId });
     }
   }
 
@@ -633,6 +700,461 @@ export class DocumentStoreService {
       column.chartSource = sourceRefName;
       column.expression = null;
       column.rollup = 'none';
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Clipboard (CONTEXT.md: node copy = subtree + Rows; cut moves on paste)
+  // -------------------------------------------------------------------------
+
+  copyNode(topicId: string, nodeId: string, cut = false): void {
+    const topic = this.findTopic(this.documentSignal(), topicId);
+    const located = topic ? findNodeAndParent(topic.children, nodeId) : null;
+    if (!located) {
+      return;
+    }
+    this.clipboardSignal.set({
+      kind: 'node',
+      topicId,
+      node: structuredClone(located.node),
+      cutSourceNodeId: cut ? nodeId : null,
+    });
+  }
+
+  /**
+   * Pastes the clipboard node as a child of `targetParentId` (null = top
+   * level of the topic). Inserts a deep clone with fresh ids and uniquified
+   * Reference Names; a pending cut removes the original in the same step.
+   */
+  pasteNode(targetTopicId: string, targetParentId: string | null): void {
+    const clipboard = this.clipboardSignal();
+    if (clipboard?.kind !== 'node') {
+      return;
+    }
+
+    // A cut node must not be pasted into its own subtree.
+    if (clipboard.cutSourceNodeId !== null && clipboard.topicId === targetTopicId) {
+      const sourceTopic = this.findTopic(this.documentSignal(), targetTopicId);
+      const source = sourceTopic
+        ? findNodeAndParent(sourceTopic.children, clipboard.cutSourceNodeId)
+        : null;
+      if (
+        source &&
+        targetParentId !== null &&
+        (targetParentId === clipboard.cutSourceNodeId ||
+          nodeExists(source.node.children, targetParentId))
+      ) {
+        return;
+      }
+    }
+
+    this.mutate((document) => {
+      const topic = this.findTopic(document, targetTopicId);
+      if (!topic) {
+        return;
+      }
+
+      if (clipboard.cutSourceNodeId !== null) {
+        const sourceTopic = this.findTopic(document, clipboard.topicId);
+        const located = sourceTopic
+          ? findNodeAndParent(sourceTopic.children, clipboard.cutSourceNodeId)
+          : null;
+        if (located && sourceTopic) {
+          const siblings = located.parent ? located.parent.children : sourceTopic.children;
+          siblings.splice(located.index, 1);
+        }
+      }
+
+      const taken = new Set<string>();
+      walkNodes(topic.children, (node) => taken.add(node.refName));
+      const clone = structuredClone(clipboard.node);
+      walkNodes([clone], (node) => {
+        node.id = makeId('node');
+        const refName = uniqueRefName(node.refName, taken);
+        taken.add(refName);
+        node.refName = refName;
+        // Values keyed by column id only transfer within the same topic.
+        if (clipboard.topicId !== targetTopicId) {
+          node.values = {};
+        }
+      });
+
+      if (targetParentId === null) {
+        topic.children.push(clone);
+        return;
+      }
+      const target = findNodeAndParent(topic.children, targetParentId);
+      if (!target) {
+        topic.children.push(clone);
+        return;
+      }
+      this.ensureCanHostChildren(topic, target.node);
+      target.node.children.push(clone);
+    });
+
+    // A cut pastes once; further pastes behave like copies.
+    this.clipboardSignal.set({ ...clipboard, cutSourceNodeId: null });
+  }
+
+  copyCells(matrix: string[][], cut: { topicId: string; cells: CellRef[] } | null): void {
+    this.clipboardSignal.set({ kind: 'cells', matrix, cut });
+  }
+
+  /**
+   * Writes the clipboard matrix into `targets` (a grid of cell refs aligned
+   * with the matrix; nulls are skipped — e.g. computed/chart columns).
+   * Pending cut sources are cleared in the same undo step.
+   */
+  pasteCells(topicId: string, targets: (CellRef | null)[][]): void {
+    const clipboard = this.clipboardSignal();
+    if (clipboard?.kind !== 'cells') {
+      return;
+    }
+
+    this.mutate((document) => {
+      if (clipboard.cut) {
+        const sourceTopic = this.findTopic(document, clipboard.cut.topicId);
+        if (sourceTopic) {
+          for (const ref of clipboard.cut.cells) {
+            const located = findNodeAndParent(sourceTopic.children, ref.nodeId);
+            if (located) {
+              delete located.node.values[ref.columnId];
+            }
+          }
+        }
+      }
+
+      const topic = this.findTopic(document, topicId);
+      if (!topic) {
+        return;
+      }
+      for (const [rowIndex, matrixRow] of clipboard.matrix.entries()) {
+        for (const [columnIndex, raw] of matrixRow.entries()) {
+          const target = targets[rowIndex]?.[columnIndex];
+          if (!target) {
+            continue;
+          }
+          const located = findNodeAndParent(topic.children, target.nodeId);
+          if (!located || !isLeaf(located.node)) {
+            continue;
+          }
+          if (raw.length === 0) {
+            delete located.node.values[target.columnId];
+          } else {
+            located.node.values[target.columnId] = raw;
+          }
+        }
+      }
+    });
+
+    if (clipboard.cut) {
+      this.clipboardSignal.set({ ...clipboard, cut: null });
+    }
+  }
+
+  clearCells(topicId: string, cells: CellRef[]): void {
+    if (cells.length === 0) {
+      return;
+    }
+    this.mutate((document) => {
+      const topic = this.findTopic(document, topicId);
+      if (!topic) {
+        return;
+      }
+      for (const ref of cells) {
+        const located = findNodeAndParent(topic.children, ref.nodeId);
+        if (located) {
+          delete located.node.values[ref.columnId];
+        }
+      }
+    });
+  }
+
+  /** Copies (or cuts) whatever is selected: a node subtree or a cell block. */
+  copySelection(cut = false): void {
+    const selection = this.selectionSignal();
+    if (!selection) {
+      return;
+    }
+    if (selection.kind === 'node') {
+      this.copyNode(selection.topicId, selection.nodeId, cut);
+      return;
+    }
+    if (selection.kind !== 'cell' && selection.kind !== 'range') {
+      return;
+    }
+    const grid = this.selectionGrid(selection);
+    if (!grid) {
+      return;
+    }
+    const matrix = grid.map((row) => row.map((cell) => cell?.copyText ?? ''));
+    const cutCells = cut
+      ? grid
+          .flat()
+          .filter((cell): cell is NonNullable<typeof cell> => cell !== null && cell.editable)
+          .map((cell) => ({ nodeId: cell.nodeId, columnId: cell.columnId }))
+      : [];
+    this.copyCells(
+      matrix,
+      cut && cutCells.length > 0 ? { topicId: selection.topicId, cells: cutCells } : null,
+    );
+  }
+
+  /** Pastes the clipboard relative to the selection (node → as child; cells → from the anchor). */
+  pasteSelection(): void {
+    const selection = this.selectionSignal();
+    const clipboard = this.clipboardSignal();
+    if (!selection || !clipboard) {
+      return;
+    }
+
+    if (clipboard.kind === 'node') {
+      if (selection.kind === 'node') {
+        this.pasteNode(selection.topicId, selection.nodeId);
+      } else if (selection.kind === 'card') {
+        this.pasteNode(selection.topicId, null);
+      }
+      return;
+    }
+
+    if (selection.kind !== 'cell' && selection.kind !== 'range') {
+      return;
+    }
+    const anchor = this.selectionAnchor(selection);
+    const targets = this.pasteTargets(selection.topicId, anchor, clipboard.matrix);
+    if (targets) {
+      this.pasteCells(selection.topicId, targets);
+    }
+  }
+
+  clearSelectedCells(): void {
+    const selection = this.selectionSignal();
+    if (!selection || (selection.kind !== 'cell' && selection.kind !== 'range')) {
+      return;
+    }
+    const grid = this.selectionGrid(selection);
+    if (!grid) {
+      return;
+    }
+    const cells = grid
+      .flat()
+      .filter((cell): cell is NonNullable<typeof cell> => cell !== null && cell.editable)
+      .map((cell) => ({ nodeId: cell.nodeId, columnId: cell.columnId }));
+    this.clearCells(selection.topicId, cells);
+  }
+
+  private selectionAnchor(selection: Extract<SelectionV2, { kind: 'cell' | 'range' }>): CellRef {
+    if (selection.kind === 'cell') {
+      return { nodeId: selection.nodeId, columnId: selection.columnId };
+    }
+    // Top-left corner of the rectangle in visible-row / column order.
+    const topic = this.findTopic(this.documentSignal(), selection.topicId);
+    if (!topic) {
+      return selection.anchor;
+    }
+    const rows = computeTopicLattice(topic, this.collapsedSignal()).rows.map((row) => row.nodeId);
+    const columnIds = topic.columns.map((column) => column.id);
+    const rowIndex = Math.min(
+      rows.indexOf(selection.anchor.nodeId),
+      rows.indexOf(selection.focus.nodeId),
+    );
+    const columnIndex = Math.min(
+      columnIds.indexOf(selection.anchor.columnId),
+      columnIds.indexOf(selection.focus.columnId),
+    );
+    return {
+      nodeId: rows[rowIndex] ?? selection.anchor.nodeId,
+      columnId: columnIds[columnIndex] ?? selection.anchor.columnId,
+    };
+  }
+
+  /**
+   * The selected rectangle as a grid of cells in visible-row order. Rollup
+   * rows and non-value columns appear as read-only entries (null when the
+   * position is not addressable at all).
+   */
+  private selectionGrid(
+    selection: Extract<SelectionV2, { kind: 'cell' | 'range' }>,
+  ): ({ nodeId: string; columnId: string; copyText: string; editable: boolean } | null)[][] | null {
+    const topic = this.findTopic(this.documentSignal(), selection.topicId);
+    if (!topic) {
+      return null;
+    }
+    const lattice = computeTopicLattice(topic, this.collapsedSignal());
+    const anchor =
+      selection.kind === 'cell'
+        ? { nodeId: selection.nodeId, columnId: selection.columnId }
+        : selection.anchor;
+    const focus = selection.kind === 'cell' ? anchor : selection.focus;
+
+    const rowIndexOf = (nodeId: string): number =>
+      lattice.rows.findIndex((row) => row.nodeId === nodeId);
+    const columnIndexOf = (columnId: string): number =>
+      topic.columns.findIndex((column) => column.id === columnId);
+
+    const r1 = rowIndexOf(anchor.nodeId);
+    const r2 = rowIndexOf(focus.nodeId);
+    const c1 = columnIndexOf(anchor.columnId);
+    const c2 = columnIndexOf(focus.columnId);
+    if (r1 < 0 || r2 < 0 || c1 < 0 || c2 < 0) {
+      return null;
+    }
+
+    const evaluation = this.evaluations().get(topic.id);
+    const grid: ({
+      nodeId: string;
+      columnId: string;
+      copyText: string;
+      editable: boolean;
+    } | null)[][] = [];
+    for (let r = Math.min(r1, r2); r <= Math.max(r1, r2); r += 1) {
+      const row = lattice.rows[r]!;
+      const gridRow: ({
+        nodeId: string;
+        columnId: string;
+        copyText: string;
+        editable: boolean;
+      } | null)[] = [];
+      for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c += 1) {
+        const column = topic.columns[c]!;
+        if (row.kind !== 'leaf') {
+          gridRow.push(null);
+          continue;
+        }
+        const located = findNodeAndParent(topic.children, row.nodeId);
+        if (!located) {
+          gridRow.push(null);
+          continue;
+        }
+        let copyText = '';
+        if (column.kind === 'input') {
+          copyText = located.node.values[column.id] ?? '';
+        } else if (column.kind === 'computed') {
+          const cell = evaluation?.computedCells.get(row.nodeId)?.get(column.id);
+          copyText =
+            cell && cell.error === null && cell.value !== null
+              ? formatNumericValue(cell.value)
+              : '';
+        }
+        gridRow.push({
+          nodeId: row.nodeId,
+          columnId: column.id,
+          copyText,
+          editable: column.kind === 'input',
+        });
+      }
+      grid.push(gridRow);
+    }
+    return grid;
+  }
+
+  private pasteTargets(
+    topicId: string,
+    anchor: CellRef,
+    matrix: string[][],
+  ): (CellRef | null)[][] | null {
+    const topic = this.findTopic(this.documentSignal(), topicId);
+    if (!topic) {
+      return null;
+    }
+    const lattice = computeTopicLattice(topic, this.collapsedSignal());
+    const anchorRow = lattice.rows.findIndex((row) => row.nodeId === anchor.nodeId);
+    const anchorColumn = topic.columns.findIndex((column) => column.id === anchor.columnId);
+    if (anchorRow < 0 || anchorColumn < 0) {
+      return null;
+    }
+
+    return matrix.map((matrixRow, rowOffset) =>
+      matrixRow.map((_, columnOffset) => {
+        const row = lattice.rows[anchorRow + rowOffset];
+        const column = topic.columns[anchorColumn + columnOffset];
+        if (!row || row.kind !== 'leaf' || !column || column.kind !== 'input') {
+          return null;
+        }
+        return { nodeId: row.nodeId, columnId: column.id };
+      }),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Columns: order, kind, alignment
+  // -------------------------------------------------------------------------
+
+  moveColumn(topicId: string, columnId: string, toIndex: number): void {
+    const topic = this.findTopic(this.documentSignal(), topicId);
+    const fromIndex = topic?.columns.findIndex((column) => column.id === columnId) ?? -1;
+    if (
+      !topic ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      toIndex >= topic.columns.length ||
+      fromIndex === toIndex
+    ) {
+      return;
+    }
+    this.mutate((document) => {
+      const draftTopic = this.findTopic(document, topicId);
+      if (!draftTopic) {
+        return;
+      }
+      const [column] = draftTopic.columns.splice(fromIndex, 1);
+      if (column) {
+        draftTopic.columns.splice(toIndex, 0, column);
+      }
+    });
+  }
+
+  /**
+   * Switches a column between its three kinds (CONTEXT.md): value (input),
+   * formula (computed) and chart. Values survive round-trips; a formula
+   * starts empty; a chart defaults to the first other non-chart column.
+   */
+  setColumnKind(topicId: string, columnId: string, kind: 'input' | 'computed' | 'chart'): void {
+    const topic = this.findTopic(this.documentSignal(), topicId);
+    const column = topic?.columns.find((candidate) => candidate.id === columnId);
+    if (!topic || !column || column.kind === kind) {
+      return;
+    }
+    const defaultChartSource = topic.columns.find(
+      (candidate) => candidate.id !== columnId && candidate.kind !== 'chart',
+    );
+    if (kind === 'chart' && !defaultChartSource) {
+      return;
+    }
+
+    this.mutate((document) => {
+      const draftColumn = this.findTopic(document, topicId)?.columns.find(
+        (candidate) => candidate.id === columnId,
+      );
+      if (!draftColumn) {
+        return;
+      }
+      draftColumn.kind = kind;
+      draftColumn.expression = kind === 'computed' ? (draftColumn.expression ?? '= ') : null;
+      draftColumn.chartSource = kind === 'chart' ? (defaultChartSource?.refName ?? null) : null;
+      if (kind === 'chart') {
+        draftColumn.rollup = 'none';
+      }
+    });
+  }
+
+  setColumnValueType(topicId: string, columnId: string, valueType: 'number' | 'text'): void {
+    this.mutate((document) => {
+      const column = this.findTopic(document, topicId)?.columns.find(
+        (candidate) => candidate.id === columnId,
+      );
+      if (column && column.kind === 'input') {
+        column.valueType = valueType;
+      }
+    });
+  }
+
+  setPillAlignment(topicId: string, alignment: PillAlignment): void {
+    this.mutate((document) => {
+      const topic = this.findTopic(document, topicId);
+      if (topic) {
+        topic.pillAlignment = alignment;
+      }
     });
   }
 

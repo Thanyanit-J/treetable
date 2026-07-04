@@ -1,7 +1,17 @@
 import { CdkContextMenuTrigger, CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
-import { ACCENT_COLORS, AccentColor } from '../../../core/model/document.model';
-import { PillKind } from './lattice-layout';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  afterRenderEffect,
+  computed,
+  input,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { AccentColor } from '../../../core/model/document.model';
+import { PillKind } from '../../../core/lattice/lattice-layout';
 
 const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
   sky: 'border-sky-300 bg-sky-100',
@@ -12,20 +22,11 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
   slate: 'border-slate-300 bg-slate-200',
 };
 
-const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
-  sky: 'bg-sky-400',
-  amber: 'bg-amber-400',
-  emerald: 'bg-emerald-400',
-  rose: 'bg-rose-400',
-  violet: 'bg-violet-400',
-  slate: 'bg-slate-400',
-};
-
 /**
  * A Node rendered as a pill — the merged-cell of the lattice (ADR-0001).
- * Owns label editing, the collapse toggle, and the node action menu
- * (button-triggered and context-menu-triggered alike, so every operation
- * has a keyboard path).
+ * One click selects (Inspector shows details); a second click edits the
+ * label (CONTEXT.md). Detailed configuration lives in the Inspector, so the
+ * menu stays to structure and clipboard actions.
  */
 @Component({
   selector: 'app-node-pill',
@@ -34,8 +35,9 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
     <div
       class="group relative z-10 inline-flex w-fit items-center gap-0.5 border pr-1 shadow-sm"
       [class]="shellClass()"
-      [class.ring-2]="dropTarget()"
+      [class.ring-2]="dropTarget() || selected()"
       [class.ring-emerald-500]="dropTarget()"
+      [class.ring-sky-500]="!dropTarget() && selected()"
       [cdkContextMenuTriggerFor]="actionsMenu"
       [attr.data-pill-id]="pillId()"
     >
@@ -63,19 +65,35 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
         </button>
       }
 
-      <input
-        class="w-auto min-w-16 bg-transparent px-2 py-1.5 text-center text-sm focus-visible:outline-none"
-        [class.font-semibold]="kind() === 'root'"
-        [class.font-medium]="kind() !== 'root'"
-        [value]="draft() ?? label()"
-        [attr.size]="inputSize()"
-        [attr.aria-label]="ariaLabel()"
-        (focus)="onFocus()"
-        (input)="onInput($event)"
-        (blur)="onBlur()"
-        (keydown.enter)="onEnter($event)"
-        (keydown.escape)="onEscape($event)"
-      />
+      @if (editing()) {
+        <input
+          #labelInput
+          class="w-auto min-w-16 bg-transparent px-2 py-1.5 text-center text-sm focus-visible:outline-none"
+          [class.font-semibold]="kind() === 'root'"
+          [class.font-medium]="kind() !== 'root'"
+          [value]="label()"
+          [attr.size]="inputSize()"
+          [attr.aria-label]="ariaLabel()"
+          (blur)="commit($event)"
+          (keydown.enter)="commitAndBlur($event)"
+          (keydown.escape)="cancelEdit($event)"
+        />
+      } @else {
+        <button
+          type="button"
+          class="min-w-16 cursor-default truncate px-2 py-1.5 text-center text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+          [class.font-semibold]="kind() === 'root'"
+          [class.font-medium]="kind() !== 'root'"
+          [attr.aria-label]="
+            ariaLabel() + (selected() ? ' (selected — click again to rename)' : '')
+          "
+          (click)="onLabelClick()"
+          (keydown.enter)="beginEditIfSelected($event)"
+          (focus)="selectedChange.emit()"
+        >
+          {{ label() }}
+        </button>
+      }
 
       <button
         type="button"
@@ -127,35 +145,21 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
           >
             Move down
           </button>
-          <div class="my-1 flex items-center gap-1 px-2 py-1" role="group" aria-label="Node color">
-            @for (color of accentColors; track color) {
-              <button
-                cdkMenuItem
-                type="button"
-                class="h-5 w-5 rounded-full border border-white shadow ring-slate-400 hover:ring-2"
-                [class]="swatchClass(color)"
-                [class.ring-2]="accent() === color"
-                [attr.aria-label]="'Set color ' + color"
-                (cdkMenuItemTriggered)="setAccent.emit(color)"
-              ></button>
-            }
-            <button
-              cdkMenuItem
-              type="button"
-              class="ml-1 rounded px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100"
-              (cdkMenuItemTriggered)="setAccent.emit(null)"
-            >
-              None
-            </button>
-          </div>
+          <button cdkMenuItem type="button" class="menu-item" (cdkMenuItemTriggered)="cut.emit()">
+            Cut
+          </button>
+          <button cdkMenuItem type="button" class="menu-item" (cdkMenuItemTriggered)="copy.emit()">
+            Copy
+          </button>
         }
         <button
           cdkMenuItem
           type="button"
           class="menu-item"
-          (cdkMenuItemTriggered)="editRefName.emit()"
+          [disabled]="!canPaste()"
+          (cdkMenuItemTriggered)="pasteAsChild.emit()"
         >
-          Edit reference name…
+          Paste as child
         </button>
         <button
           cdkMenuItem
@@ -176,10 +180,13 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
       padding: 0.5rem 0.75rem;
       text-align: left;
     }
-    .menu-item:hover,
+    .menu-item:hover:not(:disabled),
     .menu-item:focus-visible {
       background: var(--color-slate-100);
       outline: none;
+    }
+    .menu-item:disabled {
+      opacity: 0.4;
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -193,6 +200,7 @@ export class NodePillComponent {
   readonly dropTarget = input(false);
   readonly canMoveUp = input(false);
   readonly canMoveDown = input(false);
+  readonly canPaste = input(false);
 
   readonly renamed = output<string>();
   readonly selectedChange = output<void>();
@@ -200,14 +208,25 @@ export class NodePillComponent {
   readonly addChild = output<void>();
   readonly addSibling = output<void>();
   readonly remove = output<void>();
-  readonly setAccent = output<AccentColor | null>();
-  readonly editRefName = output<void>();
   readonly dragStarted = output<PointerEvent>();
   readonly moveUp = output<void>();
   readonly moveDown = output<void>();
+  readonly cut = output<void>();
+  readonly copy = output<void>();
+  readonly pasteAsChild = output<void>();
 
-  protected readonly accentColors = ACCENT_COLORS;
-  protected readonly draft = signal<string | null>(null);
+  protected readonly editing = signal(false);
+  private readonly labelInputRef = viewChild<ElementRef<HTMLInputElement>>('labelInput');
+
+  constructor() {
+    afterRenderEffect(() => {
+      if (this.editing()) {
+        const input = this.labelInputRef()?.nativeElement;
+        input?.focus();
+        input?.select();
+      }
+    });
+  }
 
   protected readonly shellClass = computed(() => {
     const parts: string[] = [];
@@ -218,15 +237,12 @@ export class NodePillComponent {
     } else {
       parts.push(this.kind() === 'root' ? PILL_SHELL_BY_ACCENT.sky : PILL_SHELL_BY_ACCENT.amber);
     }
-    if (this.selected()) {
-      parts.push('ring-2 ring-sky-500');
-    }
     return parts.join(' ');
   });
 
   protected readonly ariaLabel = computed(() => {
     const noun = this.kind() === 'root' ? 'Topic' : 'Node';
-    return `${noun} label: ${this.label()}`;
+    return `${noun}: ${this.label()}`;
   });
 
   protected readonly collapseLabel = computed(() =>
@@ -234,51 +250,39 @@ export class NodePillComponent {
   );
 
   protected inputSize(): number {
-    const text = this.draft() ?? this.label();
-    return Math.max(6, Math.min(48, text.length + 2));
+    return Math.max(6, Math.min(48, this.label().length + 2));
   }
 
-  protected swatchClass(color: AccentColor): string {
-    return SWATCH_BY_ACCENT[color];
-  }
-
-  protected onFocus(): void {
-    this.selectedChange.emit();
-    if (this.draft() === null) {
-      this.draft.set(this.label());
+  /** First click selects; a second click on the selected pill edits. */
+  protected onLabelClick(): void {
+    if (this.selected()) {
+      this.editing.set(true);
+    } else {
+      this.selectedChange.emit();
     }
   }
 
-  protected onInput(event: Event): void {
-    this.draft.set((event.target as HTMLInputElement).value);
-  }
-
-  protected onBlur(): void {
-    this.commit();
-  }
-
-  protected onEnter(event: Event): void {
+  protected beginEditIfSelected(event: Event): void {
     event.preventDefault();
-    this.commit();
-    (event.target as HTMLInputElement | null)?.blur();
+    this.editing.set(true);
   }
 
-  protected onEscape(event: Event): void {
+  protected commit(event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    this.editing.set(false);
+    if (value.trim().length > 0 && value !== this.label()) {
+      this.renamed.emit(value);
+    }
+  }
+
+  protected commitAndBlur(event: Event): void {
+    event.preventDefault();
+    this.commit(event);
+  }
+
+  protected cancelEdit(event: Event): void {
     event.preventDefault();
     event.stopPropagation();
-    this.draft.set(null);
-    const input = event.target as HTMLInputElement | null;
-    if (input) {
-      input.value = this.label();
-      input.blur();
-    }
-  }
-
-  private commit(): void {
-    const draft = this.draft();
-    this.draft.set(null);
-    if (draft !== null && draft.trim().length > 0 && draft !== this.label()) {
-      this.renamed.emit(draft);
-    }
+    this.editing.set(false);
   }
 }

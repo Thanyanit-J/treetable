@@ -1,10 +1,10 @@
 import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList } from '@angular/cdk/drag-drop';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { DocumentStoreService, RefNameTarget } from '../../core/store/document-store.service';
+import { DocumentStoreService } from '../../core/store/document-store.service';
 import { TopicEvaluation } from '../../core/engine/formula-evaluator';
-import { CardV2, findNodeAndParent } from '../../core/model/document.model';
+import { CardV2 } from '../../core/model/document.model';
 import { ConfirmDialogComponent } from './ui/confirm-dialog.component';
-import { RefNameDialogComponent } from './ui/ref-name-dialog.component';
+import { InspectorPanelComponent } from './inspector-panel.component';
 import { TopicCardComponent } from './topic-card.component';
 
 interface PendingDeleteTopic {
@@ -27,6 +27,11 @@ interface Toast {
   text: string;
 }
 
+/**
+ * Document shell: slim toolbar, edge-to-edge card rail, Inspector on the
+ * right. Clipboard shortcuts (Ctrl/Cmd+C/X/V, Delete) act on the current
+ * selection whenever focus is not inside a text editor.
+ */
 @Component({
   selector: 'app-document-page',
   imports: [
@@ -34,104 +39,113 @@ interface Toast {
     CdkDragHandle,
     CdkDropList,
     ConfirmDialogComponent,
-    RefNameDialogComponent,
+    InspectorPanelComponent,
     TopicCardComponent,
   ],
   host: {
     '(document:keydown)': 'onKeydown($event)',
   },
   template: `
-    <main class="mx-auto min-h-dvh p-4 sm:p-6 lg:p-8">
-      <header class="mb-4 rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <input
-            class="min-w-0 flex-1 basis-64 cursor-text rounded-md border border-transparent bg-transparent px-2 py-1 text-2xl font-semibold tracking-tight text-slate-900 transition hover:border-sky-200 focus:border-sky-300 focus-visible:outline-none"
-            [value]="store.title()"
-            aria-label="Document title"
-            (blur)="commitTitle($event)"
-            (keydown.enter)="commitTitleAndBlur($event)"
-            (keydown.escape)="revertTitle($event)"
-          />
-          <div class="flex flex-wrap gap-2">
-            <button
-              type="button"
-              class="rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600"
-              (click)="store.addTopic()"
-            >
-              + Topic
-            </button>
-            <button
-              type="button"
-              class="toolbar-button"
-              [disabled]="!store.canUndo()"
-              (click)="store.undo()"
-            >
-              Undo
-            </button>
-            <button
-              type="button"
-              class="toolbar-button"
-              [disabled]="!store.canRedo()"
-              (click)="store.redo()"
-            >
-              Redo
-            </button>
-            <button type="button" class="toolbar-button" (click)="exportJson()">Export JSON</button>
-            <label class="toolbar-button cursor-pointer">
-              Import JSON
-              <input
-                class="sr-only"
-                type="file"
-                accept="application/json"
-                (change)="importJson($event)"
-              />
-            </label>
-          </div>
+    <div class="flex h-dvh flex-col overflow-hidden bg-slate-50">
+      <header
+        class="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-200 bg-white px-2 py-1"
+      >
+        <input
+          class="min-w-0 flex-1 basis-48 cursor-text rounded border border-transparent bg-transparent px-1.5 py-0.5 text-lg font-semibold tracking-tight text-slate-900 transition hover:border-sky-200 focus:border-sky-300 focus-visible:outline-none"
+          [value]="store.title()"
+          aria-label="Document title"
+          (blur)="commitTitle($event)"
+          (keydown.enter)="commitTitleAndBlur($event)"
+          (keydown.escape)="revertTitle($event)"
+        />
+        <div class="flex flex-wrap gap-1">
+          <button
+            type="button"
+            class="rounded bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-600"
+            (click)="store.addTopic()"
+          >
+            + Topic
+          </button>
+          <button
+            type="button"
+            class="toolbar-button"
+            [disabled]="!store.canUndo()"
+            (click)="store.undo()"
+          >
+            Undo
+          </button>
+          <button
+            type="button"
+            class="toolbar-button"
+            [disabled]="!store.canRedo()"
+            (click)="store.redo()"
+          >
+            Redo
+          </button>
+          <button type="button" class="toolbar-button" (click)="exportJson()">Export</button>
+          <label class="toolbar-button cursor-pointer">
+            Import
+            <input
+              class="sr-only"
+              type="file"
+              accept="application/json"
+              (change)="importJson($event)"
+            />
+          </label>
         </div>
       </header>
 
-      @if (store.cards().length === 0) {
-        <section
-          class="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center"
-        >
-          <p class="text-sm text-slate-600">This document has no topics yet.</p>
-          <button
-            type="button"
-            class="mt-4 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500"
-            (click)="store.addTopic()"
-          >
-            Add your first topic
-          </button>
-        </section>
-      } @else {
-        <div
-          cdkDropList
-          cdkDropListOrientation="horizontal"
-          class="flex items-start gap-4 overflow-x-auto pb-4"
-          (cdkDropListDropped)="onCardDrop($event)"
-        >
-          @for (card of store.cards(); track card.id) {
-            <div cdkDrag [cdkDragData]="card" class="group/card relative shrink-0">
+      <div class="flex min-h-0 flex-1">
+        <div class="min-w-0 flex-1 overflow-auto" (click)="onBackgroundClick($event)">
+          @if (store.cards().length === 0) {
+            <section
+              class="m-6 rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center"
+            >
+              <p class="text-sm text-slate-600">This document has no topics yet.</p>
               <button
-                cdkDragHandle
                 type="button"
-                class="absolute right-2 top-2 z-20 flex h-6 w-6 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/card:opacity-100"
-                [attr.aria-label]="'Drag topic ' + card.displayName"
+                class="mt-4 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500"
+                (click)="store.addTopic()"
               >
-                <span aria-hidden="true">⠿</span>
+                Add your first topic
               </button>
-              <app-topic-card
-                [topic]="card"
-                [evaluation]="evaluationFor(card.id)"
-                (requestDeleteTopic)="queueTopicDelete($event)"
-                (requestDeleteNode)="queueNodeDelete($event.topicId, $event.nodeId)"
-                (requestEditRefName)="openRefNameDialog($event)"
-                (notify)="showToast(false, $event)"
-              />
+            </section>
+          } @else {
+            <div
+              cdkDropList
+              cdkDropListOrientation="horizontal"
+              class="flex h-full min-h-full items-stretch"
+              (cdkDropListDropped)="onCardDrop($event)"
+            >
+              @for (card of store.cards(); track card.id) {
+                <div cdkDrag [cdkDragData]="card" class="group/card relative flex shrink-0">
+                  <button
+                    cdkDragHandle
+                    type="button"
+                    class="absolute right-8 top-1 z-30 flex h-6 w-6 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/card:opacity-100"
+                    [attr.aria-label]="'Drag topic ' + card.displayName"
+                  >
+                    <span aria-hidden="true">⠿</span>
+                  </button>
+                  <app-topic-card
+                    [topic]="card"
+                    [evaluation]="evaluationFor(card.id)"
+                    (requestDeleteTopic)="queueTopicDelete($event)"
+                    (requestDeleteNode)="queueNodeDelete($event.topicId, $event.nodeId)"
+                    (notify)="showToast(false, $event)"
+                  />
+                </div>
+              }
             </div>
           }
         </div>
-      }
+
+        <app-inspector-panel
+          (requestDeleteTopic)="queueTopicDelete($event)"
+          (requestDeleteNode)="queueNodeDelete($event.topicId, $event.nodeId)"
+          (notify)="showToast(false, $event)"
+        />
+      </div>
 
       @if (toast(); as message) {
         <div
@@ -151,7 +165,7 @@ interface Toast {
           </div>
         </div>
       }
-    </main>
+    </div>
 
     <app-confirm-dialog
       [open]="pendingDelete() !== null"
@@ -162,24 +176,14 @@ interface Toast {
       (secondaryConfirmed)="confirmDeleteKeepingData()"
       (cancelled)="pendingDelete.set(null)"
     />
-
-    <app-ref-name-dialog
-      [open]="refNameTarget() !== null"
-      [kind]="refNameTarget()?.kind ?? 'node'"
-      [displayName]="refNameDisplayName()"
-      [currentRefName]="refNameCurrent()"
-      [errorMessage]="refNameError()"
-      (save)="saveRefName($event)"
-      (cancelled)="closeRefNameDialog()"
-    />
   `,
   styles: `
     .toolbar-button {
-      border-radius: 0.5rem;
+      border-radius: 0.25rem;
       border: 1px solid var(--color-slate-300);
       background: white;
-      padding: 0.5rem 0.75rem;
-      font-size: 0.875rem;
+      padding: 0.25rem 0.625rem;
+      font-size: 0.75rem;
       font-weight: 500;
       color: var(--color-slate-700);
     }
@@ -192,7 +196,7 @@ interface Toast {
     }
     .toolbar-button:focus-visible {
       outline: 2px solid var(--color-sky-600);
-      outline-offset: 2px;
+      outline-offset: 1px;
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -215,6 +219,13 @@ export class DocumentPageComponent {
     const card = event.item.data as CardV2 | undefined;
     if (card && event.previousIndex !== event.currentIndex) {
       this.store.moveCard(card.id, event.currentIndex);
+    }
+  }
+
+  /** Clicking the empty background clears the selection. */
+  protected onBackgroundClick(event: MouseEvent): void {
+    if (event.target === event.currentTarget) {
+      this.store.select(null);
     }
   }
 
@@ -247,24 +258,55 @@ export class DocumentPageComponent {
 
   protected onKeydown(event: KeyboardEvent): void {
     const target = event.target as HTMLElement | null;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+    if (
+      target &&
+      (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')
+    ) {
       return;
     }
+
     const modifier = event.metaKey || event.ctrlKey;
-    if (!modifier) {
-      return;
-    }
     const key = event.key.toLowerCase();
-    if (key === 'z' && event.shiftKey) {
+
+    if (modifier && key === 'z' && event.shiftKey) {
       event.preventDefault();
       this.store.redo();
-    } else if (key === 'z') {
+      return;
+    }
+    if (modifier && key === 'z') {
       event.preventDefault();
       this.store.undo();
-    } else if (key === 'y') {
+      return;
+    }
+    if (modifier && key === 'y') {
       event.preventDefault();
       this.store.redo();
+      return;
     }
+    if (modifier && key === 'c') {
+      event.preventDefault();
+      this.store.copySelection();
+      return;
+    }
+    if (modifier && key === 'x') {
+      event.preventDefault();
+      this.store.copySelection(true);
+      return;
+    }
+    if (modifier && key === 'v') {
+      event.preventDefault();
+      this.store.pasteSelection();
+      return;
+    }
+    if ((event.key === 'Delete' || event.key === 'Backspace') && this.isCellishSelection()) {
+      event.preventDefault();
+      this.store.clearSelectedCells();
+    }
+  }
+
+  private isCellishSelection(): boolean {
+    const kind = this.store.selection()?.kind;
+    return kind === 'cell' || kind === 'range';
   }
 
   // ---------------------------------------------------------------------------
@@ -334,72 +376,6 @@ export class DocumentPageComponent {
     }
     this.store.removeNode(pending.topicId, pending.nodeId, { keepDataInParent: true });
     this.pendingDelete.set(null);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Reference Name editing
-  // ---------------------------------------------------------------------------
-
-  protected readonly refNameTarget = signal<RefNameTarget | null>(null);
-  protected readonly refNameError = signal<string | null>(null);
-
-  protected readonly refNameDisplayName = computed(() => {
-    const target = this.refNameTarget();
-    if (!target) {
-      return '';
-    }
-    const topic = this.store.topicById(target.topicId);
-    if (!topic) {
-      return '';
-    }
-    if (target.kind === 'topic') {
-      return topic.displayName;
-    }
-    if (target.kind === 'column') {
-      return topic.columns.find((column) => column.id === target.entityId)?.displayName ?? '';
-    }
-    return findNodeAndParent(topic.children, target.entityId)?.node.displayName ?? '';
-  });
-
-  protected readonly refNameCurrent = computed(() => {
-    const target = this.refNameTarget();
-    if (!target) {
-      return '';
-    }
-    const topic = this.store.topicById(target.topicId);
-    if (!topic) {
-      return '';
-    }
-    if (target.kind === 'topic') {
-      return topic.refName;
-    }
-    if (target.kind === 'column') {
-      return topic.columns.find((column) => column.id === target.entityId)?.refName ?? '';
-    }
-    return findNodeAndParent(topic.children, target.entityId)?.node.refName ?? '';
-  });
-
-  protected openRefNameDialog(target: RefNameTarget): void {
-    this.refNameError.set(null);
-    this.refNameTarget.set(target);
-  }
-
-  protected closeRefNameDialog(): void {
-    this.refNameTarget.set(null);
-    this.refNameError.set(null);
-  }
-
-  protected saveRefName(nextRefName: string): void {
-    const target = this.refNameTarget();
-    if (!target) {
-      return;
-    }
-    const result = this.store.setRefName(target, nextRefName);
-    if (!result.ok) {
-      this.refNameError.set(result.error ?? 'Invalid reference name.');
-      return;
-    }
-    this.closeRefNameDialog();
   }
 
   // ---------------------------------------------------------------------------

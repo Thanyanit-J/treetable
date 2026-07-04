@@ -52,6 +52,8 @@ export interface ChartConfigV2 {
   columns: string[];
 }
 
+export type PillAlignment = 'center' | 'top';
+
 export interface TopicCardV2 {
   kind: 'topic';
   id: string;
@@ -62,6 +64,8 @@ export interface TopicCardV2 {
   children: NodeV2[];
   /** Charts shown in the card's Chart Panel. */
   charts?: ChartConfigV2[];
+  /** Branch pills centered in their span (default) or aligned to the top row. */
+  pillAlignment?: PillAlignment;
 }
 
 export type CardV2 = TopicCardV2;

@@ -230,6 +230,8 @@ export class PersistenceService {
       columns,
       children,
       charts,
+      pillAlignment:
+        (candidate as { pillAlignment?: unknown }).pillAlignment === 'top' ? 'top' : 'center',
     };
   }
 
