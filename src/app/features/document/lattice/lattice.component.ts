@@ -97,7 +97,7 @@ interface ConnectorPath {
                 <div class="min-w-0 flex-1">
                   @if (isEditingHeader(column)) {
                     <input
-                      class="edit-input w-full bg-transparent px-2 pt-1.5 text-center text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                      class="edit-input w-full bg-transparent px-2 py-1.5 text-center text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
                       [value]="column.displayName"
                       [attr.aria-label]="'Rename column ' + column.displayName"
                       (blur)="commitHeaderEdit(column, $event)"
@@ -107,27 +107,17 @@ interface ConnectorPath {
                   } @else {
                     <div
                       tabindex="0"
-                      class="w-full cursor-default touch-none px-2 pt-1.5 text-center text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                      class="w-full cursor-default touch-none px-2 py-1.5 text-center text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                      [class.font-mono]="formulaEditingActive()"
                       [attr.aria-label]="
                         'Column ' + column.displayName + ' (click again to rename, drag to reorder)'
                       "
                       (pointerdown)="onHeaderPointerDown(column, $event)"
                       (keydown.enter)="beginHeaderEdit(column, $event)"
                     >
-                      {{ column.displayName }}
+                      {{ headerLabel(column) }}
                     </div>
                   }
-                  <div class="px-2 pb-1 text-center font-mono text-[10px] text-slate-400">
-                    {{ column.refName }}
-                    @if (column.kind === 'computed') {
-                      <span [attr.title]="column.expression"> · ƒ</span>
-                    }
-                    @if (column.kind === 'chart') {
-                      <span [attr.title]="'Bar chart of ' + column.chartSource">
-                        · ▮ {{ column.chartSource }}</span
-                      >
-                    }
-                  </div>
                 </div>
                 <button
                   type="button"
@@ -837,6 +827,15 @@ export class LatticeComponent {
 
   protected readonly refHoverColumnId = signal<string | null>(null);
   private cellFormulaSession: FormulaEditorSession | null = null;
+
+  protected formulaEditingActive(): boolean {
+    return this.store.formulaEditor() !== null;
+  }
+
+  /** In a formula, columns go by Reference Name — so headers do too. */
+  protected headerLabel(column: ColumnV2): string {
+    return this.formulaEditingActive() ? column.refName : column.displayName;
+  }
 
   protected canInsertRef(column: ColumnV2): boolean {
     const session = this.store.formulaEditor();
