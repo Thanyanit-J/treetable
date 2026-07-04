@@ -534,6 +534,9 @@ export class LatticeComponent {
 
     const root = this.latticeRootRef().nativeElement;
     const rootRect = root.getBoundingClientRect();
+    // Visual px → layout px conversion; self-calibrating against any ancestor
+    // CSS zoom applied by the per-card viewport.
+    const zoomRatio = root.offsetWidth > 0 ? rootRect.width / root.offsetWidth : 1;
 
     const descendants = new Set<string>();
     if (pill.node) {
@@ -560,13 +563,13 @@ export class LatticeComponent {
       if (!element) {
         continue;
       }
-      const rect = element.getBoundingClientRect();
+      const rect = layoutRectWithin(root, element);
       pillRects.push({
         pill: candidate,
-        left: rect.left - rootRect.left,
-        top: rect.top - rootRect.top,
-        right: rect.right - rootRect.left,
-        bottom: rect.bottom - rootRect.top,
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
       });
     }
 
@@ -577,7 +580,8 @@ export class LatticeComponent {
       return { top: rect?.top ?? 0, bottom: rect?.bottom ?? 0 };
     });
 
-    const onMove = (moveEvent: PointerEvent): void => this.updateDrag(moveEvent, rootRect);
+    const onMove = (moveEvent: PointerEvent): void =>
+      this.updateDrag(moveEvent, rootRect, zoomRatio);
     const onUp = (): void => this.finishDrag(true);
     const onCancel = (): void => this.finishDrag(false);
     const onKeydown = (keyEvent: KeyboardEvent): void => {
@@ -609,13 +613,13 @@ export class LatticeComponent {
     this.draggingPill.set(pill);
   }
 
-  private updateDrag(event: PointerEvent, rootRect: DOMRect): void {
+  private updateDrag(event: PointerEvent, rootRect: DOMRect, zoomRatio: number): void {
     const session = this.dragSession;
     if (!session) {
       return;
     }
-    const x = event.clientX - rootRect.left;
-    const y = event.clientY - rootRect.top;
+    const x = (event.clientX - rootRect.left) / zoomRatio;
+    const y = (event.clientY - rootRect.top) / zoomRatio;
 
     // Re-parent: hovering another pill (never self, a descendant, or the current parent-as-noop).
     const hit = session.pillRects.find(
@@ -908,35 +912,31 @@ export class LatticeComponent {
     });
   }
 
+  /**
+   * All measurement uses layout coordinates (offsetLeft/offsetTop chains),
+   * never getBoundingClientRect — so per-card zoom (CSS `zoom` on an
+   * ancestor) cannot skew the overlay: layout units are zoom-independent.
+   */
   private measureConnectors(): void {
     const root = this.latticeRootRef().nativeElement;
-    const rootRect = root.getBoundingClientRect();
-    const pillRects = new Map<string, DOMRect>();
+    const pillRects = new Map<string, { left: number; right: number; centerY: number }>();
     for (const element of root.querySelectorAll<HTMLElement>('[data-pill-id]')) {
       const id = element.dataset['pillId'];
       if (id) {
-        pillRects.set(id, element.getBoundingClientRect());
+        pillRects.set(id, layoutRectWithin(root, element));
       }
     }
 
     const paths: ConnectorPath[] = [];
-    const relative = (rect: DOMRect) => ({
-      left: rect.left - rootRect.left,
-      right: rect.right - rootRect.left,
-      centerY: rect.top + rect.height / 2 - rootRect.top,
-    });
-
-    const dataRegionLeft = this.measureDataRegionLeft(root, rootRect);
+    const dataRegionLeft = this.measureDataRegionLeft(root);
 
     for (const pill of this.lattice().pills) {
       if (pill.kind === 'root') {
         continue;
       }
-      const rect = pillRects.get(pill.nodeId);
-      const parentRect = pillRects.get(pill.parentPillId);
-      if (rect && parentRect) {
-        const from = relative(parentRect);
-        const to = relative(rect);
+      const to = pillRects.get(pill.nodeId);
+      const from = pillRects.get(pill.parentPillId);
+      if (to && from) {
         const dx = Math.max(12, (to.left - from.right) / 2);
         paths.push({
           id: `edge-${pill.nodeId}`,
@@ -944,12 +944,11 @@ export class LatticeComponent {
         });
       }
 
-      if ((pill.kind === 'leaf' || pill.kind === 'collapsed') && rect && dataRegionLeft !== null) {
-        const from = relative(rect);
-        if (dataRegionLeft > from.right) {
+      if ((pill.kind === 'leaf' || pill.kind === 'collapsed') && to && dataRegionLeft !== null) {
+        if (dataRegionLeft > to.right) {
           paths.push({
             id: `row-${pill.nodeId}`,
-            d: `M ${from.right} ${from.centerY} L ${dataRegionLeft} ${from.centerY}`,
+            d: `M ${to.right} ${to.centerY} L ${dataRegionLeft} ${to.centerY}`,
           });
         }
       }
@@ -958,12 +957,12 @@ export class LatticeComponent {
     this.connectorPaths.set(paths);
   }
 
-  private measureDataRegionLeft(root: HTMLElement, rootRect: DOMRect): number | null {
+  private measureDataRegionLeft(root: HTMLElement): number | null {
     const firstHeader = root.querySelector<HTMLElement>('[role="columnheader"]:nth-of-type(2)');
     if (!firstHeader) {
       return null;
     }
-    return firstHeader.getBoundingClientRect().left - rootRect.left;
+    return layoutRectWithin(root, firstHeader).left;
   }
 
   // -------------------------------------------------------------------------
@@ -971,4 +970,31 @@ export class LatticeComponent {
   private findNode(nodeId: string): NodeV2 | null {
     return findNodeAndParent(this.topic().children, nodeId)?.node ?? null;
   }
+}
+
+/**
+ * Position and size of `element` relative to `root` in layout coordinates,
+ * accumulated through the offsetParent chain. Unlike getBoundingClientRect,
+ * these values are unaffected by ancestor CSS zoom/transform — which is what
+ * keeps the SVG overlay and drag math correct inside a zoomed card.
+ */
+function layoutRectWithin(
+  root: HTMLElement,
+  element: HTMLElement,
+): { left: number; top: number; right: number; bottom: number; centerY: number } {
+  let left = 0;
+  let top = 0;
+  let current: HTMLElement | null = element;
+  while (current && current !== root) {
+    left += current.offsetLeft;
+    top += current.offsetTop;
+    current = current.offsetParent as HTMLElement | null;
+  }
+  return {
+    left,
+    top,
+    right: left + element.offsetWidth,
+    bottom: top + element.offsetHeight,
+    centerY: top + element.offsetHeight / 2,
+  };
 }
