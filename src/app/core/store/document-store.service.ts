@@ -503,6 +503,82 @@ export class DocumentStoreService {
     });
   }
 
+  /** Moves a card into an existing stack at `targetIndex` (post-removal). */
+  moveCardToStack(cardId: string, targetStackId: string, targetIndex: number): void {
+    const document = this.documentSignal();
+    if (!document.cards.some((card) => card.id === cardId)) {
+      return;
+    }
+    let source: { stackId: string; index: number; size: number } | null = null;
+    let targetExists = false;
+    for (const page of document.pages) {
+      for (const stack of page.stacks) {
+        if (stack.id === targetStackId) {
+          targetExists = true;
+        }
+        const index = stack.cardIds.indexOf(cardId);
+        if (index >= 0) {
+          source = { stackId: stack.id, index, size: stack.cardIds.length };
+        }
+      }
+    }
+    if (!targetExists) {
+      return;
+    }
+    if (source && source.stackId === targetStackId) {
+      const clamped = Math.max(0, Math.min(targetIndex, source.size - 1));
+      if (clamped === source.index) {
+        return; // Dropped back where it was — no history entry.
+      }
+    }
+
+    this.mutate((draft) => {
+      removeCardFromLayout(draft, cardId);
+      for (const page of draft.pages) {
+        const stack = page.stacks.find((candidate) => candidate.id === targetStackId);
+        if (stack) {
+          const index = Math.max(0, Math.min(targetIndex, stack.cardIds.length));
+          stack.cardIds.splice(index, 0, cardId);
+          return;
+        }
+      }
+    });
+  }
+
+  /** Moves a card out into its own new stack at `stackIndex` on the Page. */
+  moveCardToNewStack(cardId: string, pageId: string, stackIndex: number): void {
+    const document = this.documentSignal();
+    const page = document.pages.find((candidate) => candidate.id === pageId);
+    if (!page || !document.cards.some((card) => card.id === cardId)) {
+      return;
+    }
+    const sourceIndex = page.stacks.findIndex((stack) => stack.cardIds.includes(cardId));
+    const sourceStack = page.stacks[sourceIndex];
+    if (
+      sourceStack &&
+      sourceStack.cardIds.length === 1 &&
+      (stackIndex === sourceIndex || stackIndex === sourceIndex + 1)
+    ) {
+      return; // A lone card dropped beside itself changes nothing.
+    }
+
+    this.mutate((draft) => {
+      const draftPage = draft.pages.find((candidate) => candidate.id === pageId);
+      if (!draftPage) {
+        return;
+      }
+      const before = draftPage.stacks.findIndex((stack) => stack.cardIds.includes(cardId));
+      const emptiesAway = before >= 0 && draftPage.stacks[before]!.cardIds.length === 1;
+      removeCardFromLayout(draft, cardId);
+      let index = stackIndex;
+      if (emptiesAway && before < stackIndex) {
+        index -= 1;
+      }
+      index = Math.max(0, Math.min(index, draftPage.stacks.length));
+      draftPage.stacks.splice(index, 0, { id: makeId('stack'), cardIds: [cardId] });
+    });
+  }
+
   /** Number of cards living on a Page (for delete confirmations). */
   pageCardCount(pageId: string): number {
     const page = this.documentSignal().pages.find((candidate) => candidate.id === pageId);

@@ -1,4 +1,10 @@
-import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList } from '@angular/cdk/drag-drop';
+import {
+  CdkDrag,
+  CdkDragDrop,
+  CdkDragHandle,
+  CdkDropList,
+  CdkDropListGroup,
+} from '@angular/cdk/drag-drop';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DocumentStoreService } from '../../core/store/document-store.service';
 import { TopicEvaluation } from '../../core/engine/formula-evaluator';
@@ -46,6 +52,7 @@ interface Toast {
     CdkDrag,
     CdkDragHandle,
     CdkDropList,
+    CdkDropListGroup,
     ConfirmDialogComponent,
     DetailsPanelComponent,
     FormulaSuggestOverlayComponent,
@@ -124,25 +131,34 @@ interface Toast {
               </button>
             </section>
           } @else {
-            <div
-              cdkDropList
-              cdkDropListOrientation="horizontal"
-              class="flex h-full min-h-full items-stretch gap-6 p-3"
-              (cdkDropListDropped)="onStackDrop($event)"
-            >
-              @for (stack of store.activeStacks(); track stack.id) {
+            <!-- One drop-list group: each stack is a vertical list (drop under a
+                 card to stack them); the gaps are lists too — dropping there
+                 puts the card into its own new column. -->
+            <div cdkDropListGroup class="flex h-full min-h-full items-stretch p-3">
+              <div
+                cdkDropList
+                [cdkDropListData]="'new:0'"
+                class="rail-gap w-6 shrink-0"
+                (cdkDropListDropped)="onRailDrop($event)"
+              ></div>
+              @for (stack of store.activeStacks(); track stack.id; let stackIndex = $index) {
                 <div
-                  cdkDrag
-                  [cdkDragData]="stack.id"
-                  class="group/card relative flex shrink-0 gap-3"
+                  cdkDropList
+                  [cdkDropListData]="stack.id"
+                  class="flex shrink-0 flex-col gap-3"
+                  (cdkDropListDropped)="onRailDrop($event)"
                 >
                   @for (card of stack.cards; track card.id) {
-                    <div class="relative flex min-h-0 shrink-0">
+                    <div
+                      cdkDrag
+                      [cdkDragData]="card.id"
+                      class="group/card relative flex min-h-0 flex-1"
+                    >
                       <button
                         cdkDragHandle
                         type="button"
                         class="absolute left-1 top-1 z-30 flex h-6 w-6 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 hover:text-slate-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/card:opacity-100"
-                        [attr.aria-label]="'Drag topic ' + card.displayName"
+                        [attr.aria-label]="'Drag card ' + card.displayName"
                       >
                         <span aria-hidden="true">⠿</span>
                       </button>
@@ -156,6 +172,12 @@ interface Toast {
                     </div>
                   }
                 </div>
+                <div
+                  cdkDropList
+                  [cdkDropListData]="'new:' + (stackIndex + 1)"
+                  class="rail-gap w-6 shrink-0"
+                  (cdkDropListDropped)="onRailDrop($event)"
+                ></div>
               }
             </div>
           }
@@ -223,6 +245,16 @@ interface Toast {
       outline: 2px solid var(--color-sky-600);
       outline-offset: 1px;
     }
+    .rail-gap {
+      border-radius: 0.5rem;
+      transition: background-color 0.15s ease;
+    }
+    .rail-gap.cdk-drop-list-receiving,
+    .rail-gap.cdk-drop-list-dragging {
+      background: var(--color-sky-100);
+      outline: 2px dashed var(--color-sky-300);
+      outline-offset: -2px;
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -241,10 +273,21 @@ export class DocumentPageComponent {
     return this.evaluations().get(cardId) ?? this.emptyEvaluation;
   }
 
-  protected onStackDrop(event: CdkDragDrop<unknown>): void {
-    if (event.previousIndex !== event.currentIndex) {
-      this.store.moveStack(this.store.activePage().id, event.previousIndex, event.currentIndex);
+  /** Routes rail drops: into a stack (reorder/stack) or a gap (new column). */
+  protected onRailDrop(event: CdkDragDrop<string>): void {
+    const cardId = event.item.data;
+    const target = event.container.data;
+    if (typeof cardId !== 'string' || typeof target !== 'string') {
+      return;
     }
+    if (target.startsWith('new:')) {
+      this.store.moveCardToNewStack(cardId, this.store.activePage().id, Number(target.slice(4)));
+      return;
+    }
+    if (event.previousContainer === event.container && event.previousIndex === event.currentIndex) {
+      return;
+    }
+    this.store.moveCardToStack(cardId, target, event.currentIndex);
   }
 
   /** Clicking the empty background clears the selection. */
