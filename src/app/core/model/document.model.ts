@@ -78,6 +78,8 @@ export interface TopicCardV2 {
   charts?: ChartConfigV2[];
   /** Branch pills centered in their span (default) or aligned to the top row. */
   pillAlignment?: PillAlignment;
+  /** False hides the Root pill (its column disappears); an empty Topic always shows it. */
+  showRoot?: boolean;
   /** Tree connector lines: right-angle elbows (default), straight segments, or curves. */
   connectorStyle?: ConnectorStyle;
 }

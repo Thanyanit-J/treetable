@@ -148,6 +148,14 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                   </button>
                 </div>
               </fieldset>
+              <label class="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  [checked]="topic.showRoot ?? true"
+                  (change)="toggleShowRoot(topic, $event)"
+                />
+                Show root node
+              </label>
               <button
                 type="button"
                 class="danger-button"
@@ -716,6 +724,10 @@ export class DetailsPanelComponent {
       return;
     }
     this.refNameError.set(null);
+  }
+
+  protected toggleShowRoot(topic: TopicCardV2, event: Event): void {
+    this.store.setShowRoot(topic.id, (event.target as HTMLInputElement).checked);
   }
 
   /** Re-syncing derives the Reference Name from the display name in one step. */

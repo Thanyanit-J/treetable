@@ -48,6 +48,8 @@ export function computeTopicLattice(
 ): TopicLattice {
   const rows: LatticeRow[] = [];
   const pills: LatticePill[] = [];
+  // An empty Topic always keeps its root pill — it is the only handle left.
+  const showRoot = (topic.showRoot ?? true) || topic.children.length === 0;
   let maxDepth = 0;
 
   const visit = (
@@ -97,18 +99,20 @@ export function computeTopicLattice(
   };
 
   for (const child of topic.children) {
-    visit(child, 1, ROOT_PILL_ID);
+    visit(child, showRoot ? 1 : 0, ROOT_PILL_ID);
   }
 
-  pills.push({
-    node: null,
-    nodeId: ROOT_PILL_ID,
-    kind: 'root',
-    depth: 0,
-    rowStart: 1,
-    rowSpan: Math.max(1, rows.length),
-    parentPillId: '',
-  });
+  if (showRoot) {
+    pills.push({
+      node: null,
+      nodeId: ROOT_PILL_ID,
+      kind: 'root',
+      depth: 0,
+      rowStart: 1,
+      rowSpan: Math.max(1, rows.length),
+      parentPillId: '',
+    });
+  }
 
   const pillsByRowStart = new Map<number, LatticePill[]>();
   for (const pill of pills) {

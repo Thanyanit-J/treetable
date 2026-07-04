@@ -1334,6 +1334,20 @@ export class DocumentStoreService {
     });
   }
 
+  setShowRoot(topicId: string, show: boolean): void {
+    this.mutate((document) => {
+      const topic = this.findTopic(document, topicId);
+      if (!topic) {
+        return;
+      }
+      if (show) {
+        delete topic.showRoot;
+      } else {
+        topic.showRoot = false;
+      }
+    });
+  }
+
   // -------------------------------------------------------------------------
   // Chart Panel
   // -------------------------------------------------------------------------

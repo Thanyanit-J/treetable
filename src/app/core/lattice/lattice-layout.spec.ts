@@ -61,6 +61,22 @@ describe('computeTopicLattice', () => {
     expect(lattice.depthCount).toBe(2);
   });
 
+  it('omits the root pill and its column when showRoot is false', () => {
+    const lattice = computeTopicLattice({ ...TREE, showRoot: false }, new Set());
+    const byId = new Map(lattice.pills.map((pill) => [pill.nodeId, pill]));
+
+    expect(byId.has(ROOT_PILL_ID)).toBe(false);
+    expect(byId.get('savings')).toMatchObject({ depth: 0, rowStart: 1, rowSpan: 2 });
+    expect(byId.get('bankA')).toMatchObject({ depth: 1 });
+    expect(lattice.depthCount).toBe(2);
+  });
+
+  it('keeps the root pill for an empty Topic even when showRoot is false', () => {
+    const lattice = computeTopicLattice({ ...topicOf([]), showRoot: false }, new Set());
+    expect(lattice.pills).toHaveLength(1);
+    expect(lattice.pills[0]!.nodeId).toBe(ROOT_PILL_ID);
+  });
+
   it('keeps the root pill on a single row for an empty Topic', () => {
     const lattice = computeTopicLattice(topicOf([]), new Set());
     expect(lattice.rows).toEqual([]);
