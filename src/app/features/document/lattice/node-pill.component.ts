@@ -52,18 +52,8 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
           <span aria-hidden="true" class="text-[10px] leading-none">⠿</span>
         </button>
       }
-      @if (kind() === 'branch' || kind() === 'collapsed') {
-        <button
-          type="button"
-          class="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-slate-600 hover:bg-white/70 focus-visible:outline-2 focus-visible:outline-sky-600"
-          [attr.aria-expanded]="kind() !== 'collapsed'"
-          [attr.aria-label]="collapseLabel()"
-          (click)="toggleCollapse.emit()"
-        >
-          <span aria-hidden="true" class="text-[10px] leading-none">{{
-            kind() === 'collapsed' ? '▶' : '▼'
-          }}</span>
-        </button>
+      @if (kind() === 'collapsed') {
+        <span aria-hidden="true" class="ml-1.5 text-[10px] leading-none text-slate-500">▸</span>
       }
 
       @if (editing()) {
@@ -113,6 +103,16 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
         cdkMenu
         class="z-50 w-56 rounded-lg border border-slate-200 bg-white p-1 text-sm text-slate-700 shadow-xl"
       >
+        @if (kind() === 'branch' || kind() === 'collapsed') {
+          <button
+            cdkMenuItem
+            type="button"
+            class="menu-item"
+            (cdkMenuItemTriggered)="toggleCollapse.emit()"
+          >
+            {{ kind() === 'collapsed' ? 'Expand' : 'Collapse' }}
+          </button>
+        }
         @if (kind() === 'root') {
           <button
             cdkMenuItem
@@ -207,10 +207,6 @@ export class NodePillComponent {
     const noun = this.kind() === 'root' ? 'Topic' : 'Node';
     return `${noun}: ${this.label()}`;
   });
-
-  protected readonly collapseLabel = computed(() =>
-    this.kind() === 'collapsed' ? `Expand ${this.label()}` : `Collapse ${this.label()}`,
-  );
 
   /**
    * Selection-first on the label itself: the pill's selected state is read

@@ -183,9 +183,9 @@ interface ConnectorPath {
                 [class.formula-target]="isRefTarget(column)"
                 [style.grid-row]="rowIndex + 2"
                 [style.grid-column]="dataGridColumn(columnIndex)"
-                [attr.data-cell-node]="row.kind === 'leaf' ? row.nodeId : null"
-                [attr.data-cell-col]="row.kind === 'leaf' ? column.id : null"
-                [cdkContextMenuTriggerFor]="row.kind === 'leaf' ? cellMenu : null"
+                [attr.data-cell-node]="row.nodeId"
+                [attr.data-cell-col]="column.id"
+                [cdkContextMenuTriggerFor]="row.kind === 'leaf' ? cellMenu : collapsedMenu"
                 (contextmenu)="onCellContextMenu(row, column)"
                 (pointerenter)="onRefHover(column, true)"
                 (pointerleave)="onRefHover(column, false)"
@@ -194,9 +194,12 @@ interface ConnectorPath {
                   <!-- No Rollup configured anywhere: a collapsed Branch shows no Row (CONTEXT.md). -->
                 } @else if (row.kind === 'collapsed') {
                   <div
-                    class="h-full min-h-9 px-2 py-1.5 text-right text-sm italic text-slate-500"
+                    tabindex="0"
+                    class="h-full min-h-9 px-2 py-1.5 text-right text-sm italic text-slate-500 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                    [class.cell-selected]="isCellSelected(row.nodeId, column)"
                     [attr.title]="rollupTitle(column)"
                     [attr.aria-label]="rollupAriaLabel(row.nodeId, column)"
+                    (pointerdown)="onCellPointerDown(row, column, $event)"
                   >
                     {{ collapsedRollupDisplay(row.nodeId, column) }}
                   </div>
@@ -413,6 +416,30 @@ interface ConnectorPath {
           (cdkMenuItemTriggered)="store.clearSelectedCells()"
         >
           Clear
+        </button>
+      </div>
+    </ng-template>
+
+    <ng-template #collapsedMenu>
+      <div
+        cdkMenu
+        class="z-50 w-48 rounded-lg border border-slate-200 bg-white p-1 text-sm text-slate-700 shadow-xl"
+      >
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          (cdkMenuItemTriggered)="expandSelectedRow()"
+        >
+          Expand
+        </button>
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          (cdkMenuItemTriggered)="store.copySelection()"
+        >
+          Copy
         </button>
       </div>
     </ng-template>
@@ -744,7 +771,7 @@ export class LatticeComponent {
   // -------------------------------------------------------------------------
 
   protected onCellPointerDown(row: LatticeRow, column: ColumnV2, event: PointerEvent): void {
-    if (event.button !== 0 || row.kind !== 'leaf') {
+    if (event.button !== 0) {
       return;
     }
     if (this.tryInsertRef(column, event)) {
@@ -779,7 +806,8 @@ export class LatticeComponent {
       if (dragging) {
         return;
       }
-      if (wasSelected && column.kind !== 'chart') {
+      // Collapsed Rollup Rows select but never edit — their cells are computed.
+      if (wasSelected && column.kind !== 'chart' && row.kind === 'leaf') {
         this.editingKey.set(`cell:${row.nodeId}:${column.id}`);
       } else {
         this.selectCell(row.nodeId, column);
@@ -808,11 +836,16 @@ export class LatticeComponent {
   }
 
   protected onCellContextMenu(row: LatticeRow, column: ColumnV2): void {
-    if (row.kind !== 'leaf') {
-      return;
-    }
     if (!this.isCellSelected(row.nodeId, column) && !this.cellInRange(row.nodeId, column)) {
       this.selectCell(row.nodeId, column);
+    }
+  }
+
+  /** Expand from the collapsed Rollup Row's context menu. */
+  protected expandSelectedRow(): void {
+    const selection = this.store.selection();
+    if (selection?.kind === 'cell') {
+      this.store.expandNode(selection.nodeId);
     }
   }
 

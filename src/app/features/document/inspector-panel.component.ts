@@ -384,7 +384,23 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                   <p class="text-sm text-slate-600">
                     {{ context.node.displayName }} · {{ context.column.displayName }}
                   </p>
-                  @if (context.column.kind === 'input') {
+                  @if (context.node.children.length > 0) {
+                    <p class="text-xs text-slate-400">
+                      Summary of the collapsed branch's hidden rows — expand to edit them.
+                    </p>
+                    <div class="flex flex-wrap gap-1">
+                      <button type="button" class="action" (click)="store.copySelection()">
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        class="action"
+                        (click)="store.expandNode(context.node.id)"
+                      >
+                        Expand
+                      </button>
+                    </div>
+                  } @else if (context.column.kind === 'input') {
                     <label class="field">
                       <span>Value</span>
                       <input
@@ -399,35 +415,37 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                       Computed by the column formula — edit it in the column settings.
                     </p>
                   }
-                  <div class="flex flex-wrap gap-1">
-                    <button type="button" class="action" (click)="store.copySelection()">
-                      Copy
-                    </button>
-                    <button
-                      type="button"
-                      class="action"
-                      [disabled]="context.column.kind !== 'input'"
-                      (click)="store.copySelection(true)"
-                    >
-                      Cut
-                    </button>
-                    <button
-                      type="button"
-                      class="action"
-                      [disabled]="!canPasteCells()"
-                      (click)="store.pasteSelection()"
-                    >
-                      Paste
-                    </button>
-                    <button
-                      type="button"
-                      class="action"
-                      [disabled]="context.column.kind !== 'input'"
-                      (click)="store.clearSelectedCells()"
-                    >
-                      Clear
-                    </button>
-                  </div>
+                  @if (context.node.children.length === 0) {
+                    <div class="flex flex-wrap gap-1">
+                      <button type="button" class="action" (click)="store.copySelection()">
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        class="action"
+                        [disabled]="context.column.kind !== 'input'"
+                        (click)="store.copySelection(true)"
+                      >
+                        Cut
+                      </button>
+                      <button
+                        type="button"
+                        class="action"
+                        [disabled]="!canPasteCells()"
+                        (click)="store.pasteSelection()"
+                      >
+                        Paste
+                      </button>
+                      <button
+                        type="button"
+                        class="action"
+                        [disabled]="context.column.kind !== 'input'"
+                        (click)="store.clearSelectedCells()"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  }
                 }
               }
               @case ('range') {

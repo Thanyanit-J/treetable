@@ -4,8 +4,9 @@ import {
   evaluateDocument,
   formatNumericValue,
   resolveRefBindings,
+  rollupSum,
 } from '../engine/formula-evaluator';
-import { computeTopicLattice } from '../lattice/lattice-layout';
+import { computeTopicLattice, hiddenLeavesOf } from '../lattice/lattice-layout';
 import {
   AccentColor,
   ChartType,
@@ -1087,7 +1088,14 @@ export class DocumentStoreService {
       for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c += 1) {
         const column = topic.columns[c]!;
         if (row.kind !== 'leaf') {
-          gridRow.push(null);
+          // Collapsed Rollup Row: the displayed summary copies, never edits.
+          const branch = findNodeAndParent(topic.children, row.nodeId)?.node;
+          let copyText = '';
+          if (branch && evaluation && column.rollup !== 'none') {
+            const total = rollupSum(column, hiddenLeavesOf(branch), evaluation);
+            copyText = total === null ? '' : formatNumericValue(total);
+          }
+          gridRow.push({ nodeId: row.nodeId, columnId: column.id, copyText, editable: false });
           continue;
         }
         const located = findNodeAndParent(topic.children, row.nodeId);
