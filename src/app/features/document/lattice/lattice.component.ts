@@ -194,7 +194,7 @@ interface ConnectorPath {
                   <!-- No Rollup configured anywhere: a collapsed Branch shows no Row (CONTEXT.md). -->
                 } @else if (row.kind === 'collapsed') {
                   <div
-                    class="min-h-9 px-2 py-1.5 text-right text-sm italic text-slate-500"
+                    class="h-full min-h-9 px-2 py-1.5 text-right text-sm italic text-slate-500"
                     [attr.title]="rollupTitle(column)"
                     [attr.aria-label]="rollupAriaLabel(row.nodeId, column)"
                   >
@@ -202,7 +202,7 @@ interface ConnectorPath {
                   </div>
                 } @else if (isEditingCell(row.nodeId, column)) {
                   <input
-                    class="edit-input min-h-9 w-full min-w-24 max-w-72 field-sizing-content bg-white px-2 py-1.5 text-sm text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                    class="edit-input h-full min-h-9 w-full min-w-24 max-w-72 field-sizing-content bg-white px-2 py-1.5 text-sm text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
                     [class.text-right]="column.kind !== 'input' || column.valueType === 'number'"
                     [value]="cellEditValue(row.nodeId, column)"
                     [attr.aria-label]="cellAriaLabel(row.nodeId, column)"
@@ -216,7 +216,7 @@ interface ConnectorPath {
                 } @else if (column.kind === 'chart') {
                   <div
                     tabindex="0"
-                    class="flex min-h-9 w-44 items-center gap-1.5 px-2 py-1.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                    class="flex h-full min-h-9 w-44 items-center gap-1.5 px-2 py-1.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
                     [class.cell-selected]="isCellSelected(row.nodeId, column)"
                     [attr.aria-label]="chartBarAria(row.nodeId, column)"
                     (pointerdown)="onCellPointerDown(row, column, $event)"
@@ -236,7 +236,7 @@ interface ConnectorPath {
                 } @else {
                   <div
                     tabindex="0"
-                    class="min-h-9 w-full min-w-24 max-w-72 cursor-default truncate px-2 py-1.5 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                    class="h-full min-h-9 w-full min-w-24 max-w-72 cursor-default truncate px-2 py-1.5 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
                     [class.text-right]="column.kind === 'computed' || column.valueType === 'number'"
                     [class.text-slate-700]="!cellHasError(row.nodeId, column)"
                     [class.text-rose-700]="cellHasError(row.nodeId, column)"
