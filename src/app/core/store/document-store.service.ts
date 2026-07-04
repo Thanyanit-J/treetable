@@ -51,7 +51,7 @@ export interface CellRef {
   columnId: string;
 }
 
-/** One click selects; the Inspector edits the selection (CONTEXT.md). */
+/** One click selects; the Details panel edits the selection (CONTEXT.md). */
 export type SelectionV2 =
   | { kind: 'card'; topicId: string }
   | { kind: 'node'; topicId: string; nodeId: string }

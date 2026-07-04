@@ -26,7 +26,7 @@ const MAX_ZOOM = 2;
  * state applied via CSS `zoom`, so tree, table and connectors scale as one
  * surface (ADR-0001); the lattice measures in layout coordinates, so zoom
  * cannot skew alignment or overlays. Card properties are edited by selecting
- * the card (click its root pill or blank area) and using the Inspector.
+ * the card (click its root pill or blank area) and using the Details panel.
  */
 @Component({
   selector: 'app-topic-card',
@@ -156,7 +156,7 @@ export class TopicCardComponent {
   private readonly cardRootRef = viewChild.required<ElementRef<HTMLElement>>('cardRoot');
   private readonly zoomSurfaceRef = viewChild.required<ElementRef<HTMLElement>>('zoomSurface');
 
-  /** Clicking blank card area selects the card for the Inspector. */
+  /** Clicking blank card area selects the card for the Details panel. */
   protected onCardClick(event: MouseEvent): void {
     if (
       event.target === event.currentTarget ||

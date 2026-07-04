@@ -4,8 +4,8 @@ import { DocumentStoreService } from '../../core/store/document-store.service';
 import { TopicEvaluation } from '../../core/engine/formula-evaluator';
 import { CardV2 } from '../../core/model/document.model';
 import { ConfirmDialogComponent } from './ui/confirm-dialog.component';
+import { DetailsPanelComponent } from './details-panel.component';
 import { FormulaSuggestOverlayComponent } from './formula-suggest-overlay.component';
-import { InspectorPanelComponent } from './inspector-panel.component';
 import { TopicCardComponent } from './topic-card.component';
 
 interface PendingDeleteTopic {
@@ -29,8 +29,8 @@ interface Toast {
 }
 
 /**
- * Document shell: slim toolbar, edge-to-edge card rail, Inspector on the
- * right. Clipboard shortcuts (Ctrl/Cmd+C/X/V, Delete) act on the current
+ * Document shell: slim toolbar, edge-to-edge card rail, Details panel
+ * owning the right edge (toggled from the toolbar). Clipboard shortcuts (Ctrl/Cmd+C/X/V, Delete) act on the current
  * selection whenever focus is not inside a text editor.
  */
 @Component({
@@ -40,64 +40,72 @@ interface Toast {
     CdkDragHandle,
     CdkDropList,
     ConfirmDialogComponent,
+    DetailsPanelComponent,
     FormulaSuggestOverlayComponent,
-    InspectorPanelComponent,
     TopicCardComponent,
   ],
   host: {
     '(document:keydown)': 'onKeydown($event)',
   },
   template: `
-    <div class="flex h-dvh flex-col overflow-hidden bg-slate-50">
-      <header
-        class="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-200 bg-white px-2 py-1"
-      >
-        <input
-          class="min-w-0 flex-1 basis-48 cursor-text rounded border border-transparent bg-transparent px-1.5 py-0.5 text-lg font-semibold tracking-tight text-slate-900 transition hover:border-sky-200 focus:border-sky-300 focus-visible:outline-none"
-          [value]="store.title()"
-          aria-label="Document title"
-          (blur)="commitTitle($event)"
-          (keydown.enter)="commitTitleAndBlur($event)"
-          (keydown.escape)="revertTitle($event)"
-        />
-        <div class="flex flex-wrap gap-1">
-          <button
-            type="button"
-            class="rounded bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-600"
-            (click)="store.addTopic()"
-          >
-            + Topic
-          </button>
-          <button
-            type="button"
-            class="toolbar-button"
-            [disabled]="!store.canUndo()"
-            (click)="store.undo()"
-          >
-            Undo
-          </button>
-          <button
-            type="button"
-            class="toolbar-button"
-            [disabled]="!store.canRedo()"
-            (click)="store.redo()"
-          >
-            Redo
-          </button>
-          <button type="button" class="toolbar-button" (click)="exportJson()">Export</button>
-          <label class="toolbar-button cursor-pointer">
-            Import
-            <input
-              class="sr-only"
-              type="file"
-              accept="application/json"
-              (change)="importJson($event)"
-            />
-          </label>
-        </div>
-      </header>
+    <div class="flex h-dvh overflow-hidden bg-slate-50">
+      <div class="flex min-w-0 flex-1 flex-col">
+        <header
+          class="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-200 bg-white px-2 py-1"
+        >
+          <input
+            class="min-w-0 flex-1 basis-48 cursor-text rounded border border-transparent bg-transparent px-1.5 py-0.5 text-lg font-semibold tracking-tight text-slate-900 transition hover:border-sky-200 focus:border-sky-300 focus-visible:outline-none"
+            [value]="store.title()"
+            aria-label="Document title"
+            (blur)="commitTitle($event)"
+            (keydown.enter)="commitTitleAndBlur($event)"
+            (keydown.escape)="revertTitle($event)"
+          />
+          <div class="flex flex-wrap gap-1">
+            <button
+              type="button"
+              class="rounded bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-600"
+              (click)="store.addTopic()"
+            >
+              + Topic
+            </button>
+            <button
+              type="button"
+              class="toolbar-button"
+              [disabled]="!store.canUndo()"
+              (click)="store.undo()"
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              class="toolbar-button"
+              [disabled]="!store.canRedo()"
+              (click)="store.redo()"
+            >
+              Redo
+            </button>
+            <button type="button" class="toolbar-button" (click)="exportJson()">Export</button>
+            <label class="toolbar-button cursor-pointer">
+              Import
+              <input
+                class="sr-only"
+                type="file"
+                accept="application/json"
+                (change)="importJson($event)"
+              />
+            </label>
+            <button
+              type="button"
+              class="toolbar-button"
+              [attr.aria-pressed]="detailsOpen()"
+              (click)="detailsOpen.set(!detailsOpen())"
+            >
+              {{ detailsOpen() ? 'Hide details' : 'Show details' }}
+            </button>
+          </div>
+        </header>
 
-      <div class="flex min-h-0 flex-1">
         <div class="min-w-0 flex-1 overflow-auto" (click)="onBackgroundClick($event)">
           @if (store.cards().length === 0) {
             <section
@@ -141,13 +149,15 @@ interface Toast {
             </div>
           }
         </div>
+      </div>
 
-        <app-inspector-panel
+      @if (detailsOpen()) {
+        <app-details-panel
           (requestDeleteTopic)="queueTopicDelete($event)"
           (requestDeleteNode)="queueNodeDelete($event.topicId, $event.nodeId)"
           (notify)="showToast(false, $event)"
         />
-      </div>
+      }
 
       @if (toast(); as message) {
         <div
@@ -209,6 +219,7 @@ export class DocumentPageComponent {
   protected readonly store = inject(DocumentStoreService);
 
   protected readonly pendingDelete = signal<PendingDelete | null>(null);
+  protected readonly detailsOpen = signal(true);
   protected readonly toast = signal<Toast | null>(null);
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
 

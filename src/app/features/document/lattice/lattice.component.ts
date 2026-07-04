@@ -940,9 +940,9 @@ export class LatticeComponent {
 
   // -------------------------------------------------------------------------
   // Formula editing: while any formula editor is active (a `=` cell editor
-  // here or the Inspector's formula field), headers show Reference Names,
-  // hovering a column highlights it, and clicking a column inserts its
-  // Reference Name at the editor's caret instead of moving the selection.
+  // here or the Details panel's formula field), headers show Reference
+  // Names, hovering a column highlights it, and clicking a column inserts
+  // its Reference Name at the editor's caret instead of moving the selection.
   // -------------------------------------------------------------------------
 
   protected readonly refHoverColumnId = signal<string | null>(null);
@@ -1060,7 +1060,7 @@ export class LatticeComponent {
   // neighbors rearrange in real time; pointer-up commits exactly the
   // previewed move as ONE store call = one undo step. Hit-testing runs
   // against the previewed DOM each move, so the user aims at what they see.
-  // Keyboard path: Move up / Move down in the Inspector.
+  // Keyboard path: Move up / Move down in the Details panel.
   // -------------------------------------------------------------------------
 
   protected readonly draggingPill = signal<LatticePill | null>(null);
