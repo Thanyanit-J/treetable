@@ -840,12 +840,9 @@ export class LatticeComponent {
   }
 
   protected canInsertRef(column: ColumnV2): boolean {
-    const session = this.store.formulaEditor();
-    if (!session || column.kind === 'chart') {
-      return false;
-    }
-    // The edited column itself is not a target (self-reference).
-    return !(session.topicId === this.topic().id && session.columnId === column.id);
+    // Any non-chart column is a target — including the edited column itself
+    // (self-references are legal to type, and clicking must never just blur).
+    return this.store.formulaEditor() !== null && column.kind !== 'chart';
   }
 
   protected isRefTarget(column: ColumnV2): boolean {

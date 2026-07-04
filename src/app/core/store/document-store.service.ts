@@ -67,7 +67,7 @@ export type ClipboardContent =
  */
 export interface FormulaEditorSession {
   topicId: string;
-  /** Column whose formula is being edited (excluded as an insert target). */
+  /** Column whose formula is being edited (re-registers when it changes). */
   columnId: string | null;
   insertRef(refText: string): void;
 }
