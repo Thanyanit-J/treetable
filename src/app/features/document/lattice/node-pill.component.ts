@@ -69,11 +69,10 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
       @if (editing()) {
         <input
           #labelInput
-          class="w-auto min-w-16 bg-transparent px-2 py-1.5 text-center text-sm focus-visible:outline-none"
+          class="min-w-16 field-sizing-content bg-transparent px-2 py-1.5 text-center text-sm focus-visible:outline-none"
           [class.font-semibold]="kind() === 'root'"
           [class.font-medium]="kind() !== 'root'"
           [value]="label()"
-          [attr.size]="inputSize()"
           [attr.aria-label]="ariaLabel()"
           (blur)="commit($event)"
           (keydown.enter)="commitAndBlur($event)"
@@ -212,10 +211,6 @@ export class NodePillComponent {
   protected readonly collapseLabel = computed(() =>
     this.kind() === 'collapsed' ? `Expand ${this.label()}` : `Collapse ${this.label()}`,
   );
-
-  protected inputSize(): number {
-    return Math.max(6, Math.min(48, this.label().length + 2));
-  }
 
   /**
    * Selection-first on the label itself: the pill's selected state is read

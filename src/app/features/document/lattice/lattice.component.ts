@@ -98,7 +98,7 @@ interface ConnectorPath {
                 <div class="min-w-0 flex-1">
                   @if (isEditingHeader(column)) {
                     <input
-                      class="edit-input w-full bg-transparent px-2 py-1.5 text-center text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                      class="edit-input w-full field-sizing-content bg-transparent px-2 py-1.5 text-center text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
                       [value]="column.displayName"
                       [attr.aria-label]="'Rename column ' + column.displayName"
                       (blur)="commitHeaderEdit(column, $event)"
