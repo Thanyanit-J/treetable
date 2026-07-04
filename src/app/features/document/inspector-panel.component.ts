@@ -210,24 +210,25 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                     <button
                       type="button"
                       class="action"
-                      (click)="store.copyNode(topic.id, node.id)"
+                      [disabled]="!store.canMoveNodeAmongSiblings(topic.id, node.id, -1)"
+                      (click)="store.moveNodeAmongSiblings(topic.id, node.id, -1)"
                     >
-                      Copy
+                      Move up
                     </button>
                     <button
                       type="button"
                       class="action"
-                      (click)="store.copyNode(topic.id, node.id, true)"
+                      [disabled]="!store.canMoveNodeAmongSiblings(topic.id, node.id, 1)"
+                      (click)="store.moveNodeAmongSiblings(topic.id, node.id, 1)"
                     >
-                      Cut
+                      Move down
                     </button>
                     <button
                       type="button"
                       class="action"
-                      [disabled]="!canPasteNode()"
-                      (click)="store.pasteNode(topic.id, node.id)"
+                      (click)="store.duplicateNode(topic.id, node.id)"
                     >
-                      Paste as child
+                      Duplicate
                     </button>
                   </div>
                   <button
@@ -581,10 +582,6 @@ export class InspectorPanelComponent {
 
   protected swatchClass(color: AccentColor): string {
     return SWATCH_BY_ACCENT[color];
-  }
-
-  protected canPasteNode(): boolean {
-    return this.store.clipboard()?.kind === 'node';
   }
 
   protected canPasteCells(): boolean {

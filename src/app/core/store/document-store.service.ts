@@ -483,6 +483,60 @@ export class DocumentStoreService {
     });
   }
 
+  /** Reorders a Node one step among its siblings (keyboard path for drag). */
+  moveNodeAmongSiblings(topicId: string, nodeId: string, delta: -1 | 1): void {
+    if (!this.canMoveNodeAmongSiblings(topicId, nodeId, delta)) {
+      return;
+    }
+    const topic = this.topicById(topicId);
+    const located = topic ? findNodeAndParent(topic.children, nodeId) : null;
+    if (!located) {
+      return;
+    }
+    this.moveNode(topicId, nodeId, located.parent?.id ?? null, located.index + delta);
+  }
+
+  canMoveNodeAmongSiblings(topicId: string, nodeId: string, delta: -1 | 1): boolean {
+    const topic = this.topicById(topicId);
+    const located = topic ? findNodeAndParent(topic.children, nodeId) : null;
+    if (!topic || !located) {
+      return false;
+    }
+    const siblings = located.parent ? located.parent.children : topic.children;
+    const next = located.index + delta;
+    return next >= 0 && next < siblings.length;
+  }
+
+  /**
+   * Inserts a deep clone of the Node right after it, with fresh internal ids
+   * and uniquified Reference Names — subtree and Row values included.
+   */
+  duplicateNode(topicId: string, nodeId: string): void {
+    let newNodeId: string | null = null;
+    this.mutate((document) => {
+      const topic = this.findTopic(document, topicId);
+      const located = topic ? findNodeAndParent(topic.children, nodeId) : null;
+      if (!topic || !located) {
+        return;
+      }
+      const taken = new Set<string>();
+      walkNodes(topic.children, (node) => taken.add(node.refName));
+      const clone = structuredClone(located.node);
+      walkNodes([clone], (node) => {
+        node.id = makeId('node');
+        const refName = uniqueRefName(node.refName, taken);
+        taken.add(refName);
+        node.refName = refName;
+      });
+      const siblings = located.parent ? located.parent.children : topic.children;
+      siblings.splice(located.index + 1, 0, clone);
+      newNodeId = clone.id;
+    });
+    if (newNodeId) {
+      this.selectionSignal.set({ kind: 'node', topicId, nodeId: newNodeId });
+    }
+  }
+
   moveCard(cardId: string, toIndex: number): void {
     this.mutate((document) => {
       const fromIndex = document.cards.findIndex((card) => card.id === cardId);

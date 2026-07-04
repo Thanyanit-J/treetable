@@ -26,8 +26,8 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
  * A Node rendered as a pill — the merged-cell of the lattice (ADR-0001).
  * One click selects (Inspector shows details); a second click edits the
  * label; holding and dragging the label (or the grip) moves the Node
- * (CONTEXT.md). Detailed configuration lives in the Inspector, so the
- * menu stays to structure and clipboard actions.
+ * (CONTEXT.md). Everything else lives in the Inspector, so the menu stays
+ * to Duplicate and Delete.
  */
 @Component({
   selector: 'app-node-pill',
@@ -46,7 +46,7 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
         <button
           type="button"
           class="ml-0.5 flex h-5 w-4 shrink-0 cursor-grab touch-none items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-white/70 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover:opacity-100"
-          [attr.aria-label]="'Drag ' + label() + ' (or use Move up / Move down in the menu)'"
+          [attr.aria-label]="'Drag ' + label() + ' (or use Move up / Move down in the Inspector)'"
           (pointerdown)="dragStarted.emit($event)"
         >
           <span aria-hidden="true" class="text-[10px] leading-none">⠿</span>
@@ -113,57 +113,25 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
         cdkMenu
         class="z-50 w-56 rounded-lg border border-slate-200 bg-white p-1 text-sm text-slate-700 shadow-xl"
       >
-        <button
-          cdkMenuItem
-          type="button"
-          class="menu-item"
-          (cdkMenuItemTriggered)="addChild.emit()"
-        >
-          Add child node
-        </button>
-        @if (kind() !== 'root') {
+        @if (kind() === 'root') {
           <button
             cdkMenuItem
             type="button"
             class="menu-item"
-            (cdkMenuItemTriggered)="addSibling.emit()"
+            (cdkMenuItemTriggered)="addChild.emit()"
           >
-            Add node below
+            Add child node
           </button>
+        } @else {
           <button
             cdkMenuItem
             type="button"
             class="menu-item"
-            [disabled]="!canMoveUp()"
-            (cdkMenuItemTriggered)="moveUp.emit()"
+            (cdkMenuItemTriggered)="duplicate.emit()"
           >
-            Move up
-          </button>
-          <button
-            cdkMenuItem
-            type="button"
-            class="menu-item"
-            [disabled]="!canMoveDown()"
-            (cdkMenuItemTriggered)="moveDown.emit()"
-          >
-            Move down
-          </button>
-          <button cdkMenuItem type="button" class="menu-item" (cdkMenuItemTriggered)="cut.emit()">
-            Cut
-          </button>
-          <button cdkMenuItem type="button" class="menu-item" (cdkMenuItemTriggered)="copy.emit()">
-            Copy
+            Duplicate
           </button>
         }
-        <button
-          cdkMenuItem
-          type="button"
-          class="menu-item"
-          [disabled]="!canPaste()"
-          (cdkMenuItemTriggered)="pasteAsChild.emit()"
-        >
-          Paste as child
-        </button>
         <button
           cdkMenuItem
           type="button"
@@ -201,22 +169,14 @@ export class NodePillComponent {
   readonly accent = input<AccentColor | null>(null);
   readonly selected = input(false);
   readonly dropTarget = input(false);
-  readonly canMoveUp = input(false);
-  readonly canMoveDown = input(false);
-  readonly canPaste = input(false);
 
   readonly renamed = output<string>();
   readonly selectedChange = output<void>();
   readonly toggleCollapse = output<void>();
   readonly addChild = output<void>();
-  readonly addSibling = output<void>();
   readonly remove = output<void>();
   readonly dragStarted = output<PointerEvent>();
-  readonly moveUp = output<void>();
-  readonly moveDown = output<void>();
-  readonly cut = output<void>();
-  readonly copy = output<void>();
-  readonly pasteAsChild = output<void>();
+  readonly duplicate = output<void>();
 
   protected readonly editing = signal(false);
   private readonly labelInputRef = viewChild<ElementRef<HTMLInputElement>>('labelInput');

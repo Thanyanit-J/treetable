@@ -158,21 +158,13 @@ interface ConnectorPath {
                   [accent]="pill.node?.accent ?? null"
                   [selected]="isPillSelected(pill)"
                   [dropTarget]="dropPillId() === pill.nodeId"
-                  [canMoveUp]="canMovePill(pill, -1)"
-                  [canMoveDown]="canMovePill(pill, 1)"
-                  [canPaste]="canPasteNode()"
                   (renamed)="renamePill(pill, $event)"
                   (selectedChange)="selectPill(pill)"
                   (toggleCollapse)="store.toggleCollapse(pill.nodeId)"
                   (addChild)="addChild(pill)"
-                  (addSibling)="addSibling(pill)"
                   (remove)="removePill(pill)"
                   (dragStarted)="startPillDrag(pill, $event)"
-                  (moveUp)="movePill(pill, -1)"
-                  (moveDown)="movePill(pill, 1)"
-                  (cut)="cutPill(pill)"
-                  (copy)="copyPill(pill)"
-                  (pasteAsChild)="pasteIntoPill(pill)"
+                  (duplicate)="duplicatePill(pill)"
                 />
               </div>
             }
@@ -275,12 +267,10 @@ interface ConnectorPath {
                   [label]="topic().displayName"
                   [kind]="pill.kind"
                   [selected]="isPillSelected(pill)"
-                  [canPaste]="canPasteNode()"
                   (renamed)="store.renameCard(topic().id, $event)"
                   (selectedChange)="selectPill(pill)"
                   (addChild)="store.addChildNode(topic().id, null)"
                   (remove)="requestDeleteTopic.emit(topic().id)"
-                  (pasteAsChild)="store.pasteNode(topic().id, null)"
                 />
               </div>
             }
@@ -813,10 +803,6 @@ export class LatticeComponent {
     return this.store.clipboard()?.kind === 'cells';
   }
 
-  protected canPasteNode(): boolean {
-    return this.store.clipboard()?.kind === 'node';
-  }
-
   // -------------------------------------------------------------------------
   // Pill actions
   // -------------------------------------------------------------------------
@@ -833,12 +819,6 @@ export class LatticeComponent {
     this.store.addChildNode(this.topic().id, pill.kind === 'root' ? null : pill.nodeId);
   }
 
-  protected addSibling(pill: LatticePill): void {
-    if (pill.kind !== 'root') {
-      this.store.addSiblingNode(this.topic().id, pill.nodeId);
-    }
-  }
-
   protected removePill(pill: LatticePill): void {
     if (pill.kind === 'root') {
       this.requestDeleteTopic.emit(this.topic().id);
@@ -847,20 +827,10 @@ export class LatticeComponent {
     }
   }
 
-  protected cutPill(pill: LatticePill): void {
+  protected duplicatePill(pill: LatticePill): void {
     if (pill.kind !== 'root') {
-      this.store.copyNode(this.topic().id, pill.nodeId, true);
+      this.store.duplicateNode(this.topic().id, pill.nodeId);
     }
-  }
-
-  protected copyPill(pill: LatticePill): void {
-    if (pill.kind !== 'root') {
-      this.store.copyNode(this.topic().id, pill.nodeId, false);
-    }
-  }
-
-  protected pasteIntoPill(pill: LatticePill): void {
-    this.store.pasteNode(this.topic().id, pill.kind === 'root' ? null : pill.nodeId);
   }
 
   // -------------------------------------------------------------------------
@@ -869,7 +839,7 @@ export class LatticeComponent {
   // neighbors rearrange in real time; pointer-up commits exactly the
   // previewed move as ONE store call = one undo step. Hit-testing runs
   // against the previewed DOM each move, so the user aims at what they see.
-  // Keyboard path: Move up / Move down in the pill menu.
+  // Keyboard path: Move up / Move down in the Inspector.
   // -------------------------------------------------------------------------
 
   protected readonly draggingPill = signal<LatticePill | null>(null);
@@ -890,34 +860,6 @@ export class LatticeComponent {
     zoomRatio: number;
     cleanup: () => void;
   } | null = null;
-
-  protected siblingPillsOf(pill: LatticePill): LatticePill[] {
-    return this.lattice()
-      .pills.filter(
-        (candidate) => candidate.kind !== 'root' && candidate.parentPillId === pill.parentPillId,
-      )
-      .sort((a, b) => a.rowStart - b.rowStart);
-  }
-
-  protected canMovePill(pill: LatticePill, delta: number): boolean {
-    if (pill.kind === 'root') {
-      return false;
-    }
-    const siblings = this.siblingPillsOf(pill);
-    const index = siblings.findIndex((candidate) => candidate.nodeId === pill.nodeId);
-    const next = index + delta;
-    return index >= 0 && next >= 0 && next < siblings.length;
-  }
-
-  protected movePill(pill: LatticePill, delta: number): void {
-    if (!this.canMovePill(pill, delta)) {
-      return;
-    }
-    const siblings = this.siblingPillsOf(pill);
-    const index = siblings.findIndex((candidate) => candidate.nodeId === pill.nodeId);
-    const parentId = pill.parentPillId === ROOT_PILL_ID ? null : pill.parentPillId;
-    this.store.moveNode(this.topic().id, pill.nodeId, parentId, index + delta);
-  }
 
   protected startPillDrag(pill: LatticePill, event: PointerEvent): void {
     if (pill.kind === 'root' || event.button !== 0 || this.dragSession || this.columnDragSession) {
@@ -952,7 +894,11 @@ export class LatticeComponent {
       }
     }
 
-    const siblings = this.siblingPillsOf(pill);
+    const siblings = this.lattice()
+      .pills.filter(
+        (candidate) => candidate.kind !== 'root' && candidate.parentPillId === pill.parentPillId,
+      )
+      .sort((a, b) => a.rowStart - b.rowStart);
     const fromIndex = siblings.findIndex((candidate) => candidate.nodeId === pill.nodeId);
     const siblingIds = siblings
       .filter((candidate) => candidate.nodeId !== pill.nodeId)
