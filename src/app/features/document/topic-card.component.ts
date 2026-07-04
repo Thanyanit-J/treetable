@@ -50,10 +50,7 @@ const MAX_CARD_WIDTH = 1600;
       }
       <!-- Chrome strip: reserves space so the ⋯ menu and the page-level drag
            handle sit above the lattice/chart content instead of overlapping it. -->
-      <div
-        class="h-7 shrink-0 border-b border-slate-100"
-        (click)="store.select({ kind: 'card', topicId: topic().id })"
-      ></div>
+      <div class="h-7 shrink-0 border-b border-slate-100"></div>
       <button
         type="button"
         class="absolute right-1 top-1 z-30 flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-2 focus-visible:outline-sky-600"
@@ -172,12 +169,14 @@ export class TopicCardComponent {
   private readonly cardRootRef = viewChild.required<ElementRef<HTMLElement>>('cardRoot');
   private readonly zoomSurfaceRef = viewChild.required<ElementRef<HTMLElement>>('zoomSurface');
 
-  /** Clicking blank card area selects the card for the Details panel. */
+  /**
+   * Clicking anywhere non-interactive in the card selects the card. Every
+   * interactive element here is a native control or carries a tabindex, so
+   * their clicks (which manage selection themselves) are left alone.
+   */
   protected onCardClick(event: MouseEvent): void {
-    if (
-      event.target === event.currentTarget ||
-      event.target === this.zoomSurfaceRef().nativeElement
-    ) {
+    const target = event.target as HTMLElement | null;
+    if (target && !target.closest('button, input, select, textarea, a, [tabindex]')) {
       this.store.select({ kind: 'card', topicId: this.topic().id });
     }
   }
