@@ -41,6 +41,12 @@ const MAX_ZOOM = 2;
       (click)="onCardClick($event)"
       (wheel)="onWheel($event)"
     >
+      <!-- Chrome strip: reserves space so the ⋯ menu and the page-level drag
+           handle sit above the lattice/chart content instead of overlapping it. -->
+      <div
+        class="h-7 shrink-0 border-b border-slate-100"
+        (click)="store.select({ kind: 'card', topicId: topic().id })"
+      ></div>
       <button
         type="button"
         class="absolute right-1 top-1 z-30 flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-2 focus-visible:outline-sky-600"
