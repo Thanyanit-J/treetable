@@ -114,6 +114,7 @@ interface ConnectorPath {
                 role="gridcell"
                 class="z-10 flex items-center px-2 py-1"
                 [class.pr-6]="pill.rowSpan === 1 && pill.kind !== 'root'"
+                [class.opacity-40]="draggingPill()?.nodeId === pill.nodeId"
                 [style.grid-row]="pillGridRow(pill)"
                 [style.grid-column]="pill.depth + 1"
                 [attr.aria-rowspan]="pill.rowSpan > 1 ? pill.rowSpan : null"
@@ -124,6 +125,9 @@ interface ConnectorPath {
                   [kind]="pill.kind"
                   [accent]="pill.node?.accent ?? null"
                   [selected]="selectedNodeId() === pill.nodeId"
+                  [dropTarget]="dropPillId() === pill.nodeId"
+                  [canMoveUp]="canMovePill(pill, -1)"
+                  [canMoveDown]="canMovePill(pill, 1)"
                   (renamed)="renamePill(pill, $event)"
                   (selectedChange)="selectPill(pill)"
                   (toggleCollapse)="store.toggleCollapse(pill.nodeId)"
@@ -132,6 +136,9 @@ interface ConnectorPath {
                   (remove)="removePill(pill)"
                   (setAccent)="setPillAccent(pill, $event)"
                   (editRefName)="editPillRefName(pill)"
+                  (dragStarted)="startPillDrag(pill, $event)"
+                  (moveUp)="movePill(pill, -1)"
+                  (moveDown)="movePill(pill, 1)"
                 />
               </div>
             }
@@ -263,6 +270,14 @@ interface ConnectorPath {
           <path [attr.d]="path.d" fill="none" stroke="var(--color-slate-300)" stroke-width="1.5" />
         }
       </svg>
+
+      @if (dropLineTop() !== null) {
+        <div
+          aria-hidden="true"
+          class="pointer-events-none absolute left-0 right-0 z-20 h-0.5 rounded bg-sky-500"
+          [style.top.px]="dropLineTop()"
+        ></div>
+      }
     </div>
 
     <ng-template #columnMenu>
@@ -459,6 +474,239 @@ export class LatticeComponent {
         ? { kind: 'topic', topicId, entityId: topicId }
         : { kind: 'node', topicId, entityId: pill.nodeId },
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // Drag: reorder among siblings (drop between rows) or re-parent (drop on a
+  // pill). Keyboard path: Move up / Move down in the pill menu.
+  // -------------------------------------------------------------------------
+
+  protected readonly draggingPill = signal<LatticePill | null>(null);
+  protected readonly dropPillId = signal<string | null>(null);
+  protected readonly dropLineTop = signal<number | null>(null);
+
+  private dragSession: {
+    pill: LatticePill;
+    parentId: string | null;
+    fromIndex: number;
+    descendants: ReadonlySet<string>;
+    pillRects: { pill: LatticePill; left: number; top: number; right: number; bottom: number }[];
+    siblingBands: { top: number; bottom: number }[];
+    pendingParentId: string | null;
+    pendingIndex: number | null;
+    cleanup: () => void;
+  } | null = null;
+
+  protected siblingPillsOf(pill: LatticePill): LatticePill[] {
+    return this.lattice()
+      .pills.filter(
+        (candidate) => candidate.kind !== 'root' && candidate.parentPillId === pill.parentPillId,
+      )
+      .sort((a, b) => a.rowStart - b.rowStart);
+  }
+
+  protected canMovePill(pill: LatticePill, delta: number): boolean {
+    if (pill.kind === 'root') {
+      return false;
+    }
+    const siblings = this.siblingPillsOf(pill);
+    const index = siblings.findIndex((candidate) => candidate.nodeId === pill.nodeId);
+    const next = index + delta;
+    return index >= 0 && next >= 0 && next < siblings.length;
+  }
+
+  protected movePill(pill: LatticePill, delta: number): void {
+    if (!this.canMovePill(pill, delta)) {
+      return;
+    }
+    const siblings = this.siblingPillsOf(pill);
+    const index = siblings.findIndex((candidate) => candidate.nodeId === pill.nodeId);
+    this.store.moveNode(this.topic().id, pill.nodeId, this.parentIdOf(pill), index + delta);
+  }
+
+  protected startPillDrag(pill: LatticePill, event: PointerEvent): void {
+    if (pill.kind === 'root' || event.button !== 0 || this.dragSession) {
+      return;
+    }
+    event.preventDefault();
+    const grip = event.target as HTMLElement;
+    grip.setPointerCapture(event.pointerId);
+
+    const root = this.latticeRootRef().nativeElement;
+    const rootRect = root.getBoundingClientRect();
+
+    const descendants = new Set<string>();
+    if (pill.node) {
+      const collect = (children: readonly NodeV2[]): void => {
+        for (const child of children) {
+          descendants.add(child.id);
+          collect(child.children);
+        }
+      };
+      collect(pill.node.children);
+    }
+
+    const pillRects: {
+      pill: LatticePill;
+      left: number;
+      top: number;
+      right: number;
+      bottom: number;
+    }[] = [];
+    for (const candidate of this.lattice().pills) {
+      const element = root.querySelector<HTMLElement>(
+        `[data-pill-id="${CSS.escape(candidate.nodeId)}"]`,
+      );
+      if (!element) {
+        continue;
+      }
+      const rect = element.getBoundingClientRect();
+      pillRects.push({
+        pill: candidate,
+        left: rect.left - rootRect.left,
+        top: rect.top - rootRect.top,
+        right: rect.right - rootRect.left,
+        bottom: rect.bottom - rootRect.top,
+      });
+    }
+
+    const siblings = this.siblingPillsOf(pill);
+    const fromIndex = siblings.findIndex((candidate) => candidate.nodeId === pill.nodeId);
+    const siblingBands = siblings.map((sibling) => {
+      const rect = pillRects.find((candidate) => candidate.pill.nodeId === sibling.nodeId);
+      return { top: rect?.top ?? 0, bottom: rect?.bottom ?? 0 };
+    });
+
+    const onMove = (moveEvent: PointerEvent): void => this.updateDrag(moveEvent, rootRect);
+    const onUp = (): void => this.finishDrag(true);
+    const onCancel = (): void => this.finishDrag(false);
+    const onKeydown = (keyEvent: KeyboardEvent): void => {
+      if (keyEvent.key === 'Escape') {
+        this.finishDrag(false);
+      }
+    };
+    grip.addEventListener('pointermove', onMove);
+    grip.addEventListener('pointerup', onUp);
+    grip.addEventListener('pointercancel', onCancel);
+    document.addEventListener('keydown', onKeydown);
+
+    this.dragSession = {
+      pill,
+      parentId: this.parentIdOf(pill),
+      fromIndex,
+      descendants,
+      pillRects,
+      siblingBands,
+      pendingParentId: null,
+      pendingIndex: null,
+      cleanup: () => {
+        grip.removeEventListener('pointermove', onMove);
+        grip.removeEventListener('pointerup', onUp);
+        grip.removeEventListener('pointercancel', onCancel);
+        document.removeEventListener('keydown', onKeydown);
+      },
+    };
+    this.draggingPill.set(pill);
+  }
+
+  private updateDrag(event: PointerEvent, rootRect: DOMRect): void {
+    const session = this.dragSession;
+    if (!session) {
+      return;
+    }
+    const x = event.clientX - rootRect.left;
+    const y = event.clientY - rootRect.top;
+
+    // Re-parent: hovering another pill (never self, a descendant, or the current parent-as-noop).
+    const hit = session.pillRects.find(
+      (candidate) =>
+        candidate.pill.nodeId !== session.pill.nodeId &&
+        !session.descendants.has(candidate.pill.nodeId) &&
+        x >= candidate.left &&
+        x <= candidate.right &&
+        y >= candidate.top &&
+        y <= candidate.bottom,
+    );
+    if (hit) {
+      this.dropPillId.set(hit.pill.nodeId);
+      this.dropLineTop.set(null);
+      session.pendingParentId = hit.pill.nodeId === ROOT_PILL_ID ? null : hit.pill.nodeId;
+      session.pendingIndex = Number.MAX_SAFE_INTEGER;
+      return;
+    }
+
+    // Reorder among current siblings: insertion point from pointer Y.
+    let rawIndex = 0;
+    for (const band of session.siblingBands) {
+      if (y > (band.top + band.bottom) / 2) {
+        rawIndex += 1;
+      }
+    }
+    const adjustedIndex = rawIndex > session.fromIndex ? rawIndex - 1 : rawIndex;
+    if (adjustedIndex === session.fromIndex) {
+      this.clearDropIndicators();
+      session.pendingParentId = null;
+      session.pendingIndex = null;
+      return;
+    }
+
+    const lineTop =
+      rawIndex === 0
+        ? (session.siblingBands[0]?.top ?? 0) - 3
+        : (session.siblingBands[rawIndex - 1]?.bottom ?? 0) + 1;
+    this.dropPillId.set(null);
+    this.dropLineTop.set(lineTop);
+    session.pendingParentId = session.parentId;
+    session.pendingIndex = adjustedIndex;
+  }
+
+  private finishDrag(apply: boolean): void {
+    const session = this.dragSession;
+    if (!session) {
+      return;
+    }
+    session.cleanup();
+    this.dragSession = null;
+    this.draggingPill.set(null);
+
+    const dropPillId = this.dropPillId();
+    this.clearDropIndicators();
+
+    if (!apply || (session.pendingIndex === null && dropPillId === null)) {
+      return;
+    }
+
+    if (dropPillId !== null) {
+      const targetParentId = dropPillId === ROOT_PILL_ID ? null : dropPillId;
+      this.store.moveNode(
+        this.topic().id,
+        session.pill.nodeId,
+        targetParentId,
+        Number.MAX_SAFE_INTEGER,
+      );
+      if (targetParentId) {
+        this.store.expandNode(targetParentId);
+      }
+      return;
+    }
+
+    if (session.pendingIndex !== null) {
+      this.store.moveNode(
+        this.topic().id,
+        session.pill.nodeId,
+        session.pendingParentId,
+        session.pendingIndex,
+      );
+    }
+  }
+
+  private clearDropIndicators(): void {
+    this.dropPillId.set(null);
+    this.dropLineTop.set(null);
+  }
+
+  private parentIdOf(pill: LatticePill): string | null {
+    return pill.parentPillId === ROOT_PILL_ID ? null : pill.parentPillId;
   }
 
   protected editColumnRefName(column: ColumnV2): void {

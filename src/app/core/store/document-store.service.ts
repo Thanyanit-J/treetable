@@ -14,6 +14,7 @@ import {
   findNodeAndParent,
   isLeaf,
   makeId,
+  nodeExists,
   walkNodes,
 } from '../model/document.model';
 import {
@@ -106,6 +107,17 @@ export class DocumentStoreService {
       } else {
         next.add(nodeId);
       }
+      return next;
+    });
+  }
+
+  expandNode(nodeId: string): void {
+    this.collapsedSignal.update((collapsed) => {
+      if (!collapsed.has(nodeId)) {
+        return collapsed;
+      }
+      const next = new Set(collapsed);
+      next.delete(nodeId);
       return next;
     });
   }
@@ -360,6 +372,103 @@ export class DocumentStoreService {
         located.node.displayName = next;
       }
     });
+  }
+
+  /**
+   * Moves a Node (with its whole subtree and Rows) to `targetParentId`
+   * (null = top level) at `targetIndex`, counted after the node's removal.
+   * Dropping into your own subtree is refused. A data-bearing Leaf that
+   * becomes the target parent spawns a carrier child for its values first —
+   * all in one undo step.
+   */
+  moveNode(
+    topicId: string,
+    nodeId: string,
+    targetParentId: string | null,
+    targetIndex: number,
+  ): void {
+    // Validate against the current document first: a refused move must not
+    // push a no-op history snapshot.
+    const currentTopic = this.findTopic(this.documentSignal(), topicId);
+    const currentLocated = currentTopic ? findNodeAndParent(currentTopic.children, nodeId) : null;
+    if (!currentTopic || !currentLocated) {
+      return;
+    }
+    if (
+      targetParentId !== null &&
+      (targetParentId === nodeId ||
+        nodeExists(currentLocated.node.children, targetParentId) ||
+        !findNodeAndParent(currentTopic.children, targetParentId))
+    ) {
+      return;
+    }
+
+    this.mutate((document) => {
+      const topic = this.findTopic(document, topicId);
+      if (!topic) {
+        return;
+      }
+      const located = findNodeAndParent(topic.children, nodeId);
+      if (!located) {
+        return;
+      }
+
+      const fromSiblings = located.parent ? located.parent.children : topic.children;
+      fromSiblings.splice(located.index, 1);
+
+      let targetSiblings = topic.children;
+      if (targetParentId !== null) {
+        const target = findNodeAndParent(topic.children, targetParentId);
+        if (!target) {
+          // Reinsert where it was — target vanished mid-operation.
+          fromSiblings.splice(located.index, 0, located.node);
+          return;
+        }
+        this.ensureCanHostChildren(topic, target.node);
+        targetSiblings = target.node.children;
+      }
+
+      const index = Math.max(0, Math.min(targetIndex, targetSiblings.length));
+      targetSiblings.splice(index, 0, located.node);
+    });
+  }
+
+  moveCard(cardId: string, toIndex: number): void {
+    this.mutate((document) => {
+      const fromIndex = document.cards.findIndex((card) => card.id === cardId);
+      if (
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        toIndex >= document.cards.length ||
+        fromIndex === toIndex
+      ) {
+        return;
+      }
+      const [card] = document.cards.splice(fromIndex, 1);
+      if (card) {
+        document.cards.splice(toIndex, 0, card);
+      }
+    });
+  }
+
+  /**
+   * Prepares a Node to receive children: a data-bearing Leaf moves its
+   * values into an auto-created carrier child so no data is destroyed
+   * (see CONTEXT.md relationships).
+   */
+  private ensureCanHostChildren(topic: TopicCardV2, parent: NodeV2): void {
+    if (parent.children.length > 0) {
+      return;
+    }
+    if (Object.values(parent.values).some((raw) => raw.trim().length > 0)) {
+      const carrier = createNode(
+        parent.displayName,
+        this.nextNodeRefName(topic, parent.displayName),
+      );
+      carrier.values = parent.values;
+      parent.children.push(carrier);
+    }
+    parent.values = {};
   }
 
   setNodeAccent(topicId: string, nodeId: string, accent: AccentColor | null): void {

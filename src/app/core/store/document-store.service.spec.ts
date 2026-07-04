@@ -180,6 +180,58 @@ describe('DocumentStoreService', () => {
     expect(store.title()).toBe('Changed');
   });
 
+  describe('moveNode / moveCard', () => {
+    it('reorders siblings with post-removal index semantics', () => {
+      const cash = wealth().children.find((node) => node.refName === 'Cash')!;
+      store.moveNode(wealth().id, cash.id, null, 0);
+      expect(wealth().children.map((node) => node.refName)).toEqual(['Cash', 'Savings']);
+
+      store.undo();
+      expect(wealth().children.map((node) => node.refName)).toEqual(['Savings', 'Cash']);
+    });
+
+    it('re-parents a node (with subtree) by appending to the target', () => {
+      const cash = wealth().children.find((node) => node.refName === 'Cash')!;
+      store.moveNode(wealth().id, cash.id, savings().id, Number.MAX_SAFE_INTEGER);
+
+      expect(wealth().children.map((node) => node.refName)).toEqual(['Savings']);
+      expect(savings().children.map((node) => node.refName)).toEqual(['BankA', 'BankB', 'Cash']);
+    });
+
+    it('refuses moves into the node’s own subtree without polluting history', () => {
+      const before = store.canUndo();
+      store.moveNode(wealth().id, savings().id, bankA().id, 0);
+
+      expect(wealth().children.map((node) => node.refName)).toEqual(['Savings', 'Cash']);
+      expect(store.canUndo()).toBe(before);
+    });
+
+    it('spawns a carrier child when dropping onto a data-bearing Leaf — atomically', () => {
+      const column = amountColumn();
+      const cash = wealth().children.find((node) => node.refName === 'Cash')!;
+      store.moveNode(wealth().id, bankA().id, cash.id, Number.MAX_SAFE_INTEGER);
+
+      const cashAfter = wealth().children.find((node) => node.refName === 'Cash')!;
+      expect(cashAfter.values).toEqual({});
+      expect(cashAfter.children.map((node) => node.displayName)).toEqual(['Cash', 'Bank A']);
+      expect(cashAfter.children[0]!.values[column.id]).toBe('5000');
+
+      store.undo();
+      const cashReverted = wealth().children.find((node) => node.refName === 'Cash')!;
+      expect(cashReverted.children).toHaveLength(0);
+      expect(cashReverted.values[column.id]).toBe('5000');
+      expect(savings().children.map((node) => node.refName)).toEqual(['BankA', 'BankB']);
+    });
+
+    it('reorders topic cards', () => {
+      store.moveCard(store.cards()[1]!.id, 0);
+      expect(store.cards().map((card) => card.refName)).toEqual(['Business', 'Wealth']);
+
+      store.undo();
+      expect(store.cards().map((card) => card.refName)).toEqual(['Wealth', 'Business']);
+    });
+  });
+
   describe('setRefName', () => {
     const REF_FIXTURE = {
       version: 2,

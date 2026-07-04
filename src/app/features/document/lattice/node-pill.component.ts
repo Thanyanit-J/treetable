@@ -34,9 +34,21 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
     <div
       class="group relative z-10 inline-flex w-fit items-center gap-0.5 border pr-1 shadow-sm"
       [class]="shellClass()"
+      [class.ring-2]="dropTarget()"
+      [class.ring-emerald-500]="dropTarget()"
       [cdkContextMenuTriggerFor]="actionsMenu"
       [attr.data-pill-id]="pillId()"
     >
+      @if (kind() !== 'root') {
+        <button
+          type="button"
+          class="ml-0.5 flex h-5 w-4 shrink-0 cursor-grab touch-none items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-white/70 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover:opacity-100"
+          [attr.aria-label]="'Drag ' + label() + ' (or use Move up / Move down in the menu)'"
+          (pointerdown)="dragStarted.emit($event)"
+        >
+          <span aria-hidden="true" class="text-[10px] leading-none">⠿</span>
+        </button>
+      }
       @if (kind() !== 'leaf') {
         <button
           type="button"
@@ -96,6 +108,24 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
             (cdkMenuItemTriggered)="addSibling.emit()"
           >
             Add node below
+          </button>
+          <button
+            cdkMenuItem
+            type="button"
+            class="menu-item"
+            [disabled]="!canMoveUp()"
+            (cdkMenuItemTriggered)="moveUp.emit()"
+          >
+            Move up
+          </button>
+          <button
+            cdkMenuItem
+            type="button"
+            class="menu-item"
+            [disabled]="!canMoveDown()"
+            (cdkMenuItemTriggered)="moveDown.emit()"
+          >
+            Move down
           </button>
           <div class="my-1 flex items-center gap-1 px-2 py-1" role="group" aria-label="Node color">
             @for (color of accentColors; track color) {
@@ -160,6 +190,9 @@ export class NodePillComponent {
   readonly kind = input.required<PillKind>();
   readonly accent = input<AccentColor | null>(null);
   readonly selected = input(false);
+  readonly dropTarget = input(false);
+  readonly canMoveUp = input(false);
+  readonly canMoveDown = input(false);
 
   readonly renamed = output<string>();
   readonly selectedChange = output<void>();
@@ -169,6 +202,9 @@ export class NodePillComponent {
   readonly remove = output<void>();
   readonly setAccent = output<AccentColor | null>();
   readonly editRefName = output<void>();
+  readonly dragStarted = output<PointerEvent>();
+  readonly moveUp = output<void>();
+  readonly moveDown = output<void>();
 
   protected readonly accentColors = ACCENT_COLORS;
   protected readonly draft = signal<string | null>(null);

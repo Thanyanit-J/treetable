@@ -1,7 +1,8 @@
+import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList } from '@angular/cdk/drag-drop';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DocumentStoreService, RefNameTarget } from '../../core/store/document-store.service';
 import { TopicEvaluation } from '../../core/engine/formula-evaluator';
-import { findNodeAndParent } from '../../core/model/document.model';
+import { CardV2, findNodeAndParent } from '../../core/model/document.model';
 import { ConfirmDialogComponent } from './ui/confirm-dialog.component';
 import { RefNameDialogComponent } from './ui/ref-name-dialog.component';
 import { TopicCardComponent } from './topic-card.component';
@@ -28,7 +29,14 @@ interface Toast {
 
 @Component({
   selector: 'app-document-page',
-  imports: [ConfirmDialogComponent, RefNameDialogComponent, TopicCardComponent],
+  imports: [
+    CdkDrag,
+    CdkDragHandle,
+    CdkDropList,
+    ConfirmDialogComponent,
+    RefNameDialogComponent,
+    TopicCardComponent,
+  ],
   host: {
     '(document:keydown)': 'onKeydown($event)',
   },
@@ -96,16 +104,31 @@ interface Toast {
           </button>
         </section>
       } @else {
-        <div class="flex items-start gap-4 overflow-x-auto pb-4">
+        <div
+          cdkDropList
+          cdkDropListOrientation="horizontal"
+          class="flex items-start gap-4 overflow-x-auto pb-4"
+          (cdkDropListDropped)="onCardDrop($event)"
+        >
           @for (card of store.cards(); track card.id) {
-            <app-topic-card
-              [topic]="card"
-              [evaluation]="evaluationFor(card.id)"
-              (requestDeleteTopic)="queueTopicDelete($event)"
-              (requestDeleteNode)="queueNodeDelete($event.topicId, $event.nodeId)"
-              (requestEditRefName)="openRefNameDialog($event)"
-              (notify)="showToast(false, $event)"
-            />
+            <div cdkDrag [cdkDragData]="card" class="group/card relative shrink-0">
+              <button
+                cdkDragHandle
+                type="button"
+                class="absolute right-2 top-2 z-20 flex h-6 w-6 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/card:opacity-100"
+                [attr.aria-label]="'Drag topic ' + card.displayName"
+              >
+                <span aria-hidden="true">⠿</span>
+              </button>
+              <app-topic-card
+                [topic]="card"
+                [evaluation]="evaluationFor(card.id)"
+                (requestDeleteTopic)="queueTopicDelete($event)"
+                (requestDeleteNode)="queueNodeDelete($event.topicId, $event.nodeId)"
+                (requestEditRefName)="openRefNameDialog($event)"
+                (notify)="showToast(false, $event)"
+              />
+            </div>
           }
         </div>
       }
@@ -186,6 +209,13 @@ export class DocumentPageComponent {
 
   protected evaluationFor(cardId: string): TopicEvaluation {
     return this.evaluations().get(cardId) ?? this.emptyEvaluation;
+  }
+
+  protected onCardDrop(event: CdkDragDrop<unknown>): void {
+    const card = event.item.data as CardV2 | undefined;
+    if (card && event.previousIndex !== event.currentIndex) {
+      this.store.moveCard(card.id, event.currentIndex);
+    }
   }
 
   // ---------------------------------------------------------------------------
