@@ -3,6 +3,7 @@ import { parseExpressionSource, printExpression, transformRefPaths } from '../en
 import { evaluateDocument, resolveRefBindings } from '../engine/formula-evaluator';
 import {
   AccentColor,
+  ChartType,
   ColumnV2,
   DocumentV2,
   ImportResult,
@@ -593,8 +594,97 @@ export class DocumentStoreService {
     this.mutate((document) => {
       const topic = this.findTopic(document, topicId);
       const column = topic?.columns.find((candidate) => candidate.id === columnId);
-      if (column) {
+      if (column && column.kind !== 'chart') {
         column.rollup = rollup;
+      }
+    });
+  }
+
+  /**
+   * Turns a column into a bar Chart Column visualizing `sourceRefName`
+   * (same Topic), or back into an input column when null.
+   */
+  setColumnChart(topicId: string, columnId: string, sourceRefName: string | null): void {
+    // Validate first — a refused conversion must not pollute undo history.
+    const currentTopic = this.findTopic(this.documentSignal(), topicId);
+    const currentColumn = currentTopic?.columns.find((candidate) => candidate.id === columnId);
+    if (!currentTopic || !currentColumn) {
+      return;
+    }
+    if (sourceRefName !== null) {
+      const source = currentTopic.columns.find((candidate) => candidate.refName === sourceRefName);
+      if (!source || source.id === columnId || source.kind === 'chart') {
+        return;
+      }
+    }
+
+    this.mutate((document) => {
+      const topic = this.findTopic(document, topicId);
+      const column = topic?.columns.find((candidate) => candidate.id === columnId);
+      if (!column) {
+        return;
+      }
+      if (sourceRefName === null) {
+        column.kind = 'input';
+        column.chartSource = null;
+        return;
+      }
+      column.kind = 'chart';
+      column.chartSource = sourceRefName;
+      column.expression = null;
+      column.rollup = 'none';
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Chart Panel
+  // -------------------------------------------------------------------------
+
+  addChart(topicId: string, type: ChartType): void {
+    const topic = this.findTopic(this.documentSignal(), topicId);
+    const defaultColumn = topic?.columns.find((column) => column.kind !== 'chart');
+    if (!topic || !defaultColumn) {
+      return;
+    }
+    this.mutate((document) => {
+      const draftTopic = this.findTopic(document, topicId);
+      if (!draftTopic) {
+        return;
+      }
+      draftTopic.charts = [
+        ...(draftTopic.charts ?? []),
+        { id: makeId('chart'), type, columns: [defaultColumn.refName] },
+      ];
+    });
+  }
+
+  removeChart(topicId: string, chartId: string): void {
+    this.mutate((document) => {
+      const topic = this.findTopic(document, topicId);
+      if (topic) {
+        topic.charts = (topic.charts ?? []).filter((chart) => chart.id !== chartId);
+      }
+    });
+  }
+
+  /** Adds or removes a series column; a chart always keeps at least one. */
+  toggleChartColumn(topicId: string, chartId: string, columnRefName: string): void {
+    this.mutate((document) => {
+      const topic = this.findTopic(document, topicId);
+      const chart = topic?.charts?.find((candidate) => candidate.id === chartId);
+      if (!topic || !chart) {
+        return;
+      }
+      if (chart.columns.includes(columnRefName)) {
+        if (chart.columns.length > 1) {
+          chart.columns = chart.columns.filter((ref) => ref !== columnRefName);
+        }
+        return;
+      }
+      if (
+        topic.columns.some((column) => column.refName === columnRefName && column.kind !== 'chart')
+      ) {
+        chart.columns = [...chart.columns, columnRefName];
       }
     });
   }
@@ -690,6 +780,18 @@ export class DocumentStoreService {
           if (rewritten !== undefined) {
             column.expression = rewritten;
           }
+        }
+      }
+
+      // Chart Columns and Chart Panel configs bind to columns by Reference Name too.
+      if (target.kind === 'column') {
+        for (const column of draftTopic.columns) {
+          if (column.kind === 'chart' && column.chartSource === currentRefName) {
+            column.chartSource = nextRefName;
+          }
+        }
+        for (const chart of draftTopic.charts ?? []) {
+          chart.columns = chart.columns.map((ref) => (ref === currentRefName ? nextRefName : ref));
         }
       }
     });

@@ -9,7 +9,7 @@
  * expressions). Evaluated values are always derived, never persisted.
  */
 
-export type ColumnKind = 'input' | 'computed';
+export type ColumnKind = 'input' | 'computed' | 'chart';
 export type ColumnValueType = 'number' | 'text';
 export type RollupMode = 'none' | 'sum';
 
@@ -28,6 +28,8 @@ export interface ColumnV2 {
   /** Source text including the leading `=`; null unless kind is 'computed'. */
   expression: string | null;
   rollup: RollupMode;
+  /** Reference Name of the column a Chart Column visualizes; null unless kind is 'chart'. */
+  chartSource?: string | null;
 }
 
 export interface NodeV2 {
@@ -41,6 +43,15 @@ export interface NodeV2 {
   values: Record<string, string>;
 }
 
+export type ChartType = 'bar' | 'pie';
+
+export interface ChartConfigV2 {
+  id: string;
+  type: ChartType;
+  /** Column Reference Names (same Topic) charted over the Leaves; pie uses the first. */
+  columns: string[];
+}
+
 export interface TopicCardV2 {
   kind: 'topic';
   id: string;
@@ -49,6 +60,8 @@ export interface TopicCardV2 {
   displayName: string;
   columns: ColumnV2[];
   children: NodeV2[];
+  /** Charts shown in the card's Chart Panel. */
+  charts?: ChartConfigV2[];
 }
 
 export type CardV2 = TopicCardV2;
@@ -91,6 +104,7 @@ export function createInputColumn(displayName: string, refName: string): ColumnV
     valueType: 'number',
     expression: null,
     rollup: 'none',
+    chartSource: null,
   };
 }
 

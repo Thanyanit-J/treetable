@@ -15,6 +15,7 @@ import {
 import {
   TopicEvaluation,
   formatNumericValue,
+  leafNumericValue,
   rollupSum,
 } from '../../../core/engine/formula-evaluator';
 import {
@@ -89,6 +90,11 @@ interface ConnectorPath {
                     {{ column.refName }}
                     @if (column.kind === 'computed') {
                       <span [attr.title]="column.expression"> · ƒ</span>
+                    }
+                    @if (column.kind === 'chart') {
+                      <span [attr.title]="'Bar chart of ' + column.chartSource">
+                        · ▮ {{ column.chartSource }}</span
+                      >
                     }
                   </div>
                 </div>
@@ -176,6 +182,23 @@ interface ConnectorPath {
                     (keydown.enter)="commitCellAndBlur(row.nodeId, column, $event)"
                     (keydown.escape)="revertInput($event, inputCellRaw(row.nodeId, column))"
                   />
+                } @else if (column.kind === 'chart') {
+                  <div
+                    class="flex min-h-9 w-44 items-center gap-1.5 px-2 py-1.5"
+                    [attr.aria-label]="chartBarAria(row.nodeId, column)"
+                  >
+                    <div class="h-3 flex-1 overflow-hidden rounded-sm bg-slate-100">
+                      <div
+                        class="h-full rounded-sm"
+                        [class.bg-sky-400]="!chartBarNegative(row.nodeId, column)"
+                        [class.bg-rose-400]="chartBarNegative(row.nodeId, column)"
+                        [style.width.%]="chartBarPercent(row.nodeId, column)"
+                      ></div>
+                    </div>
+                    <span class="w-14 shrink-0 text-right text-[10px] tabular-nums text-slate-400">
+                      {{ chartBarLabel(row.nodeId, column) }}
+                    </span>
+                  </div>
                 } @else {
                   <input
                     class="min-h-9 w-full min-w-24 max-w-72 field-sizing-content bg-transparent px-2 py-1.5 text-right text-sm"
@@ -302,14 +325,29 @@ interface ConnectorPath {
           >
             Insert column right
           </button>
-          <button
-            cdkMenuItem
-            type="button"
-            class="menu-item"
-            (cdkMenuItemTriggered)="toggleRollup(column)"
-          >
-            {{ column.rollup === 'sum' ? 'Remove sum rollup' : 'Sum rollup' }}
+          @if (column.kind !== 'chart') {
+            <button
+              cdkMenuItem
+              type="button"
+              class="menu-item"
+              (cdkMenuItemTriggered)="toggleRollup(column)"
+            >
+              {{ column.rollup === 'sum' ? 'Remove sum rollup' : 'Sum rollup' }}
+            </button>
+          }
+          <button cdkMenuItem type="button" class="menu-item" [cdkMenuTriggerFor]="chartSourceMenu">
+            {{ column.kind === 'chart' ? 'Change chart source…' : 'Bar chart of…' }}
           </button>
+          @if (column.kind === 'chart') {
+            <button
+              cdkMenuItem
+              type="button"
+              class="menu-item"
+              (cdkMenuItemTriggered)="store.setColumnChart(topic().id, column.id, null)"
+            >
+              Remove chart
+            </button>
+          }
           <button
             cdkMenuItem
             type="button"
@@ -326,6 +364,29 @@ interface ConnectorPath {
           >
             Delete column
           </button>
+        </div>
+      }
+    </ng-template>
+
+    <ng-template #chartSourceMenu>
+      @if (menuColumn(); as column) {
+        <div
+          cdkMenu
+          class="z-50 w-56 rounded-lg border border-slate-200 bg-white p-1 text-sm text-slate-700 shadow-xl"
+        >
+          @for (source of chartSourceOptions(column); track source.id) {
+            <button
+              cdkMenuItem
+              type="button"
+              class="menu-item"
+              (cdkMenuItemTriggered)="store.setColumnChart(topic().id, column.id, source.refName)"
+            >
+              {{ source.displayName }}
+              <span class="ml-1 font-mono text-[10px] text-slate-400">{{ source.refName }}</span>
+            </button>
+          } @empty {
+            <div class="px-3 py-2 text-sm text-slate-400">No source columns available</div>
+          }
         </div>
       }
     </ng-template>
@@ -824,6 +885,62 @@ export class LatticeComponent {
       return;
     }
     this.store.setCellValue(this.topic().id, nodeId, column.id, value);
+  }
+
+  // Chart Columns --------------------------------------------------------------
+
+  protected chartSourceOptions(column: ColumnV2): ColumnV2[] {
+    return this.topic().columns.filter(
+      (candidate) => candidate.id !== column.id && candidate.kind !== 'chart',
+    );
+  }
+
+  private chartSourceColumn(column: ColumnV2): ColumnV2 | null {
+    return (
+      this.topic().columns.find((candidate) => candidate.refName === column.chartSource) ?? null
+    );
+  }
+
+  private chartValue(nodeId: string, column: ColumnV2): number | null {
+    const source = this.chartSourceColumn(column);
+    const leaf = this.findNode(nodeId);
+    if (!source || !leaf) {
+      return null;
+    }
+    return leafNumericValue(source, leaf, this.evaluation());
+  }
+
+  protected chartBarPercent(nodeId: string, column: ColumnV2): number {
+    const source = this.chartSourceColumn(column);
+    const value = this.chartValue(nodeId, column);
+    if (!source || value === null) {
+      return 0;
+    }
+    let max = 0;
+    for (const leaf of collectLeaves(this.topic().children)) {
+      const leafValue = leafNumericValue(source, leaf, this.evaluation());
+      if (leafValue !== null) {
+        max = Math.max(max, Math.abs(leafValue));
+      }
+    }
+    if (max <= 0) {
+      return 0;
+    }
+    return Math.min(100, (Math.abs(value) / max) * 100);
+  }
+
+  protected chartBarNegative(nodeId: string, column: ColumnV2): boolean {
+    return (this.chartValue(nodeId, column) ?? 0) < 0;
+  }
+
+  protected chartBarLabel(nodeId: string, column: ColumnV2): string {
+    const value = this.chartValue(nodeId, column);
+    return value === null ? '—' : formatNumericValue(value);
+  }
+
+  protected chartBarAria(nodeId: string, column: ColumnV2): string {
+    const node = this.findNode(nodeId);
+    return `${column.displayName} bar for ${node?.displayName ?? 'row'}: ${this.chartBarLabel(nodeId, column)}`;
   }
 
   // Rollups -------------------------------------------------------------------

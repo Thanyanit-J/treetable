@@ -232,6 +232,62 @@ describe('DocumentStoreService', () => {
     });
   });
 
+  describe('chart columns', () => {
+    it('converts a column to a bar chart and back, guarding invalid sources', () => {
+      const rate = wealth().columns.find((column) => column.refName === '$Rate')!;
+      store.setColumnChart(wealth().id, rate.id, '$Amount');
+      expect(wealth().columns.find((column) => column.id === rate.id)).toMatchObject({
+        kind: 'chart',
+        chartSource: '$Amount',
+        rollup: 'none',
+      });
+
+      // A chart cannot source another chart column.
+      const yieldColumn = wealth().columns.find((column) => column.refName === '$Yield')!;
+      store.setColumnChart(wealth().id, yieldColumn.id, '$Rate');
+      expect(wealth().columns.find((column) => column.id === yieldColumn.id)!.kind).toBe(
+        'computed',
+      );
+
+      store.setColumnChart(wealth().id, rate.id, null);
+      expect(wealth().columns.find((column) => column.id === rate.id)!.kind).toBe('input');
+
+      store.undo();
+      store.undo();
+      expect(wealth().columns.find((column) => column.id === rate.id)!.kind).toBe('input');
+    });
+
+    it('keeps chartSource in sync with column Reference Name edits', () => {
+      const rate = wealth().columns.find((column) => column.refName === '$Rate')!;
+      store.setColumnChart(wealth().id, rate.id, '$Amount');
+
+      const amount = amountColumn();
+      store.setRefName({ kind: 'column', topicId: wealth().id, entityId: amount.id }, '$Cash');
+      expect(wealth().columns.find((column) => column.id === rate.id)!.chartSource).toBe('$Cash');
+    });
+
+    it('manages Chart Panel configs and keeps them in sync with renames', () => {
+      store.addChart(wealth().id, 'bar');
+      const chartId = wealth().charts![0]!.id;
+      expect(wealth().charts![0]!.columns).toEqual(['$Amount']);
+
+      store.toggleChartColumn(wealth().id, chartId, '$Rate');
+      expect(wealth().charts![0]!.columns).toEqual(['$Amount', '$Rate']);
+
+      // A chart always keeps at least one column.
+      store.toggleChartColumn(wealth().id, chartId, '$Rate');
+      store.toggleChartColumn(wealth().id, chartId, '$Amount');
+      expect(wealth().charts![0]!.columns).toEqual(['$Amount']);
+
+      const amount = amountColumn();
+      store.setRefName({ kind: 'column', topicId: wealth().id, entityId: amount.id }, '$Cash');
+      expect(wealth().charts![0]!.columns).toEqual(['$Cash']);
+
+      store.removeChart(wealth().id, chartId);
+      expect(wealth().charts).toEqual([]);
+    });
+  });
+
   describe('setRefName', () => {
     const REF_FIXTURE = {
       version: 2,

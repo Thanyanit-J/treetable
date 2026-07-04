@@ -11,6 +11,7 @@ import {
 import { TopicEvaluation } from '../../core/engine/formula-evaluator';
 import { TopicCardV2 } from '../../core/model/document.model';
 import { RefNameTarget } from '../../core/store/document-store.service';
+import { ChartPanelComponent } from './chart-panel.component';
 import { LatticeComponent } from './lattice/lattice.component';
 
 const ZOOM_LEVELS = [0.25, 0.33, 0.5, 0.67, 0.8, 1, 1.25, 1.5, 2] as const;
@@ -24,13 +25,22 @@ const ZOOM_LEVELS = [0.25, 0.33, 0.5, 0.67, 0.8, 1, 1.25, 1.5, 2] as const;
  */
 @Component({
   selector: 'app-topic-card',
-  imports: [LatticeComponent],
+  imports: [ChartPanelComponent, LatticeComponent],
   template: `
     <article
       #cardRoot
       class="w-max max-w-full shrink-0 rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm"
     >
-      <div class="mb-2 mr-8 flex items-center justify-end gap-1" role="group" aria-label="Zoom">
+      <div class="mb-2 mr-8 flex items-center justify-end gap-1">
+        <button
+          type="button"
+          class="zoom-button"
+          [attr.aria-expanded]="showCharts()"
+          (click)="showCharts.set(!showCharts())"
+        >
+          Charts{{ chartCount() > 0 ? ' (' + chartCount() + ')' : '' }}
+        </button>
+        <span class="mx-1 h-4 w-px bg-slate-200" aria-hidden="true"></span>
         <button type="button" class="zoom-button" (click)="fitToCard()">Fit</button>
         <button
           type="button"
@@ -72,6 +82,10 @@ const ZOOM_LEVELS = [0.25, 0.33, 0.5, 0.67, 0.8, 1, 1.25, 1.5, 2] as const;
           />
         </div>
       </div>
+
+      @if (showCharts()) {
+        <app-chart-panel [topic]="topic()" [evaluation]="evaluation()" />
+      }
     </article>
   `,
   styles: `
@@ -109,6 +123,8 @@ export class TopicCardComponent {
 
   protected readonly zoom = signal(1);
   protected readonly zoomPercent = computed(() => `${Math.round(this.zoom() * 100)}%`);
+  protected readonly showCharts = signal(false);
+  protected readonly chartCount = computed(() => this.topic().charts?.length ?? 0);
 
   private readonly cardRootRef = viewChild.required<ElementRef<HTMLElement>>('cardRoot');
   private readonly zoomSurfaceRef = viewChild.required<ElementRef<HTMLElement>>('zoomSurface');

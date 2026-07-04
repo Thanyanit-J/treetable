@@ -280,6 +280,16 @@ export function evaluateDocument(document: DocumentV2): DocumentEvaluation {
       return results;
     }
 
+    if (column.kind === 'chart') {
+      for (const leaf of owner.leaves) {
+        results.set(leaf.id, {
+          value: null,
+          error: `Chart column ${column.refName} cannot be used in formulas`,
+        });
+      }
+      return results;
+    }
+
     if (column.kind !== 'computed') {
       for (const leaf of owner.leaves) {
         results.set(leaf.id, inputCellValue(column, leaf));

@@ -3,6 +3,7 @@ import {
   ACCENT_COLORS,
   AccentColor,
   CardV2,
+  ChartConfigV2,
   ColumnV2,
   DocumentFileV2,
   DocumentViewState,
@@ -192,6 +193,32 @@ export class PersistenceService {
       .map((node, nodeIndex) => this.normalizeNode(node, nodeIndex, columnIds, takenNodeRefs))
       .filter((node): node is NodeV2 => node !== null);
 
+    const columnRefs = new Set(columns.map((column) => column.refName));
+    const rawCharts = Array.isArray((candidate as { charts?: unknown }).charts)
+      ? ((candidate as { charts?: unknown[] }).charts as unknown[])
+      : [];
+    const charts: ChartConfigV2[] = rawCharts
+      .map((chart): ChartConfigV2 | null => {
+        if (!chart || typeof chart !== 'object') {
+          return null;
+        }
+        const config = chart as Partial<ChartConfigV2>;
+        const chartColumns = Array.isArray(config.columns)
+          ? config.columns.filter(
+              (ref): ref is string => typeof ref === 'string' && columnRefs.has(ref),
+            )
+          : [];
+        if (chartColumns.length === 0) {
+          return null;
+        }
+        return {
+          id: typeof config.id === 'string' && config.id.length > 0 ? config.id : makeId('chart'),
+          type: config.type === 'pie' ? 'pie' : 'bar',
+          columns: chartColumns,
+        };
+      })
+      .filter((chart): chart is ChartConfigV2 => chart !== null);
+
     return {
       kind: 'topic',
       id:
@@ -202,6 +229,7 @@ export class PersistenceService {
       displayName,
       columns,
       children,
+      charts,
     };
   }
 
@@ -229,7 +257,16 @@ export class PersistenceService {
       typeof candidate.expression === 'string' && candidate.expression.trim().startsWith('=')
         ? candidate.expression
         : null;
-    const kind = candidate.kind === 'computed' && expression !== null ? 'computed' : 'input';
+    const chartSource =
+      typeof candidate.chartSource === 'string' && isValidColumnRefName(candidate.chartSource)
+        ? candidate.chartSource
+        : null;
+    const kind =
+      candidate.kind === 'computed' && expression !== null
+        ? 'computed'
+        : candidate.kind === 'chart' && chartSource !== null
+          ? 'chart'
+          : 'input';
 
     return {
       id:
@@ -239,7 +276,8 @@ export class PersistenceService {
       kind,
       valueType: candidate.valueType === 'text' ? 'text' : 'number',
       expression: kind === 'computed' ? expression : null,
-      rollup: candidate.rollup === 'sum' ? 'sum' : 'none',
+      rollup: kind === 'chart' ? 'none' : candidate.rollup === 'sum' ? 'sum' : 'none',
+      chartSource: kind === 'chart' ? chartSource : null,
     };
   }
 

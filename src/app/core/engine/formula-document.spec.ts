@@ -130,6 +130,18 @@ describe('document-scoped references', () => {
     );
   });
 
+  it('rejects chart columns used in formulas', () => {
+    const chartColumn: ColumnV2 = {
+      ...column('w_bar', '$Bar'),
+      kind: 'chart',
+      chartSource: '$Amount',
+    };
+    const document = buildDocument([chartColumn, column('w_ref', '$Ref', '= $Bar + 1')]);
+    expect(cellOf(document, 'topic_wealth', 'n_cash', 'w_ref').error).toContain(
+      'cannot be used in formulas',
+    );
+  });
+
   it('degrades unknown Topics and Nodes to visible errors', () => {
     const document = buildDocument([
       column('w_missing', '$Missing', '= SUM(Nowhere.$X)'),
