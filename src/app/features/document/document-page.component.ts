@@ -124,7 +124,7 @@ interface Toast {
             <div
               cdkDropList
               cdkDropListOrientation="horizontal"
-              class="flex h-full min-h-full items-stretch gap-3 p-3"
+              class="flex h-full min-h-full items-stretch gap-6 p-3"
               (cdkDropListDropped)="onCardDrop($event)"
             >
               @for (card of store.cards(); track card.id) {
@@ -132,7 +132,7 @@ interface Toast {
                   <button
                     cdkDragHandle
                     type="button"
-                    class="absolute -left-3 top-1/2 z-30 flex h-10 w-3 -translate-y-1/2 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/card:opacity-100"
+                    class="absolute left-1 top-1 z-30 flex h-6 w-6 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 hover:text-slate-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/card:opacity-100"
                     [attr.aria-label]="'Drag topic ' + card.displayName"
                   >
                     <span aria-hidden="true">⠿</span>
