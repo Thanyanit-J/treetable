@@ -1,7 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { DocumentStoreService } from '../../core/store/document-store.service';
+import { DocumentStoreService, RefNameTarget } from '../../core/store/document-store.service';
 import { TopicEvaluation } from '../../core/engine/formula-evaluator';
+import { findNodeAndParent } from '../../core/model/document.model';
 import { ConfirmDialogComponent } from './ui/confirm-dialog.component';
+import { RefNameDialogComponent } from './ui/ref-name-dialog.component';
 import { TopicCardComponent } from './topic-card.component';
 
 interface PendingDeleteTopic {
@@ -26,7 +28,7 @@ interface Toast {
 
 @Component({
   selector: 'app-document-page',
-  imports: [ConfirmDialogComponent, TopicCardComponent],
+  imports: [ConfirmDialogComponent, RefNameDialogComponent, TopicCardComponent],
   host: {
     '(document:keydown)': 'onKeydown($event)',
   },
@@ -101,6 +103,7 @@ interface Toast {
               [evaluation]="evaluationFor(card.id)"
               (requestDeleteTopic)="queueTopicDelete($event)"
               (requestDeleteNode)="queueNodeDelete($event.topicId, $event.nodeId)"
+              (requestEditRefName)="openRefNameDialog($event)"
               (notify)="showToast(false, $event)"
             />
           }
@@ -135,6 +138,16 @@ interface Toast {
       (confirmed)="confirmDelete()"
       (secondaryConfirmed)="confirmDeleteKeepingData()"
       (cancelled)="pendingDelete.set(null)"
+    />
+
+    <app-ref-name-dialog
+      [open]="refNameTarget() !== null"
+      [kind]="refNameTarget()?.kind ?? 'node'"
+      [displayName]="refNameDisplayName()"
+      [currentRefName]="refNameCurrent()"
+      [errorMessage]="refNameError()"
+      (save)="saveRefName($event)"
+      (cancelled)="closeRefNameDialog()"
     />
   `,
   styles: `
@@ -291,6 +304,72 @@ export class DocumentPageComponent {
     }
     this.store.removeNode(pending.topicId, pending.nodeId, { keepDataInParent: true });
     this.pendingDelete.set(null);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reference Name editing
+  // ---------------------------------------------------------------------------
+
+  protected readonly refNameTarget = signal<RefNameTarget | null>(null);
+  protected readonly refNameError = signal<string | null>(null);
+
+  protected readonly refNameDisplayName = computed(() => {
+    const target = this.refNameTarget();
+    if (!target) {
+      return '';
+    }
+    const topic = this.store.topicById(target.topicId);
+    if (!topic) {
+      return '';
+    }
+    if (target.kind === 'topic') {
+      return topic.displayName;
+    }
+    if (target.kind === 'column') {
+      return topic.columns.find((column) => column.id === target.entityId)?.displayName ?? '';
+    }
+    return findNodeAndParent(topic.children, target.entityId)?.node.displayName ?? '';
+  });
+
+  protected readonly refNameCurrent = computed(() => {
+    const target = this.refNameTarget();
+    if (!target) {
+      return '';
+    }
+    const topic = this.store.topicById(target.topicId);
+    if (!topic) {
+      return '';
+    }
+    if (target.kind === 'topic') {
+      return topic.refName;
+    }
+    if (target.kind === 'column') {
+      return topic.columns.find((column) => column.id === target.entityId)?.refName ?? '';
+    }
+    return findNodeAndParent(topic.children, target.entityId)?.node.refName ?? '';
+  });
+
+  protected openRefNameDialog(target: RefNameTarget): void {
+    this.refNameError.set(null);
+    this.refNameTarget.set(target);
+  }
+
+  protected closeRefNameDialog(): void {
+    this.refNameTarget.set(null);
+    this.refNameError.set(null);
+  }
+
+  protected saveRefName(nextRefName: string): void {
+    const target = this.refNameTarget();
+    if (!target) {
+      return;
+    }
+    const result = this.store.setRefName(target, nextRefName);
+    if (!result.ok) {
+      this.refNameError.set(result.error ?? 'Invalid reference name.');
+      return;
+    }
+    this.closeRefNameDialog();
   }
 
   // ---------------------------------------------------------------------------

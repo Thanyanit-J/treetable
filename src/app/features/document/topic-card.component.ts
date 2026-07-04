@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { TopicEvaluation } from '../../core/engine/formula-evaluator';
 import { TopicCardV2 } from '../../core/model/document.model';
+import { RefNameTarget } from '../../core/store/document-store.service';
 import { LatticeComponent } from './lattice/lattice.component';
 
 /**
@@ -19,6 +20,7 @@ import { LatticeComponent } from './lattice/lattice.component';
         [evaluation]="evaluation()"
         (requestDeleteTopic)="requestDeleteTopic.emit($event)"
         (requestDeleteNode)="requestDeleteNode.emit($event)"
+        (requestEditRefName)="requestEditRefName.emit($event)"
         (notify)="notify.emit($event)"
       />
     </article>
@@ -31,5 +33,6 @@ export class TopicCardComponent {
 
   readonly requestDeleteTopic = output<string>();
   readonly requestDeleteNode = output<{ topicId: string; nodeId: string }>();
+  readonly requestEditRefName = output<RefNameTarget>();
   readonly notify = output<string>();
 }

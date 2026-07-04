@@ -179,4 +179,201 @@ describe('DocumentStoreService', () => {
     store.undo();
     expect(store.title()).toBe('Changed');
   });
+
+  describe('setRefName', () => {
+    const REF_FIXTURE = {
+      version: 2,
+      title: 'Refs',
+      cards: [
+        {
+          kind: 'topic',
+          id: 'topic_wealth',
+          refName: 'Wealth',
+          displayName: 'Wealth',
+          columns: [
+            {
+              id: 'w_amount',
+              refName: '$Amount',
+              displayName: 'Amount',
+              kind: 'input',
+              valueType: 'number',
+              expression: null,
+              rollup: 'none',
+            },
+            {
+              id: 'w_rate',
+              refName: '$Rate',
+              displayName: 'Rate',
+              kind: 'input',
+              valueType: 'number',
+              expression: null,
+              rollup: 'none',
+            },
+            {
+              id: 'w_yield',
+              refName: '$Yield',
+              displayName: 'Yield',
+              kind: 'computed',
+              valueType: 'number',
+              expression: '= $Amount * $Rate',
+              rollup: 'none',
+            },
+            {
+              id: 'w_savsum',
+              refName: '$SavSum',
+              displayName: 'SavSum',
+              kind: 'computed',
+              valueType: 'number',
+              expression: '= SUM(Savings.$Amount)',
+              rollup: 'none',
+            },
+          ],
+          children: [
+            {
+              id: 'n_savings',
+              refName: 'Savings',
+              displayName: 'Savings',
+              accent: null,
+              values: {},
+              children: [
+                {
+                  id: 'n_bank_a',
+                  refName: 'BankA',
+                  displayName: 'Bank A',
+                  accent: null,
+                  values: { w_amount: '120000', w_rate: '0.03' },
+                  children: [],
+                },
+                {
+                  id: 'n_bank_b',
+                  refName: 'BankB',
+                  displayName: 'Bank B',
+                  accent: null,
+                  values: { w_amount: '90000', w_rate: '0.05' },
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          kind: 'topic',
+          id: 'topic_business',
+          refName: 'Business',
+          displayName: 'Business',
+          columns: [
+            {
+              id: 'b_amount',
+              refName: '$Amount',
+              displayName: 'Amount',
+              kind: 'input',
+              valueType: 'number',
+              expression: null,
+              rollup: 'none',
+            },
+            {
+              id: 'b_mixed',
+              refName: '$Mixed',
+              displayName: 'Mixed',
+              kind: 'computed',
+              valueType: 'number',
+              expression: '= $Amount + SUM(Wealth.$Amount) + SUM(Wealth.Savings.$Amount)',
+              rollup: 'none',
+            },
+          ],
+          children: [
+            {
+              id: 'n_dividend',
+              refName: 'Dividend',
+              displayName: 'Dividend',
+              accent: null,
+              values: { b_amount: '30000' },
+              children: [],
+            },
+          ],
+        },
+      ],
+    };
+
+    const columnExpr = (topicRef: string, columnId: string): string | null =>
+      store
+        .cards()
+        .find((card) => card.refName === topicRef || card.displayName === topicRef)!
+        .columns.find((column) => column.id === columnId)!.expression;
+
+    beforeEach(() => {
+      const imported = store.importDocument(JSON.stringify(REF_FIXTURE));
+      expect(imported.ok).toBe(true);
+    });
+
+    it('rewrites exactly the references that bind to a renamed column', () => {
+      const result = store.setRefName(
+        { kind: 'column', topicId: 'topic_wealth', entityId: 'w_amount' },
+        '$Cash',
+      );
+      expect(result.ok).toBe(true);
+
+      expect(columnExpr('Wealth', 'w_yield')).toBe('= $Cash * $Rate');
+      expect(columnExpr('Wealth', 'w_savsum')).toBe('= SUM(Savings.$Cash)');
+      // Business's own local $Amount must survive untouched.
+      expect(columnExpr('Business', 'b_mixed')).toBe(
+        '= $Amount + SUM(Wealth.$Cash) + SUM(Wealth.Savings.$Cash)',
+      );
+
+      store.undo();
+      expect(columnExpr('Wealth', 'w_yield')).toBe('= $Amount * $Rate');
+      expect(columnExpr('Business', 'b_mixed')).toBe(
+        '= $Amount + SUM(Wealth.$Amount) + SUM(Wealth.Savings.$Amount)',
+      );
+    });
+
+    it('rewrites node references, including Topic-qualified ones from other Topics', () => {
+      const result = store.setRefName(
+        { kind: 'node', topicId: 'topic_wealth', entityId: 'n_savings' },
+        'Nest',
+      );
+      expect(result.ok).toBe(true);
+
+      expect(columnExpr('Wealth', 'w_savsum')).toBe('= SUM(Nest.$Amount)');
+      expect(columnExpr('Business', 'b_mixed')).toBe(
+        '= $Amount + SUM(Wealth.$Amount) + SUM(Wealth.Nest.$Amount)',
+      );
+    });
+
+    it('rewrites topic references document-wide', () => {
+      const result = store.setRefName(
+        { kind: 'topic', topicId: 'topic_wealth', entityId: 'topic_wealth' },
+        'Assets',
+      );
+      expect(result.ok).toBe(true);
+
+      expect(store.cards()[0]!.refName).toBe('Assets');
+      expect(columnExpr('Business', 'b_mixed')).toBe(
+        '= $Amount + SUM(Assets.$Amount) + SUM(Assets.Savings.$Amount)',
+      );
+    });
+
+    it('rejects collisions and invalid patterns', () => {
+      expect(
+        store.setRefName({ kind: 'node', topicId: 'topic_wealth', entityId: 'n_bank_a' }, 'BankB')
+          .ok,
+      ).toBe(false);
+      expect(
+        store.setRefName(
+          { kind: 'column', topicId: 'topic_wealth', entityId: 'w_amount' },
+          'Amount',
+        ).ok,
+      ).toBe(false);
+      expect(
+        store.setRefName(
+          { kind: 'topic', topicId: 'topic_wealth', entityId: 'topic_wealth' },
+          'Business',
+        ).ok,
+      ).toBe(false);
+      // Unchanged expressions prove failed renames rewrote nothing.
+      expect(columnExpr('Business', 'b_mixed')).toBe(
+        '= $Amount + SUM(Wealth.$Amount) + SUM(Wealth.Savings.$Amount)',
+      );
+    });
+  });
 });

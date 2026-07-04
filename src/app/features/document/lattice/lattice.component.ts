@@ -25,7 +25,7 @@ import {
   collectLeaves,
   findNodeAndParent,
 } from '../../../core/model/document.model';
-import { DocumentStoreService } from '../../../core/store/document-store.service';
+import { DocumentStoreService, RefNameTarget } from '../../../core/store/document-store.service';
 import { LatticePill, ROOT_PILL_ID, computeTopicLattice, hiddenLeavesOf } from './lattice-layout';
 import { NodePillComponent } from './node-pill.component';
 
@@ -131,6 +131,7 @@ interface ConnectorPath {
                   (addSibling)="addSibling(pill)"
                   (remove)="removePill(pill)"
                   (setAccent)="setPillAccent(pill, $event)"
+                  (editRefName)="editPillRefName(pill)"
                 />
               </div>
             }
@@ -209,6 +210,7 @@ interface ConnectorPath {
                   (renamed)="store.renameCard(topic().id, $event)"
                   (addChild)="store.addChildNode(topic().id, null)"
                   (remove)="requestDeleteTopic.emit(topic().id)"
+                  (editRefName)="editPillRefName(pill)"
                 />
               </div>
             }
@@ -296,6 +298,14 @@ interface ConnectorPath {
           <button
             cdkMenuItem
             type="button"
+            class="menu-item"
+            (cdkMenuItemTriggered)="editColumnRefName(column)"
+          >
+            Edit reference name…
+          </button>
+          <button
+            cdkMenuItem
+            type="button"
             class="menu-item text-rose-700"
             (cdkMenuItemTriggered)="deleteColumn(column)"
           >
@@ -330,6 +340,7 @@ export class LatticeComponent {
 
   readonly requestDeleteTopic = output<string>();
   readonly requestDeleteNode = output<{ topicId: string; nodeId: string }>();
+  readonly requestEditRefName = output<RefNameTarget>();
   readonly notify = output<string>();
 
   protected readonly selectedNodeId = this.store.selectedNodeId;
@@ -439,6 +450,19 @@ export class LatticeComponent {
     if (pill.kind !== 'root') {
       this.store.setNodeAccent(this.topic().id, pill.nodeId, accent);
     }
+  }
+
+  protected editPillRefName(pill: LatticePill): void {
+    const topicId = this.topic().id;
+    this.requestEditRefName.emit(
+      pill.kind === 'root'
+        ? { kind: 'topic', topicId, entityId: topicId }
+        : { kind: 'node', topicId, entityId: pill.nodeId },
+    );
+  }
+
+  protected editColumnRefName(column: ColumnV2): void {
+    this.requestEditRefName.emit({ kind: 'column', topicId: this.topic().id, entityId: column.id });
   }
 
   // -------------------------------------------------------------------------

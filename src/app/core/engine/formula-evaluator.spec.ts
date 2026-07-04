@@ -186,14 +186,12 @@ describe('formula evaluator', () => {
     expect(cellError(topic, rows[0]!.id, columns[1]!.id)).toBe('Unknown function: MEDIAN');
   });
 
-  it('reserves dotted references for the engine milestone', () => {
+  it('reports unknown dotted references by name', () => {
     const columns = [computedColumn('$C', '= SUM(Savings.$A)')];
     const rows = [leaf('r1', {})];
     const topic = topicOf(columns, rows);
 
-    expect(cellError(topic, rows[0]!.id, columns[0]!.id)).toContain(
-      'coming in the engine milestone',
-    );
+    expect(cellError(topic, rows[0]!.id, columns[0]!.id)).toBe('Unknown reference: Savings');
   });
 
   it('rolls up sums across input and computed columns', () => {

@@ -1,7 +1,9 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
-import { TopicEvaluation, evaluateTopic } from '../engine/formula-evaluator';
+import { parseExpressionSource, printExpression, transformRefPaths } from '../engine/formula-ast';
+import { evaluateDocument, resolveRefBindings } from '../engine/formula-evaluator';
 import {
   AccentColor,
+  ColumnV2,
   DocumentV2,
   ImportResult,
   NodeV2,
@@ -14,8 +16,20 @@ import {
   makeId,
   walkNodes,
 } from '../model/document.model';
-import { slugifyColumnRefName, slugifyEntityRefName, uniqueRefName } from '../model/ref-name';
+import {
+  isValidColumnRefName,
+  isValidEntityRefName,
+  slugifyColumnRefName,
+  slugifyEntityRefName,
+  uniqueRefName,
+} from '../model/ref-name';
 import { PersistenceService } from '../persistence/persistence.service';
+
+export interface RefNameTarget {
+  kind: 'topic' | 'node' | 'column';
+  topicId: string;
+  entityId: string;
+}
 
 /**
  * Document store implementing the history contract from CONTEXT.md:
@@ -62,13 +76,7 @@ export class DocumentStoreService {
     this.title = computed(() => this.documentSignal().title);
     this.cards = computed(() => this.documentSignal().cards);
     this.collapsedNodeIds = this.collapsedSignal.asReadonly();
-    this.evaluations = computed(() => {
-      const result = new Map<string, TopicEvaluation>();
-      for (const card of this.documentSignal().cards) {
-        result.set(card.id, evaluateTopic(card));
-      }
-      return result;
-    });
+    this.evaluations = computed(() => evaluateDocument(this.documentSignal()).topics);
 
     effect(() => {
       const document = this.documentSignal();
@@ -480,6 +488,152 @@ export class DocumentStoreService {
         column.rollup = rollup;
       }
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Reference Names (ADR-0003)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Renames a Reference Name and rewrites every formula in the Document that
+   * resolves to the renamed entity — one atomic undo step. Rewriting works on
+   * the AST (resolve → substitute → print), so a Business-local `$Amount`
+   * survives a rename of Wealth's `$Amount` untouched, while `Wealth.$Amount`
+   * follows it from anywhere.
+   */
+  setRefName(target: RefNameTarget, nextRefNameRaw: string): ImportResult {
+    const nextRefName = nextRefNameRaw.trim();
+    const document = this.documentSignal();
+    const topic = document.cards.find((card) => card.id === target.topicId);
+    if (!topic) {
+      return { ok: false, error: 'Topic not found.' };
+    }
+
+    const validation = this.validateRefName(document, topic, target, nextRefName);
+    if (validation) {
+      return { ok: false, error: validation };
+    }
+
+    const currentRefName = this.currentRefNameOf(topic, target);
+    if (currentRefName === null) {
+      return { ok: false, error: 'Entity not found.' };
+    }
+    if (currentRefName === nextRefName) {
+      return { ok: true };
+    }
+
+    // Plan formula rewrites against the pre-rename Document.
+    const expressionRewrites = new Map<string, string>();
+    for (const card of document.cards) {
+      for (const column of card.columns) {
+        if (column.kind !== 'computed' || !column.expression) {
+          continue;
+        }
+        const source = column.expression.trim().replace(/^=/, '');
+        const parsed = parseExpressionSource(source);
+        if ('error' in parsed) {
+          continue; // Unparseable formulas cannot be rewritten; they stay as-is.
+        }
+        let changed = false;
+        const transformed = transformRefPaths(parsed.expr, (path) => {
+          const bindings = resolveRefBindings(document, card.id, path);
+          if (!bindings) {
+            return path;
+          }
+          const next = [...path];
+          for (const [segment, binding] of bindings.entries()) {
+            if (binding.kind === target.kind && binding.id === target.entityId) {
+              next[segment] = nextRefName;
+              changed = true;
+            }
+          }
+          return next;
+        });
+        if (changed) {
+          expressionRewrites.set(column.id, `= ${printExpression(transformed)}`);
+        }
+      }
+    }
+
+    this.mutate((draft) => {
+      const draftTopic = this.findTopic(draft, target.topicId);
+      if (!draftTopic) {
+        return;
+      }
+
+      if (target.kind === 'topic') {
+        draftTopic.refName = nextRefName;
+      } else if (target.kind === 'column') {
+        const column = draftTopic.columns.find((candidate) => candidate.id === target.entityId);
+        if (column) {
+          column.refName = nextRefName;
+        }
+      } else {
+        const located = findNodeAndParent(draftTopic.children, target.entityId);
+        if (located) {
+          located.node.refName = nextRefName;
+        }
+      }
+
+      for (const card of draft.cards) {
+        for (const column of card.columns) {
+          const rewritten = expressionRewrites.get(column.id);
+          if (rewritten !== undefined) {
+            column.expression = rewritten;
+          }
+        }
+      }
+    });
+
+    return { ok: true };
+  }
+
+  private validateRefName(
+    document: DocumentV2,
+    topic: TopicCardV2,
+    target: RefNameTarget,
+    nextRefName: string,
+  ): string | null {
+    if (target.kind === 'column') {
+      if (!isValidColumnRefName(nextRefName)) {
+        return 'Column reference names start with $ followed by letters, digits or _ (e.g. $Amount).';
+      }
+      const taken = topic.columns.some(
+        (column) => column.id !== target.entityId && column.refName === nextRefName,
+      );
+      return taken ? `${nextRefName} is already used by another column in this topic.` : null;
+    }
+
+    if (!isValidEntityRefName(nextRefName)) {
+      return 'Reference names use letters, digits or _ and must not start with a digit (e.g. Savings).';
+    }
+
+    if (target.kind === 'topic') {
+      const taken = document.cards.some(
+        (card) => card.id !== target.entityId && card.refName === nextRefName,
+      );
+      return taken ? `${nextRefName} is already used by another topic.` : null;
+    }
+
+    let taken = false;
+    walkNodes(topic.children, (node) => {
+      if (node.id !== target.entityId && node.refName === nextRefName) {
+        taken = true;
+      }
+    });
+    return taken ? `${nextRefName} is already used by another node in this topic.` : null;
+  }
+
+  private currentRefNameOf(topic: TopicCardV2, target: RefNameTarget): string | null {
+    if (target.kind === 'topic') {
+      return topic.refName;
+    }
+    if (target.kind === 'column') {
+      return (
+        topic.columns.find((column: ColumnV2) => column.id === target.entityId)?.refName ?? null
+      );
+    }
+    return findNodeAndParent(topic.children, target.entityId)?.node.refName ?? null;
   }
 
   // -------------------------------------------------------------------------

@@ -122,6 +122,14 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
         <button
           cdkMenuItem
           type="button"
+          class="menu-item"
+          (cdkMenuItemTriggered)="editRefName.emit()"
+        >
+          Edit reference name…
+        </button>
+        <button
+          cdkMenuItem
+          type="button"
           class="menu-item text-rose-700"
           (cdkMenuItemTriggered)="remove.emit()"
         >
@@ -160,6 +168,7 @@ export class NodePillComponent {
   readonly addSibling = output<void>();
   readonly remove = output<void>();
   readonly setAccent = output<AccentColor | null>();
+  readonly editRefName = output<void>();
 
   protected readonly accentColors = ACCENT_COLORS;
   protected readonly draft = signal<string | null>(null);
