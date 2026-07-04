@@ -83,8 +83,8 @@ interface ConnectorPath {
               role="columnheader"
               class="group relative border-y border-r border-slate-200 p-0 align-top"
               [class.border-l]="columnIndex === 0"
-              [class.bg-slate-100]="!isColumnSelected(column)"
-              [class.bg-sky-100]="isColumnSelected(column)"
+              [class.bg-slate-100]="!isColumnSelected(column) && !headerInRange(column)"
+              [class.bg-sky-100]="isColumnSelected(column) || headerInRange(column)"
               [class.opacity-40]="draggingColumnId() === column.id"
               [class.formula-target]="isRefTarget(column)"
               [style.grid-row]="1"
@@ -1328,7 +1328,13 @@ export class LatticeComponent {
         return;
       }
       cleanup();
-      this.startColumnDrag(column, moveEvent);
+      // Dragging a selected header moves the column; dragging an unselected
+      // one sweeps a whole-column range selection.
+      if (wasSelected) {
+        this.startColumnDrag(column, moveEvent);
+      } else {
+        this.startColumnRangeSelect(column, headerElement, moveEvent);
+      }
     };
     const onUp = (): void => {
       cleanup();
@@ -1342,6 +1348,81 @@ export class LatticeComponent {
     headerElement.addEventListener('pointermove', onMove);
     headerElement.addEventListener('pointerup', onUp);
     headerElement.addEventListener('pointercancel', cleanup);
+  }
+
+  /**
+   * Sweeps a range selection spanning all rows of the columns between the
+   * pressed header and the pointer — clicking and dragging headers selects
+   * columns; moving a column requires selecting its header first.
+   */
+  private startColumnRangeSelect(
+    column: ColumnV2,
+    headerElement: HTMLElement,
+    event: PointerEvent,
+  ): void {
+    const rows = this.lattice().rows;
+    if (rows.length === 0) {
+      this.selectColumn(column);
+      return;
+    }
+    const root = this.latticeRootRef().nativeElement;
+    const rootRect = root.getBoundingClientRect();
+    const zoomRatio = root.offsetWidth > 0 ? rootRect.width / root.offsetWidth : 1;
+    const columns = this.topic().columns;
+    const pointerId = event.pointerId;
+
+    const update = (moveEvent: PointerEvent): void => {
+      const x = (moveEvent.clientX - rootRect.left) / zoomRatio;
+      let hovered = 0;
+      for (const [index, candidate] of columns.entries()) {
+        const element = root.querySelector<HTMLElement>(
+          `[data-header-col="${CSS.escape(candidate.id)}"]`,
+        );
+        if (!element) {
+          continue;
+        }
+        if (x >= layoutRectWithin(root, element).left) {
+          hovered = index;
+        }
+      }
+      const focusColumn = columns[hovered] ?? column;
+      this.store.select({
+        kind: 'range',
+        topicId: this.topic().id,
+        anchor: { nodeId: rows[0]!.nodeId, columnId: column.id },
+        focus: { nodeId: rows[rows.length - 1]!.nodeId, columnId: focusColumn.id },
+      });
+    };
+    const onMove = (moveEvent: PointerEvent): void => {
+      if (moveEvent.pointerId === pointerId) {
+        update(moveEvent);
+      }
+    };
+    const cleanup = (): void => {
+      headerElement.removeEventListener('pointermove', onMove);
+      headerElement.removeEventListener('pointerup', cleanup);
+      headerElement.removeEventListener('pointercancel', cleanup);
+    };
+    headerElement.addEventListener('pointermove', onMove);
+    headerElement.addEventListener('pointerup', cleanup);
+    headerElement.addEventListener('pointercancel', cleanup);
+    update(event);
+  }
+
+  /** Header tint while its column is inside the current range selection. */
+  protected headerInRange(column: ColumnV2): boolean {
+    const selection = this.store.selection();
+    if (selection?.kind !== 'range' || selection.topicId !== this.topic().id) {
+      return false;
+    }
+    const columns = this.topic().columns;
+    const index = columns.findIndex((candidate) => candidate.id === column.id);
+    const anchor = columns.findIndex((candidate) => candidate.id === selection.anchor.columnId);
+    const focus = columns.findIndex((candidate) => candidate.id === selection.focus.columnId);
+    if (index < 0 || anchor < 0 || focus < 0) {
+      return false;
+    }
+    return index >= Math.min(anchor, focus) && index <= Math.max(anchor, focus);
   }
 
   private startColumnDrag(column: ColumnV2, event: PointerEvent): void {
