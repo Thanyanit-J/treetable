@@ -57,6 +57,8 @@ export function migrateV1Document(input: unknown): DocumentFileV2 | null {
         ? candidate.title
         : 'Untitled',
     cards,
+    // Layout is repaired downstream (normalizeDocumentLayout via persistence).
+    pages: [],
     view: { collapsedNodeIds: [] },
   };
 }

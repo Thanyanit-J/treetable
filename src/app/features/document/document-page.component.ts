@@ -2,10 +2,10 @@ import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList } from '@angular/cdk/d
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DocumentStoreService } from '../../core/store/document-store.service';
 import { TopicEvaluation } from '../../core/engine/formula-evaluator';
-import { CardV2 } from '../../core/model/document.model';
 import { ConfirmDialogComponent } from './ui/confirm-dialog.component';
 import { DetailsPanelComponent } from './details-panel.component';
 import { FormulaSuggestOverlayComponent } from './formula-suggest-overlay.component';
+import { PageSidebarComponent } from './page-sidebar.component';
 import { TopicCardComponent } from './topic-card.component';
 
 interface PendingDeleteTopic {
@@ -21,7 +21,14 @@ interface PendingDeleteNode {
   canKeepData: boolean;
 }
 
-type PendingDelete = PendingDeleteTopic | PendingDeleteNode;
+interface PendingDeletePage {
+  type: 'page';
+  pageId: string;
+  name: string;
+  cardCount: number;
+}
+
+type PendingDelete = PendingDeleteTopic | PendingDeleteNode | PendingDeletePage;
 
 interface Toast {
   ok: boolean;
@@ -42,6 +49,7 @@ interface Toast {
     ConfirmDialogComponent,
     DetailsPanelComponent,
     FormulaSuggestOverlayComponent,
+    PageSidebarComponent,
     TopicCardComponent,
   ],
   host: {
@@ -49,6 +57,8 @@ interface Toast {
   },
   template: `
     <div class="flex h-dvh overflow-hidden bg-slate-50">
+      <app-page-sidebar (requestDeletePage)="queuePageDelete($event)" />
+
       <div class="flex min-w-0 flex-1 flex-col">
         <header
           class="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-200 bg-white px-2 py-1"
@@ -62,13 +72,6 @@ interface Toast {
             (keydown.escape)="revertTitle($event)"
           />
           <div class="flex flex-wrap gap-1">
-            <button
-              type="button"
-              class="rounded bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-600"
-              (click)="store.addTopic()"
-            >
-              + Topic
-            </button>
             <button
               type="button"
               class="toolbar-button"
@@ -107,17 +110,17 @@ interface Toast {
         </header>
 
         <div class="min-w-0 flex-1 overflow-auto" (click)="onBackgroundClick($event)">
-          @if (store.cards().length === 0) {
+          @if (store.activeStacks().length === 0) {
             <section
               class="m-6 rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center"
             >
-              <p class="text-sm text-slate-600">This document has no topics yet.</p>
+              <p class="text-sm text-slate-600">This page has no cards yet.</p>
               <button
                 type="button"
                 class="mt-4 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500"
                 (click)="store.addTopic()"
               >
-                Add your first topic
+                Add a topic
               </button>
             </section>
           } @else {
@@ -125,25 +128,33 @@ interface Toast {
               cdkDropList
               cdkDropListOrientation="horizontal"
               class="flex h-full min-h-full items-stretch gap-6 p-3"
-              (cdkDropListDropped)="onCardDrop($event)"
+              (cdkDropListDropped)="onStackDrop($event)"
             >
-              @for (card of store.cards(); track card.id) {
-                <div cdkDrag [cdkDragData]="card" class="group/card relative flex shrink-0">
-                  <button
-                    cdkDragHandle
-                    type="button"
-                    class="absolute left-1 top-1 z-30 flex h-6 w-6 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 hover:text-slate-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/card:opacity-100"
-                    [attr.aria-label]="'Drag topic ' + card.displayName"
-                  >
-                    <span aria-hidden="true">⠿</span>
-                  </button>
-                  <app-topic-card
-                    [topic]="card"
-                    [evaluation]="evaluationFor(card.id)"
-                    (requestDeleteTopic)="queueTopicDelete($event)"
-                    (requestDeleteNode)="queueNodeDelete($event.topicId, $event.nodeId)"
-                    (notify)="showToast(false, $event)"
-                  />
+              @for (stack of store.activeStacks(); track stack.id) {
+                <div
+                  cdkDrag
+                  [cdkDragData]="stack.id"
+                  class="group/card relative flex shrink-0 gap-3"
+                >
+                  @for (card of stack.cards; track card.id) {
+                    <div class="relative flex min-h-0 shrink-0">
+                      <button
+                        cdkDragHandle
+                        type="button"
+                        class="absolute left-1 top-1 z-30 flex h-6 w-6 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 hover:text-slate-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/card:opacity-100"
+                        [attr.aria-label]="'Drag topic ' + card.displayName"
+                      >
+                        <span aria-hidden="true">⠿</span>
+                      </button>
+                      <app-topic-card
+                        [topic]="card"
+                        [evaluation]="evaluationFor(card.id)"
+                        (requestDeleteTopic)="queueTopicDelete($event)"
+                        (requestDeleteNode)="queueNodeDelete($event.topicId, $event.nodeId)"
+                        (notify)="showToast(false, $event)"
+                      />
+                    </div>
+                  }
                 </div>
               }
             </div>
@@ -230,10 +241,9 @@ export class DocumentPageComponent {
     return this.evaluations().get(cardId) ?? this.emptyEvaluation;
   }
 
-  protected onCardDrop(event: CdkDragDrop<unknown>): void {
-    const card = event.item.data as CardV2 | undefined;
-    if (card && event.previousIndex !== event.currentIndex) {
-      this.store.moveCard(card.id, event.currentIndex);
+  protected onStackDrop(event: CdkDragDrop<unknown>): void {
+    if (event.previousIndex !== event.currentIndex) {
+      this.store.moveStack(this.store.activePage().id, event.previousIndex, event.currentIndex);
     }
   }
 
@@ -348,8 +358,28 @@ export class DocumentPageComponent {
     this.pendingDelete.set({ type: 'node', topicId, nodeId, canKeepData });
   }
 
+  protected queuePageDelete(pageId: string): void {
+    const page = this.store.pages().find((candidate) => candidate.id === pageId);
+    if (!page || this.store.pages().length <= 1) {
+      return;
+    }
+    const cardCount = this.store.pageCardCount(pageId);
+    if (cardCount === 0) {
+      this.store.removePage(pageId);
+      return;
+    }
+    this.pendingDelete.set({ type: 'page', pageId, name: page.name, cardCount });
+  }
+
   protected confirmTitle(): string {
-    return this.pendingDelete()?.type === 'topic' ? 'Delete topic' : 'Delete node';
+    switch (this.pendingDelete()?.type) {
+      case 'topic':
+        return 'Delete topic';
+      case 'page':
+        return 'Delete page';
+      default:
+        return 'Delete node';
+    }
   }
 
   protected confirmMessage(): string {
@@ -359,6 +389,9 @@ export class DocumentPageComponent {
     }
     if (pending.type === 'topic') {
       return `Deleting “${pending.displayName}” removes its whole tree and table.`;
+    }
+    if (pending.type === 'page') {
+      return `Deleting “${pending.name}” also deletes the ${pending.cardCount} card(s) on it — trees, tables and data included.`;
     }
     if (pending.canKeepData) {
       return 'Deleting this node also deletes everything under it. You can keep its table data under the parent node instead.';
@@ -378,6 +411,8 @@ export class DocumentPageComponent {
     }
     if (pending.type === 'topic') {
       this.store.removeCard(pending.topicId);
+    } else if (pending.type === 'page') {
+      this.store.removePage(pending.pageId);
     } else {
       this.store.removeNode(pending.topicId, pending.nodeId);
     }

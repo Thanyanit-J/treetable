@@ -390,12 +390,65 @@ describe('DocumentStoreService', () => {
       expect(savings().children.map((node) => node.refName)).toEqual(['BankA', 'BankB']);
     });
 
-    it('reorders topic cards', () => {
-      store.moveCard(store.cards()[1]!.id, 0);
-      expect(store.cards().map((card) => card.refName)).toEqual(['Business', 'Wealth']);
+    it('reorders rail stacks on the active page', () => {
+      const pageId = store.activePage().id;
+      store.moveStack(pageId, 1, 0);
+      expect(store.activeStacks().map((stack) => stack.cards[0]!.refName)).toEqual([
+        'Business',
+        'Wealth',
+      ]);
 
       store.undo();
-      expect(store.cards().map((card) => card.refName)).toEqual(['Wealth', 'Business']);
+      expect(store.activeStacks().map((stack) => stack.cards[0]!.refName)).toEqual([
+        'Wealth',
+        'Business',
+      ]);
+    });
+  });
+
+  describe('pages', () => {
+    it('adds, renames, reorders and removes pages (cards die with their page)', () => {
+      expect(store.pages().map((page) => page.name)).toEqual(['Page 1']);
+
+      store.addPage();
+      expect(store.pages()).toHaveLength(2);
+      expect(store.activePage().name).toBe('Page 2');
+      expect(store.activeStacks()).toEqual([]);
+
+      store.renamePage(store.activePage().id, 'Scratch');
+      expect(store.activePage().name).toBe('Scratch');
+
+      store.movePage(1, 0);
+      expect(store.pages().map((page) => page.name)).toEqual(['Scratch', 'Page 1']);
+
+      const dataPageId = store.pages()[1]!.id;
+      expect(store.pageCardCount(dataPageId)).toBe(2);
+      store.removePage(dataPageId);
+      expect(store.pages().map((page) => page.name)).toEqual(['Scratch']);
+      expect(store.cards()).toHaveLength(0);
+
+      // The one remaining page can never be deleted.
+      store.removePage(store.pages()[0]!.id);
+      expect(store.pages()).toHaveLength(1);
+    });
+
+    it('keeps the active page valid when undo restores a deleted page', () => {
+      store.addPage();
+      const scratchId = store.activePage().id;
+      store.removePage(scratchId);
+      expect(store.activePage().name).toBe('Page 1');
+
+      store.undo();
+      expect(store.pages()).toHaveLength(2);
+      store.selectPage(scratchId);
+      expect(store.activePage().id).toBe(scratchId);
+    });
+
+    it('new topics land on the active page', () => {
+      store.addPage();
+      store.addTopic('Fresh');
+      expect(store.activeStacks()).toHaveLength(1);
+      expect(store.activeStacks()[0]!.cards[0]!.displayName).toBe('Fresh');
     });
   });
 
@@ -483,6 +536,7 @@ describe('DocumentStoreService', () => {
     const REF_FIXTURE = {
       version: 2,
       title: 'Refs',
+      pages: [],
       cards: [
         {
           kind: 'topic',

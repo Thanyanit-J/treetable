@@ -86,15 +86,33 @@ export interface TopicCardV2 {
 
 export type CardV2 = TopicCardV2;
 
+/** One rail column: cards stacked top-to-bottom. */
+export interface CardStackV2 {
+  id: string;
+  cardIds: string[];
+}
+
+/** A named canvas of stacks; the sidebar switches between Pages. */
+export interface PageV2 {
+  id: string;
+  name: string;
+  /** Rail columns, left to right. */
+  stacks: CardStackV2[];
+}
+
 export interface DocumentV2 {
   version: 2;
   title: string;
+  /** All cards, Document-wide — formulas reference across Pages. */
   cards: CardV2[];
+  /** Layout only: every card id appears exactly once across all Pages. */
+  pages: PageV2[];
 }
 
 /** Persisted view state: survives reload and drives Reports, but never enters undo history. */
 export interface DocumentViewState {
   collapsedNodeIds: string[];
+  activePageId?: string;
 }
 
 /** The on-disk / localStorage shape: Document plus its view state. */
@@ -137,6 +155,51 @@ export function createNode(displayName: string, refName: string): NodeV2 {
     children: [],
     values: {},
   };
+}
+
+export function createPage(name: string): PageV2 {
+  return { id: makeId('page'), name, stacks: [] };
+}
+
+/**
+ * Repairs the layout invariant in place: at least one Page, every card
+ * referenced exactly once, no dangling ids, no empty stacks. Unreferenced
+ * cards land on the first Page as their own stacks.
+ */
+export function normalizeDocumentLayout(document: DocumentV2): void {
+  if (!Array.isArray(document.pages) || document.pages.length === 0) {
+    document.pages = [createPage('Page 1')];
+  }
+  const cardIds = new Set(document.cards.map((card) => card.id));
+  const seen = new Set<string>();
+  for (const page of document.pages) {
+    for (const stack of page.stacks) {
+      stack.cardIds = stack.cardIds.filter((id) => {
+        if (!cardIds.has(id) || seen.has(id)) {
+          return false;
+        }
+        seen.add(id);
+        return true;
+      });
+    }
+    page.stacks = page.stacks.filter((stack) => stack.cardIds.length > 0);
+  }
+  const firstPage = document.pages[0]!;
+  for (const card of document.cards) {
+    if (!seen.has(card.id)) {
+      firstPage.stacks.push({ id: makeId('stack'), cardIds: [card.id] });
+    }
+  }
+}
+
+/** Strips a card from every Page, dropping stacks it leaves empty. */
+export function removeCardFromLayout(document: DocumentV2, cardId: string): void {
+  for (const page of document.pages) {
+    for (const stack of page.stacks) {
+      stack.cardIds = stack.cardIds.filter((id) => id !== cardId);
+    }
+    page.stacks = page.stacks.filter((stack) => stack.cardIds.length > 0);
+  }
 }
 
 export function isLeaf(node: NodeV2): boolean {

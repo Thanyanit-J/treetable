@@ -11,6 +11,16 @@ export function createStarterDocument(): DocumentFileV2 {
 const STARTER_DOCUMENT: DocumentFileV2 = {
   version: 2,
   title: 'Untitled',
+  pages: [
+    {
+      id: 'page_1',
+      name: 'Page 1',
+      stacks: [
+        { id: 'stack_wealth', cardIds: ['topic_wealth'] },
+        { id: 'stack_business', cardIds: ['topic_business'] },
+      ],
+    },
+  ],
   cards: [
     {
       kind: 'topic',

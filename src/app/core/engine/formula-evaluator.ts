@@ -551,7 +551,7 @@ export function evaluateDocument(document: DocumentV2): DocumentEvaluation {
 
 /** Convenience for single-topic evaluation (tests, isolated tools). */
 export function evaluateTopic(topic: TopicCardV2): TopicEvaluation {
-  const document: DocumentV2 = { version: 2, title: '', cards: [topic] };
+  const document: DocumentV2 = { version: 2, title: '', cards: [topic], pages: [] };
   return (
     evaluateDocument(document).topics.get(topic.id) ?? {
       computedCells: new Map<string, ReadonlyMap<string, CellComputation>>(),

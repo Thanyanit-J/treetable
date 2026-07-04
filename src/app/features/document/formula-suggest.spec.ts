@@ -5,6 +5,7 @@ import { formulaTokenAt, suggestForToken } from './formula-suggest';
 const doc: DocumentV2 = {
   version: 2,
   title: 'Test',
+  pages: [],
   cards: [
     {
       kind: 'topic',

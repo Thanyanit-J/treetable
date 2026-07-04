@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import {
   ACCENT_COLORS,
   AccentColor,
+  CardStackV2,
   CardV2,
   ChartConfigV2,
   ColumnV2,
@@ -9,8 +10,10 @@ import {
   DocumentViewState,
   ImportResult,
   NodeV2,
+  PageV2,
   RollupMode,
   makeId,
+  normalizeDocumentLayout,
   walkNodes,
 } from '../model/document.model';
 import {
@@ -146,15 +149,66 @@ export class PersistenceService {
         )
       : [];
 
-    return {
+    const document: DocumentFileV2 = {
       version: 2,
       title:
         typeof candidate.title === 'string' && candidate.title.trim().length > 0
           ? candidate.title
           : 'Untitled',
       cards,
+      pages: this.normalizePages((candidate as { pages?: unknown }).pages),
       view: { collapsedNodeIds },
     };
+    normalizeDocumentLayout(document);
+
+    if (
+      typeof rawView.activePageId === 'string' &&
+      document.pages.some((page) => page.id === rawView.activePageId)
+    ) {
+      document.view!.activePageId = rawView.activePageId;
+    }
+    return document;
+  }
+
+  /** Lenient Page/stack parsing; the layout invariant is repaired afterwards. */
+  private normalizePages(input: unknown): PageV2[] {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+    const pages: PageV2[] = [];
+    for (const [index, rawPage] of input.entries()) {
+      if (!rawPage || typeof rawPage !== 'object') {
+        continue;
+      }
+      const candidate = rawPage as Partial<PageV2> & { stacks?: unknown };
+      const stacks: CardStackV2[] = [];
+      if (Array.isArray(candidate.stacks)) {
+        for (const rawStack of candidate.stacks) {
+          if (!rawStack || typeof rawStack !== 'object') {
+            continue;
+          }
+          const stack = rawStack as Partial<CardStackV2>;
+          stacks.push({
+            id: typeof stack.id === 'string' && stack.id.length > 0 ? stack.id : makeId('stack'),
+            cardIds: Array.isArray(stack.cardIds)
+              ? stack.cardIds.filter((id): id is string => typeof id === 'string')
+              : [],
+          });
+        }
+      }
+      pages.push({
+        id:
+          typeof candidate.id === 'string' && candidate.id.length > 0
+            ? candidate.id
+            : makeId('page'),
+        name:
+          typeof candidate.name === 'string' && candidate.name.trim().length > 0
+            ? candidate.name
+            : `Page ${index + 1}`,
+        stacks,
+      });
+    }
+    return pages;
   }
 
   private normalizeTopicCard(
@@ -237,7 +291,11 @@ export class PersistenceService {
       card.pillAlignment = pillAlignment;
     }
     const connectorStyle = (candidate as { connectorStyle?: unknown }).connectorStyle;
-    if (connectorStyle === 'elbow' || connectorStyle === 'straight' || connectorStyle === 'curved') {
+    if (
+      connectorStyle === 'elbow' ||
+      connectorStyle === 'straight' ||
+      connectorStyle === 'curved'
+    ) {
       card.connectorStyle = connectorStyle;
     }
     if (typeof candidate.cardTitle === 'string' && candidate.cardTitle.trim().length > 0) {

@@ -9,12 +9,15 @@ import {
 import { computeTopicLattice, hiddenLeavesOf } from '../lattice/lattice-layout';
 import {
   AccentColor,
+  CardV2,
   ChartType,
   ColumnV2,
   ConnectorStyle,
   DocumentV2,
+  DocumentViewState,
   ImportResult,
   NodeV2,
+  PageV2,
   PillAlignment,
   RollupMode,
   TopicCardV2,
@@ -22,6 +25,7 @@ import {
   collectLeaves,
   createInputColumn,
   createNode,
+  createPage,
   ensureCanHostChildren,
   findNodeAndParent,
   isLeaf,
@@ -29,6 +33,8 @@ import {
   moveNodeInTopic,
   nextNodeRefName,
   nodeExists,
+  normalizeDocumentLayout,
+  removeCardFromLayout,
   walkNodes,
 } from '../model/document.model';
 import {
@@ -93,6 +99,7 @@ export class DocumentStoreService {
 
   private readonly documentSignal;
   private readonly collapsedSignal;
+  private readonly activePageIdSignal;
   private readonly selectionSignal = signal<SelectionV2 | null>(null);
   private readonly clipboardSignal = signal<ClipboardContent | null>(null);
   private readonly formulaEditorSignal = signal<FormulaEditorSession | null>(null);
@@ -102,6 +109,9 @@ export class DocumentStoreService {
   readonly document;
   readonly title;
   readonly cards;
+  readonly pages;
+  readonly activePage;
+  readonly activeStacks;
   readonly selection = this.selectionSignal.asReadonly();
   readonly clipboard = this.clipboardSignal.asReadonly();
   readonly formulaEditor = this.formulaEditorSignal.asReadonly();
@@ -124,23 +134,44 @@ export class DocumentStoreService {
   constructor() {
     const loaded = this.persistence.load();
     const { view, ...document } = loaded;
+    normalizeDocumentLayout(document);
     this.documentSignal = signal<DocumentV2>(document);
     this.collapsedSignal = signal<ReadonlySet<string>>(new Set(view?.collapsedNodeIds ?? []));
+    this.activePageIdSignal = signal<string | null>(view?.activePageId ?? null);
 
     this.document = this.documentSignal.asReadonly();
     this.title = computed(() => this.documentSignal().title);
     this.cards = computed(() => this.documentSignal().cards);
+    this.pages = computed(() => this.documentSignal().pages);
+    this.activePage = computed<PageV2>(() => {
+      const pages = this.documentSignal().pages;
+      return pages.find((page) => page.id === this.activePageIdSignal()) ?? pages[0]!;
+    });
+    this.activeStacks = computed(() => {
+      const byId = new Map(this.documentSignal().cards.map((card) => [card.id, card]));
+      return this.activePage().stacks.map((stack) => ({
+        id: stack.id,
+        cards: stack.cardIds
+          .map((id) => byId.get(id))
+          .filter((card): card is CardV2 => card !== undefined),
+      }));
+    });
     this.collapsedNodeIds = this.collapsedSignal.asReadonly();
     this.evaluations = computed(() => evaluateDocument(this.documentSignal()).topics);
 
     effect(() => {
       const document = this.documentSignal();
       const collapsed = this.collapsedSignal();
+      const activePageId = this.activePageIdSignal();
       if (this.saveTimer) {
         clearTimeout(this.saveTimer);
       }
       this.saveTimer = setTimeout(() => {
-        this.persistence.save({ ...document, view: { collapsedNodeIds: [...collapsed] } });
+        const view: DocumentViewState = { collapsedNodeIds: [...collapsed] };
+        if (activePageId !== null) {
+          view.activePageId = activePageId;
+        }
+        this.persistence.save({ ...document, view });
       }, 150);
     });
   }
@@ -267,6 +298,7 @@ export class DocumentStoreService {
     this.futureSignal.set([]);
     const next = cloneDocument(this.documentSignal());
     mutator(next);
+    normalizeDocumentLayout(next);
     this.documentSignal.set(next);
     this.pruneViewState(next);
   }
@@ -286,6 +318,11 @@ export class DocumentStoreService {
     const selection = this.selectionSignal();
     if (selection && !this.selectionStillExists(selection, document, nodeIds)) {
       this.selectionSignal.set(null);
+    }
+
+    const activePageId = this.activePageIdSignal();
+    if (activePageId !== null && !document.pages.some((page) => page.id === activePageId)) {
+      this.activePageIdSignal.set(document.pages[0]?.id ?? null);
     }
   }
 
@@ -352,6 +389,10 @@ export class DocumentStoreService {
       };
       newTopicId = card.id;
       document.cards.push(card);
+      const page =
+        document.pages.find((candidate) => candidate.id === this.activePageIdSignal()) ??
+        document.pages[0];
+      page?.stacks.push({ id: makeId('stack'), cardIds: [card.id] });
     });
     if (newTopicId && newNodeId) {
       this.selectionSignal.set({ kind: 'node', topicId: newTopicId, nodeId: newNodeId });
@@ -361,7 +402,111 @@ export class DocumentStoreService {
   removeCard(cardId: string): void {
     this.mutate((document) => {
       document.cards = document.cards.filter((card) => card.id !== cardId);
+      removeCardFromLayout(document, cardId);
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Pages (layout; the active Page is view state)
+  // -------------------------------------------------------------------------
+
+  selectPage(pageId: string): void {
+    if (this.documentSignal().pages.some((page) => page.id === pageId)) {
+      this.activePageIdSignal.set(pageId);
+    }
+  }
+
+  addPage(): void {
+    let newPageId: string | null = null;
+    this.mutate((document) => {
+      const page = createPage(`Page ${document.pages.length + 1}`);
+      newPageId = page.id;
+      document.pages.push(page);
+    });
+    if (newPageId) {
+      this.activePageIdSignal.set(newPageId);
+    }
+  }
+
+  renamePage(pageId: string, name: string): void {
+    const next = name.trim();
+    const page = this.documentSignal().pages.find((candidate) => candidate.id === pageId);
+    if (next.length === 0 || !page || page.name === next) {
+      return;
+    }
+    this.mutate((document) => {
+      const draftPage = document.pages.find((candidate) => candidate.id === pageId);
+      if (draftPage) {
+        draftPage.name = next;
+      }
+    });
+  }
+
+  /** Deletes the Page AND every card on it (the UI confirms first). */
+  removePage(pageId: string): void {
+    const pages = this.documentSignal().pages;
+    if (pages.length <= 1 || !pages.some((page) => page.id === pageId)) {
+      return;
+    }
+    this.mutate((document) => {
+      const page = document.pages.find((candidate) => candidate.id === pageId);
+      if (!page) {
+        return;
+      }
+      const doomed = new Set(page.stacks.flatMap((stack) => stack.cardIds));
+      document.cards = document.cards.filter((card) => !doomed.has(card.id));
+      document.pages = document.pages.filter((candidate) => candidate.id !== pageId);
+    });
+  }
+
+  movePage(fromIndex: number, toIndex: number): void {
+    const count = this.documentSignal().pages.length;
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= count ||
+      toIndex >= count
+    ) {
+      return;
+    }
+    this.mutate((document) => {
+      const [page] = document.pages.splice(fromIndex, 1);
+      if (page) {
+        document.pages.splice(toIndex, 0, page);
+      }
+    });
+  }
+
+  /** Horizontal reorder of a Page's stacks (rail columns). */
+  moveStack(pageId: string, fromIndex: number, toIndex: number): void {
+    const page = this.documentSignal().pages.find((candidate) => candidate.id === pageId);
+    if (
+      !page ||
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= page.stacks.length ||
+      toIndex >= page.stacks.length
+    ) {
+      return;
+    }
+    this.mutate((document) => {
+      const draftPage = document.pages.find((candidate) => candidate.id === pageId);
+      if (!draftPage) {
+        return;
+      }
+      const [stack] = draftPage.stacks.splice(fromIndex, 1);
+      if (stack) {
+        draftPage.stacks.splice(toIndex, 0, stack);
+      }
+    });
+  }
+
+  /** Number of cards living on a Page (for delete confirmations). */
+  pageCardCount(pageId: string): number {
+    const page = this.documentSignal().pages.find((candidate) => candidate.id === pageId);
+    return page ? page.stacks.reduce((total, stack) => total + stack.cardIds.length, 0) : 0;
   }
 
   /** Sets the card title; empty (or equal to the Root's name) re-syncs it. */
@@ -623,24 +768,6 @@ export class DocumentStoreService {
     if (newNodeId) {
       this.selectionSignal.set({ kind: 'node', topicId, nodeId: newNodeId });
     }
-  }
-
-  moveCard(cardId: string, toIndex: number): void {
-    this.mutate((document) => {
-      const fromIndex = document.cards.findIndex((card) => card.id === cardId);
-      if (
-        fromIndex < 0 ||
-        toIndex < 0 ||
-        toIndex >= document.cards.length ||
-        fromIndex === toIndex
-      ) {
-        return;
-      }
-      const [card] = document.cards.splice(fromIndex, 1);
-      if (card) {
-        document.cards.splice(toIndex, 0, card);
-      }
-    });
   }
 
   setNodeAccent(topicId: string, nodeId: string, accent: AccentColor | null): void {
@@ -1709,10 +1836,12 @@ export class DocumentStoreService {
   // -------------------------------------------------------------------------
 
   exportDocument(): string {
-    return this.persistence.export({
-      ...this.documentSignal(),
-      view: { collapsedNodeIds: [...this.collapsedSignal()] },
-    });
+    const view: DocumentViewState = { collapsedNodeIds: [...this.collapsedSignal()] };
+    const activePageId = this.activePageIdSignal();
+    if (activePageId !== null) {
+      view.activePageId = activePageId;
+    }
+    return this.persistence.export({ ...this.documentSignal(), view });
   }
 
   importDocument(json: string): ImportResult {
@@ -1724,8 +1853,10 @@ export class DocumentStoreService {
     this.mutate((current) => {
       current.title = document.title;
       current.cards = document.cards;
+      current.pages = document.pages;
     });
     this.collapsedSignal.set(new Set(view?.collapsedNodeIds ?? []));
+    this.activePageIdSignal.set(view?.activePageId ?? null);
     this.pruneViewState(this.documentSignal());
     return imported.result;
   }

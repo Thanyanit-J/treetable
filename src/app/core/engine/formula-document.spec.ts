@@ -36,6 +36,7 @@ function buildDocument(
   return {
     version: 2,
     title: 'Test',
+    pages: [],
     cards: [
       topic(
         'topic_wealth',
