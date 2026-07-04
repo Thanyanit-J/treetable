@@ -18,6 +18,8 @@ import { LatticeComponent } from './lattice/lattice.component';
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2;
+const MIN_CARD_WIDTH = 256;
+const MAX_CARD_WIDTH = 1600;
 
 /**
  * Card chrome around one Topic's lattice. Edge-to-edge (no padding), a ⋯
@@ -35,6 +37,7 @@ const MAX_ZOOM = 2;
     <article
       #cardRoot
       class="relative flex h-full min-w-64 shrink-0 flex-col border-r border-slate-200 bg-white"
+      [style.width.px]="cardWidth()"
       (click)="onCardClick($event)"
       (wheel)="onWheel($event)"
     >
@@ -77,6 +80,17 @@ const MAX_ZOOM = 2;
           <app-chart-panel [topic]="topic()" [evaluation]="evaluation()" />
         </div>
       }
+
+      <!-- Right-edge resize handle; the content scrolls inside the card. -->
+      <button
+        type="button"
+        class="absolute inset-y-0 right-0 z-30 w-1.5 cursor-col-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+        aria-label="Resize card (drag, or use the left and right arrow keys; double-click resets)"
+        (pointerdown)="startResize($event)"
+        (keydown.arrowleft)="nudgeResize($event, -32)"
+        (keydown.arrowright)="nudgeResize($event, 32)"
+        (dblclick)="cardWidth.set(null)"
+      ></button>
     </article>
 
     <ng-template #cardMenu>
@@ -146,6 +160,8 @@ export class TopicCardComponent {
 
   protected readonly zoom = signal(1);
   protected readonly zoomPercent = computed(() => `${Math.round(this.zoom() * 100)}%`);
+  /** Ephemeral view state like zoom; null = size to content. */
+  protected readonly cardWidth = signal<number | null>(null);
   protected readonly showCharts = signal(false);
   protected readonly chartCount = computed(() => this.topic().charts?.length ?? 0);
   protected readonly isCardSelected = computed(() => {
@@ -175,6 +191,42 @@ export class TopicCardComponent {
     const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
     const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.zoom() * factor));
     this.zoom.set(Math.round(next * 100) / 100);
+  }
+
+  /** Dragging the right edge resizes just this card; content scrolls inside. */
+  protected startResize(event: PointerEvent): void {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const handle = event.currentTarget as HTMLElement;
+    try {
+      handle.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer already released.
+    }
+    const startX = event.clientX;
+    const startWidth = this.cardRootRef().nativeElement.offsetWidth;
+
+    const onMove = (moveEvent: PointerEvent): void => {
+      const width = Math.round(startWidth + (moveEvent.clientX - startX));
+      this.cardWidth.set(Math.min(MAX_CARD_WIDTH, Math.max(MIN_CARD_WIDTH, width)));
+    };
+    const cleanup = (): void => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', cleanup);
+      handle.removeEventListener('pointercancel', cleanup);
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', cleanup);
+    handle.addEventListener('pointercancel', cleanup);
+  }
+
+  protected nudgeResize(event: Event, delta: number): void {
+    event.preventDefault();
+    const current = this.cardWidth() ?? this.cardRootRef().nativeElement.offsetWidth;
+    this.cardWidth.set(Math.min(MAX_CARD_WIDTH, Math.max(MIN_CARD_WIDTH, current + delta)));
   }
 
   /** Shrinks (never enlarges) the lattice to the card's available width. */
