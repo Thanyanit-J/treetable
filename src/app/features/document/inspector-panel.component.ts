@@ -20,6 +20,7 @@ import {
   RefNameTarget,
 } from '../../core/store/document-store.service';
 import { insertReferenceIntoInput } from './formula-ref-insert';
+import { ConfirmDialogComponent } from './ui/confirm-dialog.component';
 
 const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
   sky: 'bg-sky-400',
@@ -37,6 +38,7 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
  */
 @Component({
   selector: 'app-inspector-panel',
+  imports: [ConfirmDialogComponent],
   template: `
     @if (collapsed()) {
       <aside
@@ -287,7 +289,7 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                         type="button"
                         class="choice"
                         [class.choice-active]="column.kind === 'input'"
-                        (click)="store.setColumnKind(topic.id, column.id, 'input')"
+                        (click)="requestValueKind(topic, column)"
                       >
                         Value
                       </button>
@@ -465,6 +467,15 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
         </div>
       </aside>
     }
+
+    <app-confirm-dialog
+      [open]="pendingFormulaToValue() !== null"
+      title="Convert formula to values"
+      [message]="formulaToValueMessage()"
+      confirmLabel="Convert to values"
+      (confirmed)="confirmFormulaToValue()"
+      (cancelled)="pendingFormulaToValue.set(null)"
+    />
   `,
   styles: `
     .section-label {
@@ -562,6 +573,14 @@ export class InspectorPanelComponent {
   protected readonly refNameError = signal<string | null>(null);
   private formulaSession: FormulaEditorSession | null = null;
 
+  /** Formula column awaiting the destructive convert-to-values confirmation. */
+  protected readonly pendingFormulaToValue = signal<{
+    topicId: string;
+    columnId: string;
+    displayName: string;
+    expression: string;
+  } | null>(null);
+
   protected readonly selectionKind = computed(() => this.store.selection()?.kind ?? null);
 
   protected readonly topic = computed<TopicCardV2 | null>(() => {
@@ -640,6 +659,40 @@ export class InspectorPanelComponent {
       return;
     }
     this.refNameError.set(null);
+  }
+
+  /**
+   * Formula → Value is destructive (the formula is gone once the session's
+   * undo history is), so it asks first; the store then freezes the current
+   * results into the cells as one undo step.
+   */
+  protected requestValueKind(topic: TopicCardV2, column: ColumnV2): void {
+    if (column.kind !== 'computed') {
+      this.store.setColumnKind(topic.id, column.id, 'input');
+      return;
+    }
+    this.pendingFormulaToValue.set({
+      topicId: topic.id,
+      columnId: column.id,
+      displayName: column.displayName,
+      expression: column.expression ?? '=',
+    });
+  }
+
+  protected formulaToValueMessage(): string {
+    const pending = this.pendingFormulaToValue();
+    if (!pending) {
+      return '';
+    }
+    return `“${pending.displayName}” keeps its current results as plain values, and its formula ${pending.expression} is removed. Undo can bring the formula back during this session only.`;
+  }
+
+  protected confirmFormulaToValue(): void {
+    const pending = this.pendingFormulaToValue();
+    if (pending) {
+      this.store.setColumnKind(pending.topicId, pending.columnId, 'input');
+    }
+    this.pendingFormulaToValue.set(null);
   }
 
   /**

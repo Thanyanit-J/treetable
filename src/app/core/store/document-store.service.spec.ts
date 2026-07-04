@@ -89,6 +89,32 @@ describe('DocumentStoreService', () => {
     expect(amountColumn().expression).toBeNull();
   });
 
+  it('freezes formula results into values when a computed column becomes input', () => {
+    const column = amountColumn();
+    store.setCellValue(wealth().id, bankA().id, column.id, '= 2 * 3');
+    expect(amountColumn().kind).toBe('computed');
+
+    store.setColumnKind(wealth().id, column.id, 'input');
+    expect(amountColumn().kind).toBe('input');
+    expect(amountColumn().expression).toBeNull();
+    expect(bankA().values[column.id]).toBe('6');
+
+    store.undo();
+    expect(amountColumn().kind).toBe('computed');
+    expect(amountColumn().expression).toBe('= 2 * 3');
+  });
+
+  it('materializes the sibling cells when typing a plain value into a computed cell', () => {
+    const column = amountColumn();
+    store.setCellValue(wealth().id, bankA().id, column.id, '= 2 * 3');
+    store.setCellValue(wealth().id, bankA().id, column.id, '9');
+
+    expect(amountColumn().kind).toBe('input');
+    expect(bankA().values[column.id]).toBe('9');
+    const bankB = savings().children.find((node) => node.refName === 'BankB')!;
+    expect(bankB.values[column.id]).toBe('6');
+  });
+
   it('keeps collapse outside the undo stack', () => {
     expect(store.canUndo()).toBe(false);
     store.toggleCollapse(savings().id);

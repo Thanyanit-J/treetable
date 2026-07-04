@@ -17,6 +17,7 @@ import {
   PillAlignment,
   TopicCardV2,
   cloneDocument,
+  collectLeaves,
   createInputColumn,
   createNode,
   ensureCanHostChildren,
@@ -594,7 +595,8 @@ export class DocumentStoreService {
    * Commits a cell edit. Typing a formula (`=`…) into any cell of an input
    * column converts the whole column to a Computed Column (v1 muscle memory,
    * formalized by ADR-0002); committing plain text into a computed cell
-   * converts the column back to input, preserving previously stored values.
+   * converts the column back to input, freezing the formula's current
+   * results as the other cells' values.
    */
   setCellValue(topicId: string, nodeId: string, columnId: string, raw: string): void {
     this.mutate((document) => {
@@ -616,6 +618,7 @@ export class DocumentStoreService {
       }
 
       if (column.kind === 'computed') {
+        this.writeComputedResults(topic, column.id);
         column.kind = 'input';
         column.expression = null;
       }
@@ -1147,8 +1150,10 @@ export class DocumentStoreService {
 
   /**
    * Switches a column between its three kinds (CONTEXT.md): value (input),
-   * formula (computed) and chart. Values survive round-trips; a formula
-   * starts empty; a chart defaults to the first other non-chart column.
+   * formula (computed) and chart. Converting a formula to values freezes its
+   * current results into the cells — destructive to the formula, so the UI
+   * confirms first; a new formula starts empty; a chart defaults to the
+   * first other non-chart column.
    */
   setColumnKind(topicId: string, columnId: string, kind: 'input' | 'computed' | 'chart'): void {
     const topic = this.findTopic(this.documentSignal(), topicId);
@@ -1164,11 +1169,13 @@ export class DocumentStoreService {
     }
 
     this.mutate((document) => {
-      const draftColumn = this.findTopic(document, topicId)?.columns.find(
-        (candidate) => candidate.id === columnId,
-      );
-      if (!draftColumn) {
+      const draftTopic = this.findTopic(document, topicId);
+      const draftColumn = draftTopic?.columns.find((candidate) => candidate.id === columnId);
+      if (!draftTopic || !draftColumn) {
         return;
+      }
+      if (draftColumn.kind === 'computed' && kind === 'input') {
+        this.writeComputedResults(draftTopic, draftColumn.id);
       }
       draftColumn.kind = kind;
       draftColumn.expression = kind === 'computed' ? (draftColumn.expression ?? '= ') : null;
@@ -1177,6 +1184,23 @@ export class DocumentStoreService {
         draftColumn.rollup = 'none';
       }
     });
+  }
+
+  /**
+   * Freezes a Computed Column's current results into the draft's leaf values
+   * (errors and blanks clear the cell). Runs inside `mutate`, before the
+   * draft's formula is touched, so `evaluations()` still sees the formula.
+   */
+  private writeComputedResults(topic: TopicCardV2, columnId: string): void {
+    const evaluation = this.evaluations().get(topic.id);
+    for (const leaf of collectLeaves(topic.children)) {
+      const cell = evaluation?.computedCells.get(leaf.id)?.get(columnId);
+      if (cell && cell.error === null && cell.value !== null) {
+        leaf.values[columnId] = formatNumericValue(cell.value);
+      } else {
+        delete leaf.values[columnId];
+      }
+    }
   }
 
   setColumnValueType(topicId: string, columnId: string, valueType: 'number' | 'text'): void {
