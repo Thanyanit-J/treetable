@@ -21,6 +21,7 @@ import {
   RefNameTarget,
 } from '../../core/store/document-store.service';
 import { insertReferenceIntoInput } from './formula-ref-insert';
+import { FormulaSuggestService } from './formula-suggest.service';
 import { ConfirmDialogComponent } from './ui/confirm-dialog.component';
 
 const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
@@ -338,8 +339,14 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                           [value]="column.expression ?? '='"
                           placeholder="= $Amount * $Rate"
                           (focus)="beginFormulaSession(topic, column, $event)"
+                          (input)="suggest.refresh()"
+                          (keyup)="onFormulaKeyup($event)"
+                          (click)="suggest.refresh()"
                           (blur)="commitExpression(topic, column, $event)"
-                          (keydown.enter)="blurTarget($event)"
+                          (keydown.enter)="onFormulaEnter($event)"
+                          (keydown.arrowdown)="onSuggestMove($event, 1)"
+                          (keydown.arrowup)="onSuggestMove($event, -1)"
+                          (keydown.escape)="onFormulaEscape($event)"
                         />
                         <span class="mt-1 block text-[11px] font-normal text-slate-400">
                           Click a column in any card to insert its reference.
@@ -585,6 +592,7 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
 })
 export class InspectorPanelComponent {
   protected readonly store = inject(DocumentStoreService);
+  protected readonly suggest = inject(FormulaSuggestService);
 
   readonly requestDeleteTopic = output<string>();
   readonly requestDeleteNode = output<{ topicId: string; nodeId: string }>();
@@ -730,9 +738,39 @@ export class InspectorPanelComponent {
       insertRef: (refText) => insertReferenceIntoInput(input, refText),
     };
     this.store.setFormulaEditor(this.formulaSession);
+    this.suggest.attach(topic.id, input);
+  }
+
+  protected onFormulaEnter(event: Event): void {
+    if (this.suggest.accept()) {
+      event.preventDefault();
+      return;
+    }
+    this.blurTarget(event);
+  }
+
+  protected onFormulaEscape(event: Event): void {
+    if (this.suggest.closeIfOpen()) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }
+
+  protected onSuggestMove(event: Event, delta: number): void {
+    if (this.suggest.move(delta)) {
+      event.preventDefault();
+    }
+  }
+
+  /** Caret moves need a suggestions refresh; plain typing runs through (input). */
+  protected onFormulaKeyup(event: KeyboardEvent): void {
+    if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      this.suggest.refresh();
+    }
   }
 
   protected commitExpression(topic: TopicCardV2, column: ColumnV2, event: Event): void {
+    this.suggest.detach();
     if (this.formulaSession) {
       this.store.clearFormulaEditor(this.formulaSession);
       this.formulaSession = null;

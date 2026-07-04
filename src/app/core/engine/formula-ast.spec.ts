@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseExpressionSource, printExpression } from './formula-ast';
+import { parseExpressionSource, printExpression, transformRefPaths } from './formula-ast';
 
 function roundTrip(source: string): string {
   const outcome = parseExpressionSource(source);
@@ -76,6 +76,38 @@ describe('formula AST', () => {
         { kind: 'rowRaw', path: ['$B'] },
       ],
     });
+  });
+
+  it('parses dot aggregates as call sugar and prints them back dotted', () => {
+    const outcome = parseExpressionSource('$A.sum()');
+    if ('error' in outcome) {
+      throw new Error(outcome.error);
+    }
+    expect(outcome.expr).toMatchObject({
+      kind: 'call',
+      name: 'SUM',
+      dotted: true,
+      args: [{ kind: 'series', path: ['$A'] }],
+    });
+
+    expect(roundTrip('$A.sum()')).toBe('$A.sum()');
+    expect(roundTrip('Wealth.Savings.$Amount.avg() + 1')).toBe('Wealth.Savings.$Amount.avg() + 1');
+    expect(roundTrip('$A.count() / COUNT($A)')).toBe('$A.count() / COUNT($A)');
+  });
+
+  it('keeps the dotted style through ref-path transforms', () => {
+    const outcome = parseExpressionSource('$A.sum()');
+    if ('error' in outcome) {
+      throw new Error(outcome.error);
+    }
+    const renamed = transformRefPaths(outcome.expr, () => ['$B']);
+    expect(printExpression(renamed)).toBe('$B.sum()');
+  });
+
+  it('rejects malformed dot aggregates with specific messages', () => {
+    expect(parseError('$A.median()')).toContain('Unknown function');
+    expect(parseError('$A.sum(1)')).toContain('takes no arguments');
+    expect(parseError('Savings.sum()')).toContain('Expected a column reference');
   });
 
   it('treats dotted paths in aggregates as series regardless of arity', () => {

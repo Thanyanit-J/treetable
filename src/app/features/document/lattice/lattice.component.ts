@@ -39,6 +39,7 @@ import {
   FormulaEditorSession,
 } from '../../../core/store/document-store.service';
 import { insertReferenceIntoInput } from '../formula-ref-insert';
+import { FormulaSuggestService } from '../formula-suggest.service';
 import { NodePillComponent } from './node-pill.component';
 
 interface ConnectorPath {
@@ -223,8 +224,12 @@ interface ConnectorPath {
                       [attr.aria-label]="cellAriaLabel(row.nodeId, column)"
                       (focus)="syncCellFormulaSession(column, $event)"
                       (input)="syncCellFormulaSession(column, $event)"
+                      (keyup)="onEditorKeyup($event)"
+                      (click)="suggest.refresh()"
                       (blur)="commitCellEdit(row.nodeId, column, $event)"
-                      (keydown.enter)="commitCellEditAndBlur(row.nodeId, column, $event)"
+                      (keydown.enter)="onCellEditorEnter(row.nodeId, column, $event)"
+                      (keydown.arrowdown)="onSuggestMove($event, 1)"
+                      (keydown.arrowup)="onSuggestMove($event, -1)"
                       (keydown.escape)="cancelEditing($event)"
                       (contextmenu)="$event.stopPropagation()"
                     />
@@ -494,6 +499,7 @@ interface ConnectorPath {
 })
 export class LatticeComponent {
   protected readonly store = inject(DocumentStoreService);
+  protected readonly suggest = inject(FormulaSuggestService);
   private readonly destroyRef = inject(DestroyRef);
 
   readonly topic = input.required<TopicCardV2>();
@@ -729,11 +735,38 @@ export class LatticeComponent {
   }
 
   protected cancelEditing(event: Event): void {
+    // First Escape only dismisses the suggestion dropdown.
+    if (this.suggest.closeIfOpen()) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     this.editingKey.set(null);
     this.releaseCellFormulaSession();
     (event.target as HTMLElement | null)?.blur();
+  }
+
+  protected onCellEditorEnter(nodeId: string, column: ColumnV2, event: Event): void {
+    if (this.suggest.accept()) {
+      event.preventDefault();
+      return;
+    }
+    this.commitCellEditAndBlur(nodeId, column, event);
+  }
+
+  protected onSuggestMove(event: Event, delta: number): void {
+    if (this.suggest.move(delta)) {
+      event.preventDefault();
+    }
+  }
+
+  /** Caret moves need a suggestions refresh; plain typing runs through (input). */
+  protected onEditorKeyup(event: KeyboardEvent): void {
+    if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      this.suggest.refresh();
+    }
   }
 
   protected cellEditValue(nodeId: string, column: ColumnV2): string {
@@ -976,12 +1009,14 @@ export class LatticeComponent {
         };
         this.store.setFormulaEditor(this.cellFormulaSession);
       }
+      this.suggest.attach(this.topic().id, input);
     } else {
       this.releaseCellFormulaSession();
     }
   }
 
   private releaseCellFormulaSession(): void {
+    this.suggest.detach();
     if (this.cellFormulaSession) {
       this.store.clearFormulaEditor(this.cellFormulaSession);
       this.cellFormulaSession = null;

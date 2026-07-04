@@ -4,6 +4,7 @@ import { DocumentStoreService } from '../../core/store/document-store.service';
 import { TopicEvaluation } from '../../core/engine/formula-evaluator';
 import { CardV2 } from '../../core/model/document.model';
 import { ConfirmDialogComponent } from './ui/confirm-dialog.component';
+import { FormulaSuggestOverlayComponent } from './formula-suggest-overlay.component';
 import { InspectorPanelComponent } from './inspector-panel.component';
 import { TopicCardComponent } from './topic-card.component';
 
@@ -39,6 +40,7 @@ interface Toast {
     CdkDragHandle,
     CdkDropList,
     ConfirmDialogComponent,
+    FormulaSuggestOverlayComponent,
     InspectorPanelComponent,
     TopicCardComponent,
   ],
@@ -176,6 +178,8 @@ interface Toast {
       (secondaryConfirmed)="confirmDeleteKeepingData()"
       (cancelled)="pendingDelete.set(null)"
     />
+
+    <app-formula-suggest-overlay />
   `,
   styles: `
     .toolbar-button {

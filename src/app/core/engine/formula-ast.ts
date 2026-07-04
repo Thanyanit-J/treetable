@@ -16,7 +16,7 @@ export type Expr =
   | { kind: 'ref'; path: string[] }
   | { kind: 'unary'; op: '+' | '-'; operand: Expr }
   | { kind: 'binary'; op: '+' | '-' | '*' | '/'; left: Expr; right: Expr }
-  | { kind: 'call'; name: string; args: CallArg[] };
+  | { kind: 'call'; name: string; args: CallArg[]; dotted?: boolean };
 
 export type CallArg =
   | { kind: 'series'; path: string[] }
@@ -191,13 +191,24 @@ function parseTerm(state: ParserState): ParseOutcome {
   return left;
 }
 
+/** True when the upcoming tokens are `.name(` — a dot-aggregate suffix. */
+function peekDotMethod(state: ParserState): boolean {
+  return (
+    state.tokens[state.cursor]?.type === 'dot' &&
+    state.tokens[state.cursor + 1]?.type === 'identifier' &&
+    state.tokens[state.cursor + 2]?.type === 'lparen'
+  );
+}
+
 /**
  * Parses a dotted reference path starting at an identifier token that has
  * already been consumed: `Entity(.Entity)*.$Column` or a bare `$Column`.
+ * Stops (without consuming) before a `.name(` suffix — parseFactor turns
+ * that into a dot aggregate.
  */
 function parseRefPath(state: ParserState, first: string): { path: string[] } | { error: string } {
   if (isColumnRef(first)) {
-    if (peek(state)?.type === 'dot') {
+    if (peek(state)?.type === 'dot' && !peekDotMethod(state)) {
       return { error: `A column reference cannot be qualified further: ${first}` };
     }
     return { path: [first] };
@@ -215,7 +226,7 @@ function parseRefPath(state: ParserState, first: string): { path: string[] } | {
   }
 
   const path = [first];
-  while (match(state, 'dot')) {
+  while (!peekDotMethod(state) && match(state, 'dot')) {
     const segment = peek(state);
     if (segment?.type !== 'identifier') {
       return { error: `Expected a name after "${path.join('.')}."` };
@@ -224,7 +235,7 @@ function parseRefPath(state: ParserState, first: string): { path: string[] } | {
 
     if (isColumnRef(segment.lexeme)) {
       path.push(segment.lexeme);
-      if (peek(state)?.type === 'dot') {
+      if (peek(state)?.type === 'dot' && !peekDotMethod(state)) {
         return { error: `A column reference cannot be qualified further: ${segment.lexeme}` };
       }
       return { path };
@@ -286,6 +297,9 @@ function parseFactor(state: ParserState): ParseOutcome {
     if ('error' in ref) {
       return ref;
     }
+    if (peekDotMethod(state)) {
+      return parseDotAggregate(state, ref.path);
+    }
     return { expr: { kind: 'ref', path: ref.path } };
   }
 
@@ -301,6 +315,26 @@ function parseFactor(state: ParserState): ParseOutcome {
   }
 
   return { error: 'Unexpected token in formula' };
+}
+
+/**
+ * `.sum()`-style aggregate suffix on a column-terminated path — sugar for
+ * the equivalent call over the same series: `$Amount.sum()` ≡ `SUM($Amount)`,
+ * `Savings.$Amount.avg()` ≡ `AVG(Savings.$Amount)`. The `dotted` flag keeps
+ * the printer (and thus Reference Name rewrites) in the user's style.
+ */
+function parseDotAggregate(state: ParserState, path: string[]): ParseOutcome {
+  state.cursor += 1; // '.'
+  const name = state.tokens[state.cursor]!.lexeme;
+  state.cursor += 2; // identifier '('
+  const upper = name.toUpperCase();
+  if (!AGGREGATE_FUNCTIONS.has(upper) && !COUNT_FUNCTIONS.has(upper)) {
+    return { error: `Unknown function: .${name}()` };
+  }
+  if (!match(state, 'rparen')) {
+    return { error: `.${name.toLowerCase()}() takes no arguments` };
+  }
+  return { expr: { kind: 'call', name: upper, dotted: true, args: [{ kind: 'series', path }] } };
 }
 
 function parseCall(state: ParserState, name: string): ParseOutcome {
@@ -412,6 +446,10 @@ export function printExpression(expr: Expr): string {
       return `${left} ${expr.op} ${right}`;
     }
     case 'call': {
+      const sole = expr.args.length === 1 ? expr.args[0] : undefined;
+      if (expr.dotted && sole?.kind === 'series') {
+        return `${sole.path.join('.')}.${expr.name.toLowerCase()}()`;
+      }
       const args = expr.args
         .map((arg) => (arg.kind === 'expr' ? printExpression(arg.expr) : arg.path.join('.')))
         .join(', ');
@@ -480,6 +518,7 @@ export function transformRefPaths(expr: Expr, transform: (path: string[]) => str
       return {
         kind: 'call',
         name: expr.name,
+        ...(expr.dotted ? { dotted: true } : {}),
         args: expr.args.map((arg) =>
           arg.kind === 'expr'
             ? { kind: 'expr', expr: transformRefPaths(arg.expr, transform) }
