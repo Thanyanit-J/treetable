@@ -667,23 +667,65 @@ export function leafNumericValue(
 }
 
 /**
- * Sum rollup over the given Leaves. Returns null when any involved cell is
- * errored/non-numeric — a silently wrong total would be worse than no total.
+ * The column's configured summary over the given Leaves (footer and
+ * collapsed Rollup Rows). Blank cells don't participate — except in Count,
+ * which counts the non-blank ones. Returns null when any involved cell is
+ * errored/non-numeric (a silently wrong summary would be worse than none)
+ * or when a value-based summary has nothing to summarize.
  */
-export function rollupSum(
+export function rollupValue(
   column: ColumnV2,
   leaves: readonly NodeV2[],
   evaluation: TopicEvaluation,
 ): number | null {
-  let total = 0;
+  if (column.rollup === 'none') {
+    return null;
+  }
+
+  if (column.rollup === 'count') {
+    let count = 0;
+    for (const leaf of leaves) {
+      if (!isBlankCell(column, leaf, evaluation)) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  const values: number[] = [];
   for (const leaf of leaves) {
+    if (isBlankCell(column, leaf, evaluation)) {
+      continue;
+    }
     const value = leafNumericValue(column, leaf, evaluation);
     if (value === null) {
       return null;
     }
-    total += value;
+    values.push(value);
   }
-  return total;
+
+  switch (column.rollup) {
+    case 'sum':
+      return values.reduce((total, value) => total + value, 0);
+    case 'avg':
+      return values.length > 0
+        ? values.reduce((total, value) => total + value, 0) / values.length
+        : null;
+    case 'min':
+      return values.length > 0 ? Math.min(...values) : null;
+    case 'max':
+      return values.length > 0 ? Math.max(...values) : null;
+    default:
+      return null;
+  }
+}
+
+function isBlankCell(column: ColumnV2, leaf: NodeV2, evaluation: TopicEvaluation): boolean {
+  if (column.kind === 'computed') {
+    const cell = evaluation.computedCells.get(leaf.id)?.get(column.id);
+    return !cell || (cell.error === null && cell.value === null);
+  }
+  return (leaf.values[column.id] ?? '').trim().length === 0;
 }
 
 /** Formats a numeric value for display, trimming binary floating-point noise. */

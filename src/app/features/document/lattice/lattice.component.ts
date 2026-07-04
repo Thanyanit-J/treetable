@@ -16,7 +16,7 @@ import {
   TopicEvaluation,
   formatNumericValue,
   leafNumericValue,
-  rollupSum,
+  rollupValue,
 } from '../../../core/engine/formula-evaluator';
 import {
   LatticePill,
@@ -302,7 +302,7 @@ interface ConnectorPath {
               [style.grid-row]="footerGridRow()"
               [style.grid-column]="'1 / span ' + lattice().depthCount"
             >
-              Total
+              Summary
             </div>
             @for (column of renderColumns(); track column.id; let columnIndex = $index) {
               <div
@@ -316,7 +316,7 @@ interface ConnectorPath {
                 @if (column.rollup !== 'none') {
                   <div
                     class="min-h-9 px-2 py-1.5 text-right text-sm font-semibold text-slate-700"
-                    [attr.aria-label]="'Total of ' + column.displayName"
+                    [attr.aria-label]="'Summary of ' + column.displayName"
                   >
                     {{ footerRollupDisplay(column) }}
                   </div>
@@ -1464,29 +1464,26 @@ export class LatticeComponent {
   // Rollups -------------------------------------------------------------------
 
   protected collapsedRollupDisplay(nodeId: string, column: ColumnV2): string {
-    if (column.rollup === 'none') {
-      return '';
-    }
     const node = this.findNode(nodeId);
     if (!node) {
       return '';
     }
-    const total = rollupSum(column, hiddenLeavesOf(node), this.evaluation());
-    return total === null ? '#ERR' : formatNumericValue(total);
+    const total = rollupValue(column, hiddenLeavesOf(node), this.evaluation());
+    return total === null ? '' : formatNumericValue(total);
   }
 
   protected rollupTitle(column: ColumnV2): string | null {
-    return column.rollup === 'none' ? null : 'Rollup of hidden rows (read-only)';
+    return column.rollup === 'none' ? null : 'Summary of hidden rows (read-only)';
   }
 
   protected rollupAriaLabel(nodeId: string, column: ColumnV2): string {
     const node = this.findNode(nodeId);
-    return `Rollup of ${column.displayName} for collapsed ${node?.displayName ?? 'branch'}`;
+    return `Summary of ${column.displayName} for collapsed ${node?.displayName ?? 'branch'}`;
   }
 
   protected footerRollupDisplay(column: ColumnV2): string {
-    const total = rollupSum(column, collectLeaves(this.topic().children), this.evaluation());
-    return total === null ? '#ERR' : formatNumericValue(total);
+    const total = rollupValue(column, collectLeaves(this.topic().children), this.evaluation());
+    return total === null ? '' : formatNumericValue(total);
   }
 
   // Columns -------------------------------------------------------------------

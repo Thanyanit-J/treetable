@@ -4,7 +4,7 @@ import {
   evaluateDocument,
   formatNumericValue,
   resolveRefBindings,
-  rollupSum,
+  rollupValue,
 } from '../engine/formula-evaluator';
 import { computeTopicLattice, hiddenLeavesOf } from '../lattice/lattice-layout';
 import {
@@ -16,6 +16,7 @@ import {
   ImportResult,
   NodeV2,
   PillAlignment,
+  RollupMode,
   TopicCardV2,
   cloneDocument,
   collectLeaves,
@@ -702,7 +703,7 @@ export class DocumentStoreService {
     });
   }
 
-  setColumnRollup(topicId: string, columnId: string, rollup: 'none' | 'sum'): void {
+  setColumnRollup(topicId: string, columnId: string, rollup: RollupMode): void {
     this.mutate((document) => {
       const topic = this.findTopic(document, topicId);
       const column = topic?.columns.find((candidate) => candidate.id === columnId);
@@ -1092,7 +1093,7 @@ export class DocumentStoreService {
           const branch = findNodeAndParent(topic.children, row.nodeId)?.node;
           let copyText = '';
           if (branch && evaluation && column.rollup !== 'none') {
-            const total = rollupSum(column, hiddenLeavesOf(branch), evaluation);
+            const total = rollupValue(column, hiddenLeavesOf(branch), evaluation);
             copyText = total === null ? '' : formatNumericValue(total);
           }
           gridRow.push({ nodeId: row.nodeId, columnId: column.id, copyText, editable: false });

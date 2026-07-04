@@ -13,7 +13,7 @@ import { slugifyEntityRefName, uniqueRefName } from './ref-name';
 
 export type ColumnKind = 'input' | 'computed' | 'chart';
 export type ColumnValueType = 'number' | 'text';
-export type RollupMode = 'none' | 'sum';
+export type RollupMode = 'none' | 'sum' | 'avg' | 'min' | 'max' | 'count';
 
 export const ACCENT_COLORS = ['sky', 'amber', 'emerald', 'rose', 'violet', 'slate'] as const;
 export type AccentColor = (typeof ACCENT_COLORS)[number];

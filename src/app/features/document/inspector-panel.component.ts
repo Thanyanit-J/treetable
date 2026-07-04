@@ -11,6 +11,7 @@ import {
   AccentColor,
   ColumnV2,
   NodeV2,
+  RollupMode,
   TopicCardV2,
   findNodeAndParent,
 } from '../../core/model/document.model';
@@ -364,13 +365,20 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                     }
                   }
                   @if (column.kind !== 'chart') {
-                    <label class="flex items-center gap-2 text-sm text-slate-600">
-                      <input
-                        type="checkbox"
-                        [checked]="column.rollup === 'sum'"
-                        (change)="toggleRollup(topic, column, $event)"
-                      />
-                      Sum rollup (footer + collapsed rows)
+                    <label class="field">
+                      <span>Summary (footer + collapsed rows)</span>
+                      <select
+                        class="field-input"
+                        [value]="column.rollup"
+                        (change)="commitRollup(topic, column, $event)"
+                      >
+                        <option value="none">None</option>
+                        <option value="sum">Sum</option>
+                        <option value="avg">Average</option>
+                        <option value="min">Min</option>
+                        <option value="max">Max</option>
+                        <option value="count">Count</option>
+                      </select>
                     </label>
                   }
                   <button type="button" class="danger-button" (click)="deleteColumn(topic, column)">
@@ -765,9 +773,9 @@ export class InspectorPanelComponent {
     }
   }
 
-  protected toggleRollup(topic: TopicCardV2, column: ColumnV2, event: Event): void {
-    const checked = (event.target as HTMLInputElement).checked;
-    this.store.setColumnRollup(topic.id, column.id, checked ? 'sum' : 'none');
+  protected commitRollup(topic: TopicCardV2, column: ColumnV2, event: Event): void {
+    const mode = (event.target as HTMLSelectElement).value as RollupMode;
+    this.store.setColumnRollup(topic.id, column.id, mode);
   }
 
   protected chartSourceOptions(topic: TopicCardV2, column: ColumnV2): ColumnV2[] {

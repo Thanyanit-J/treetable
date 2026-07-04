@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ColumnV2, NodeV2, TopicCardV2 } from '../model/document.model';
-import { evaluateTopic, formatNumericValue, rollupSum } from './formula-evaluator';
+import { ColumnV2, NodeV2, RollupMode, TopicCardV2 } from '../model/document.model';
+import { evaluateTopic, formatNumericValue, rollupValue } from './formula-evaluator';
 
 let idCounter = 0;
 
@@ -194,23 +194,60 @@ describe('formula evaluator', () => {
     expect(cellError(topic, rows[0]!.id, columns[0]!.id)).toBe('Unknown reference: Savings');
   });
 
-  it('rolls up sums across input and computed columns', () => {
-    const columns = [inputColumn('$A'), computedColumn('$C', '= $A * 2')];
+  it('summarizes sums across input and computed columns', () => {
+    const columns = [
+      { ...inputColumn('$A'), rollup: 'sum' as RollupMode },
+      { ...computedColumn('$C', '= $A * 2'), rollup: 'sum' as RollupMode },
+    ];
     const rows = [leaf('r1', valuesFor(columns, ['3'])), leaf('r2', valuesFor(columns, ['4']))];
     const topic = topicOf(columns, rows);
     const evaluation = evaluateTopic(topic);
 
-    expect(rollupSum(columns[0]!, rows, evaluation)).toBe(7);
-    expect(rollupSum(columns[1]!, rows, evaluation)).toBe(14);
+    expect(rollupValue(columns[0]!, rows, evaluation)).toBe(7);
+    expect(rollupValue(columns[1]!, rows, evaluation)).toBe(14);
   });
 
-  it('refuses to roll up when any involved cell is errored', () => {
-    const columns = [inputColumn('$A'), computedColumn('$C', '= 1 / $A')];
+  it('supports average, min, max and count summaries, skipping blank cells', () => {
+    const column = { ...inputColumn('$A'), rollup: 'avg' as RollupMode };
+    const rows = [
+      leaf('r1', valuesFor([column], ['4'])),
+      leaf('r2', valuesFor([column], ['8'])),
+      leaf('r3', {}),
+    ];
+    const topic = topicOf([column], rows);
+    const evaluation = evaluateTopic(topic);
+
+    expect(rollupValue(column, rows, evaluation)).toBe(6);
+    expect(rollupValue({ ...column, rollup: 'min' }, rows, evaluation)).toBe(4);
+    expect(rollupValue({ ...column, rollup: 'max' }, rows, evaluation)).toBe(8);
+    expect(rollupValue({ ...column, rollup: 'count' }, rows, evaluation)).toBe(2);
+    expect(rollupValue({ ...column, rollup: 'none' }, rows, evaluation)).toBeNull();
+  });
+
+  it('counts non-numeric text but refuses numeric summaries over it', () => {
+    const column = {
+      ...inputColumn('$A'),
+      valueType: 'text' as const,
+      rollup: 'count' as RollupMode,
+    };
+    const rows = [leaf('r1', valuesFor([column], ['hello'])), leaf('r2', {})];
+    const topic = topicOf([column], rows);
+    const evaluation = evaluateTopic(topic);
+
+    expect(rollupValue(column, rows, evaluation)).toBe(1);
+    expect(rollupValue({ ...column, rollup: 'sum' }, rows, evaluation)).toBeNull();
+  });
+
+  it('refuses to summarize when any involved cell is errored', () => {
+    const columns = [
+      inputColumn('$A'),
+      { ...computedColumn('$C', '= 1 / $A'), rollup: 'sum' as RollupMode },
+    ];
     const rows = [leaf('r1', valuesFor(columns, ['0']))];
     const topic = topicOf(columns, rows);
     const evaluation = evaluateTopic(topic);
 
-    expect(rollupSum(columns[1]!, rows, evaluation)).toBeNull();
+    expect(rollupValue(columns[1]!, rows, evaluation)).toBeNull();
   });
 
   it('formats numbers without binary floating-point noise', () => {
