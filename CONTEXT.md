@@ -47,11 +47,11 @@ _Avoid_: formula cell (formulas never belong to a single cell — see ADR-0002)
 Hiding a Branch's descendant Nodes — and therefore their Rows — in both presentations at once; pure view state that never changes computed values.
 
 **Rollup**:
-A per-column aggregate (e.g. sum) applied wherever many Rows compress into one: the summary footer, and the Row a collapsed Branch shows for its hidden Leaves.
+A per-column Summary function (Sum, Average, Min, Max, or Count) applied wherever many Rows compress into one: the summary footer, and the Row a collapsed Branch shows for its hidden Leaves. Blank cells don't participate — except in Count, which counts the non-blank ones.
 _Avoid_: summary mode (legacy code name), subtotal
 
 **Rollup Row**:
-The read-only Row a collapsed Branch displays: each cell shows the column's Rollup over the hidden Leaves' values, blank where no Rollup is configured; if no column has a Rollup, the collapsed Branch shows no Row at all.
+The read-only Row a collapsed Branch displays: each cell shows the column's Summary over the hidden Leaves' values, blank where no Summary is configured; if no column has a Summary, the collapsed Branch shows one merged cell counting its hidden rows instead.
 
 **Report**:
 A PDF or image rendering of one or more cards, configured by scope (card(s) or whole Document), format (PDF or PNG), and fit (fit-to-width with pagination and repeated Header, or scale-to-one-page including Charts).
@@ -88,12 +88,12 @@ A standalone card in the rail holding Charts, which may combine data from any To
 - A **Branch** spans the rows of all its visible **Leaves**, like a vertically merged spreadsheet cell rendered as a Node
 - A **Leaf** owns exactly one **Row**; a **Row** belongs to exactly one **Leaf**
 - **Collapsing** a Branch removes its subtree's Nodes and Rows together — the two presentations cannot disagree because there is only one row lattice
-- A collapsed **Branch** shows a **Rollup Row** iff at least one **Column** has a Rollup configured; Rollup cells are computed and can never be edited
+- A collapsed **Branch** shows a **Rollup Row**: each Column's Summary, or — when no Column has one — a single merged cell counting the hidden rows. Rollup cells are computed, selectable and copyable, and can never be edited
 - Formulas and the footer always compute over ALL Leaves, hidden or not — collapsing can never change a number, only its visibility
 - Dragging a Node drags its Rows (they are the same lattice object); dragging a **Branch** carries its whole subtree. Drop between rows = reorder among siblings; drop onto a pill = re-parent (never into your own subtree)
 - When a **Leaf** holding data gains its first child, it becomes a **Branch** and its cells move to an auto-created first child Leaf — structure edits never silently destroy data
 - Every **Topic**, **Column**, and **Node** carries a **Display Name** plus a **Reference Name**; Reference Names are unique per Topic (Columns, Nodes) or per Document (Topics)
-- A formula may aggregate a Column over a **Branch**'s subtree by the Branch's Reference Name (e.g. `SUM(Savings.$Amount)`), alongside same-Row refs (`$Rate`) and whole-column aggregates (`SUM($Amount)`)
+- A formula may aggregate a Column over a **Branch**'s subtree by the Branch's Reference Name (e.g. `SUM(Savings.$Amount)`), alongside same-Row refs (`$Rate`) and whole-column aggregates (`SUM($Amount)`); the dotted form is equivalent sugar (`Savings.$Amount.sum()`, `$Amount.count()`)
 - A formula may reference another **Topic** by prefixing its Reference Name (e.g. `SUM(Wealth.$Amount)` from inside Business) — dependencies and cycle detection span the whole **Document**
 - Deleting or renaming a referenced entity never blocks: Reference Name edits rewrite all referencing formulas; deletions turn references into visible errors
 - A **Column** is exactly one of: **Input Column** (number or text), **Computed Column**, or **Chart Column**
