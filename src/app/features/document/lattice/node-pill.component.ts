@@ -34,7 +34,7 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
   imports: [CdkMenu, CdkMenuItem, CdkMenuTrigger, CdkContextMenuTrigger],
   template: `
     <div
-      class="group relative z-10 inline-flex w-fit items-center gap-0.5 border pr-1 shadow-sm"
+      class="group relative z-10 inline-flex w-fit items-center border shadow-sm"
       [class]="shellClass()"
       [class.ring-2]="dropTarget() || selected()"
       [class.ring-emerald-500]="dropTarget()"
@@ -42,10 +42,12 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
       [cdkContextMenuTriggerFor]="actionsMenu"
       [attr.data-pill-id]="pillId()"
     >
+      <!-- Chrome buttons overlay the label (absolute) and appear on hover, so
+           the text stays centered and the pill never resizes. -->
       @if (kind() !== 'root') {
         <button
           type="button"
-          class="ml-0.5 flex h-5 w-4 shrink-0 cursor-grab touch-none items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-white/70 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover:opacity-100"
+          class="pointer-events-none absolute left-0.5 top-1/2 z-10 flex h-5 w-4 shrink-0 -translate-y-1/2 cursor-grab touch-none items-center justify-center rounded bg-white/70 text-slate-400 opacity-0 transition-opacity hover:bg-white focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover:pointer-events-auto group-hover:opacity-100"
           [attr.aria-label]="'Drag ' + label() + ' (or use Move up / Move down in the Inspector)'"
           (pointerdown)="dragStarted.emit($event)"
         >
@@ -90,7 +92,7 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
 
       <button
         type="button"
-        class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-slate-500 opacity-0 transition-opacity hover:bg-white/70 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover:opacity-100"
+        class="pointer-events-none absolute right-0.5 top-1/2 z-10 flex h-5 w-5 shrink-0 -translate-y-1/2 items-center justify-center rounded-full bg-white/70 text-slate-500 opacity-0 transition-opacity hover:bg-white focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover:pointer-events-auto group-hover:opacity-100"
         [cdkMenuTriggerFor]="actionsMenu"
         [attr.aria-label]="'Actions for ' + label()"
       >

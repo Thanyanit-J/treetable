@@ -81,7 +81,7 @@ interface ConnectorPath {
           @for (column of renderColumns(); track column.id; let columnIndex = $index) {
             <div
               role="columnheader"
-              class="group border-y border-r border-slate-200 p-0 align-top"
+              class="group relative border-y border-r border-slate-200 p-0 align-top"
               [class.border-l]="columnIndex === 0"
               [class.bg-slate-100]="!isColumnSelected(column)"
               [class.bg-sky-100]="isColumnSelected(column)"
@@ -122,9 +122,10 @@ interface ConnectorPath {
                     </div>
                   }
                 </div>
+                <!-- Overlays the header text on hover so the title stays centered. -->
                 <button
                   type="button"
-                  class="mr-1 mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-500 opacity-0 transition-opacity hover:bg-white/80 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover:opacity-100"
+                  class="pointer-events-none absolute right-1 top-1/2 z-10 flex h-5 w-5 shrink-0 -translate-y-1/2 items-center justify-center rounded bg-white/70 text-slate-500 opacity-0 transition-opacity hover:bg-white focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover:pointer-events-auto group-hover:opacity-100"
                   [cdkMenuTriggerFor]="columnMenu"
                   (click)="menuColumn.set(column); selectColumn(column)"
                   [attr.aria-label]="'Actions for column ' + column.displayName"
