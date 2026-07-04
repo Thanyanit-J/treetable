@@ -52,7 +52,7 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
           <span aria-hidden="true" class="text-[10px] leading-none">⠿</span>
         </button>
       }
-      @if (kind() !== 'leaf') {
+      @if (kind() === 'branch' || kind() === 'collapsed') {
         <button
           type="button"
           class="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-slate-600 hover:bg-white/70 focus-visible:outline-2 focus-visible:outline-sky-600"
