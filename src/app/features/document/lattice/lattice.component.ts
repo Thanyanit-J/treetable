@@ -568,7 +568,7 @@ export class LatticeComponent {
     }
     return computeTopicLattice(this.renderTopic(), collapsed);
   });
-  protected readonly pillAlignment = computed(() => this.topic().pillAlignment ?? 'center');
+  protected readonly pillAlignment = computed(() => this.topic().pillAlignment ?? 'top');
   protected readonly connectorPaths = signal<ConnectorPath[]>([]);
   /** `header:<colId>` or `cell:<nodeId>:<colId>` — at most one editor at a time. */
   protected readonly editingKey = signal<string | null>(null);

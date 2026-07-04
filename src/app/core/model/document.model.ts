@@ -76,7 +76,7 @@ export interface TopicCardV2 {
   children: NodeV2[];
   /** Charts shown in the card's Chart Panel. */
   charts?: ChartConfigV2[];
-  /** Branch pills centered in their span (default) or aligned to the top row. */
+  /** Branch pills aligned to the top row (default) or centered in their span. */
   pillAlignment?: PillAlignment;
   /** False hides the Root pill (its column disappears); an empty Topic always shows it. */
   showRoot?: boolean;

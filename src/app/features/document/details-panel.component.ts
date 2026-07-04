@@ -104,18 +104,18 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                   <button
                     type="button"
                     class="choice"
-                    [class.choice-active]="(topic.pillAlignment ?? 'center') === 'center'"
-                    (click)="store.setPillAlignment(topic.id, 'center')"
+                    [class.choice-active]="(topic.pillAlignment ?? 'top') === 'top'"
+                    (click)="store.setPillAlignment(topic.id, 'top')"
                   >
-                    Middle
+                    Top-down
                   </button>
                   <button
                     type="button"
                     class="choice"
-                    [class.choice-active]="topic.pillAlignment === 'top'"
-                    (click)="store.setPillAlignment(topic.id, 'top')"
+                    [class.choice-active]="topic.pillAlignment === 'center'"
+                    (click)="store.setPillAlignment(topic.id, 'center')"
                   >
-                    Top-down
+                    Middle
                   </button>
                 </div>
               </fieldset>
