@@ -36,58 +36,61 @@ const MAX_CARD_WIDTH = 1600;
   template: `
     <article
       #cardRoot
-      class="relative flex h-full min-w-64 shrink-0 flex-col border border-slate-200 bg-white shadow-sm"
+      class="relative flex h-full min-w-64 shrink-0 flex-col"
       [style.width.px]="cardWidth()"
       (click)="onCardClick($event)"
       (wheel)="onWheel($event)"
     >
-      <!-- Focus bar: any selection inside this card lights its left edge. -->
-      @if (isCardFocused()) {
-        <div
-          aria-hidden="true"
-          class="pointer-events-none absolute inset-y-0 left-0 z-30 w-1 bg-sky-400"
-        ></div>
-      }
-      <!-- Chrome strip: reserves space so the ⋯ menu and the page-level drag
-           handle sit above the lattice/chart content instead of overlapping it. -->
-      <div class="h-7 shrink-0 border-b border-slate-100"></div>
+      <!-- Chrome strip: borderless bar above the content shell holding the
+           drag grip (page-level, top-left) and the ⋯ menu (top-right). -->
+      <div class="h-7 shrink-0"></div>
       <button
         type="button"
-        class="absolute right-1 top-1 z-30 flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-2 focus-visible:outline-sky-600"
+        class="absolute right-1 top-1 z-30 flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-slate-600 focus-visible:outline-2 focus-visible:outline-sky-600"
         [cdkMenuTriggerFor]="cardMenu"
         [attr.aria-label]="'Actions for topic ' + topic().displayName"
       >
         <span aria-hidden="true">⋯</span>
       </button>
 
-      <div class="flex-1 overflow-auto">
-        <div #zoomSurface [style.zoom]="zoom()">
-          <app-lattice
-            [topic]="topic()"
-            [evaluation]="evaluation()"
-            (requestDeleteTopic)="requestDeleteTopic.emit($event)"
-            (requestDeleteNode)="requestDeleteNode.emit($event)"
-            (notify)="notify.emit($event)"
-          />
+      <!-- Content shell: the bordered card body; the focus bar spans exactly this. -->
+      <div class="relative flex min-h-0 flex-1 flex-col border border-slate-200 bg-white shadow-sm">
+        @if (isCardFocused()) {
+          <div
+            aria-hidden="true"
+            class="pointer-events-none absolute inset-y-0 left-0 z-30 w-1 bg-sky-400"
+          ></div>
+        }
+
+        <div class="flex-1 overflow-auto">
+          <div #zoomSurface [style.zoom]="zoom()">
+            <app-lattice
+              [topic]="topic()"
+              [evaluation]="evaluation()"
+              (requestDeleteTopic)="requestDeleteTopic.emit($event)"
+              (requestDeleteNode)="requestDeleteNode.emit($event)"
+              (notify)="notify.emit($event)"
+            />
+          </div>
         </div>
+
+        @if (showCharts()) {
+          <div class="px-2 pb-2">
+            <app-chart-panel [topic]="topic()" [evaluation]="evaluation()" />
+          </div>
+        }
+
+        <!-- Right-edge resize handle; the content scrolls inside the card. -->
+        <button
+          type="button"
+          class="absolute inset-y-0 right-0 z-30 w-1.5 cursor-col-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+          aria-label="Resize card (drag, or use the left and right arrow keys; double-click resets)"
+          (pointerdown)="startResize($event)"
+          (keydown.arrowleft)="nudgeResize($event, -32)"
+          (keydown.arrowright)="nudgeResize($event, 32)"
+          (dblclick)="cardWidth.set(null)"
+        ></button>
       </div>
-
-      @if (showCharts()) {
-        <div class="px-2 pb-2">
-          <app-chart-panel [topic]="topic()" [evaluation]="evaluation()" />
-        </div>
-      }
-
-      <!-- Right-edge resize handle; the content scrolls inside the card. -->
-      <button
-        type="button"
-        class="absolute inset-y-0 right-0 z-30 w-1.5 cursor-col-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
-        aria-label="Resize card (drag, or use the left and right arrow keys; double-click resets)"
-        (pointerdown)="startResize($event)"
-        (keydown.arrowleft)="nudgeResize($event, -32)"
-        (keydown.arrowright)="nudgeResize($event, 32)"
-        (dblclick)="cardWidth.set(null)"
-      ></button>
     </article>
 
     <ng-template #cardMenu>
