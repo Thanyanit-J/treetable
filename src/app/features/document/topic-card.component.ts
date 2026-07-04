@@ -36,7 +36,7 @@ const MAX_CARD_WIDTH = 1600;
   template: `
     <article
       #cardRoot
-      class="relative flex h-full min-w-64 shrink-0 flex-col border-r border-slate-200 bg-white"
+      class="relative flex h-full min-w-64 shrink-0 flex-col border border-slate-200 bg-white shadow-sm"
       [style.width.px]="cardWidth()"
       (click)="onCardClick($event)"
       (wheel)="onWheel($event)"
