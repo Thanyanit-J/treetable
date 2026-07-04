@@ -25,7 +25,8 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
 /**
  * A Node rendered as a pill — the merged-cell of the lattice (ADR-0001).
  * One click selects (Inspector shows details); a second click edits the
- * label (CONTEXT.md). Detailed configuration lives in the Inspector, so the
+ * label; holding and dragging the label (or the grip) moves the Node
+ * (CONTEXT.md). Detailed configuration lives in the Inspector, so the
  * menu stays to structure and clipboard actions.
  */
 @Component({
@@ -82,12 +83,14 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
         <button
           type="button"
           class="min-w-16 cursor-default truncate px-2 py-1.5 text-center text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+          [class.touch-none]="kind() !== 'root'"
           [class.font-semibold]="kind() === 'root'"
           [class.font-medium]="kind() !== 'root'"
           [attr.aria-label]="
             ariaLabel() + (selected() ? ' (selected — click again to rename)' : '')
           "
-          (click)="onLabelClick()"
+          (pointerdown)="onLabelPointerDown($event)"
+          (click)="onLabelKeyboardClick($event)"
           (keydown.enter)="beginEditIfSelected($event)"
           (focus)="selectedChange.emit()"
         >
@@ -253,12 +256,61 @@ export class NodePillComponent {
     return Math.max(6, Math.min(48, this.label().length + 2));
   }
 
-  /** First click selects; a second click on the selected pill edits. */
-  protected onLabelClick(): void {
-    if (this.selected()) {
-      this.editing.set(true);
-    } else {
-      this.selectedChange.emit();
+  /**
+   * Selection-first on the label itself: the pill's selected state is read
+   * at pointerDOWN (before focus/selection side effects), so the first click
+   * only selects and only a second click starts renaming. Holding and moving
+   * past a small threshold hands the gesture to the lattice as a drag.
+   */
+  protected onLabelPointerDown(event: PointerEvent): void {
+    if (event.button !== 0) {
+      return;
+    }
+    // Suppress pointer-driven focus: selection stays a deliberate outcome.
+    event.preventDefault();
+    const label = event.currentTarget as HTMLElement;
+    const wasSelected = this.selected();
+    const draggable = this.kind() !== 'root';
+    const startX = event.clientX;
+    const startY = event.clientY;
+
+    try {
+      label.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer already gone (e.g. synthetic events in tests).
+    }
+
+    const cleanup = (): void => {
+      label.removeEventListener('pointermove', onMove);
+      label.removeEventListener('pointerup', onUp);
+      label.removeEventListener('pointercancel', cleanup);
+    };
+    const onMove = (moveEvent: PointerEvent): void => {
+      if (!draggable || Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 5) {
+        return;
+      }
+      cleanup();
+      // The lattice re-captures the pointer and runs the drag session.
+      this.dragStarted.emit(event);
+    };
+    const onUp = (): void => {
+      cleanup();
+      if (wasSelected) {
+        this.editing.set(true);
+      } else {
+        this.selectedChange.emit();
+        label.focus({ preventScroll: true });
+      }
+    };
+    label.addEventListener('pointermove', onMove);
+    label.addEventListener('pointerup', onUp);
+    label.addEventListener('pointercancel', cleanup);
+  }
+
+  /** Keyboard activation (Space) arrives as a click with `detail === 0`. */
+  protected onLabelKeyboardClick(event: MouseEvent): void {
+    if (event.detail === 0) {
+      this.beginEditIfSelected(event);
     }
   }
 
