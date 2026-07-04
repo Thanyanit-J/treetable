@@ -48,7 +48,9 @@ const PILL_SHELL_BY_ACCENT: Record<AccentColor, string> = {
         <button
           type="button"
           class="pointer-events-none absolute left-0.5 top-1/2 z-10 flex h-5 w-4 shrink-0 -translate-y-1/2 cursor-grab touch-none items-center justify-center rounded bg-white/70 text-slate-400 opacity-0 transition-opacity hover:bg-white focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover:pointer-events-auto group-hover:opacity-100"
-          [attr.aria-label]="'Drag ' + label() + ' (or use Move up / Move down in the Details panel)'"
+          [attr.aria-label]="
+            'Drag ' + label() + ' (or use Move up / Move down in the Details panel)'
+          "
           (pointerdown)="dragStarted.emit($event)"
         >
           <span aria-hidden="true" class="text-[10px] leading-none">⠿</span>

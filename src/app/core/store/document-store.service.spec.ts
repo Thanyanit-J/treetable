@@ -395,16 +395,14 @@ describe('DocumentStoreService', () => {
     it('reorders rail stacks on the active page', () => {
       const pageId = store.activePage().id;
       store.moveStack(pageId, 1, 0);
-      expect(store.activeStacks().map((stack) => stack.cards.filter(isTopicCard)[0]!.refName)).toEqual([
-        'Business',
-        'Wealth',
-      ]);
+      expect(
+        store.activeStacks().map((stack) => stack.cards.filter(isTopicCard)[0]!.refName),
+      ).toEqual(['Business', 'Wealth']);
 
       store.undo();
-      expect(store.activeStacks().map((stack) => stack.cards.filter(isTopicCard)[0]!.refName)).toEqual([
-        'Wealth',
-        'Business',
-      ]);
+      expect(
+        store.activeStacks().map((stack) => stack.cards.filter(isTopicCard)[0]!.refName),
+      ).toEqual(['Wealth', 'Business']);
     });
   });
 

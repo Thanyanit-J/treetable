@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  ColumnV2,
-  DocumentV2,
-  NodeV2,
-  TopicCardV2,
-  isTopicCard,
-} from '../model/document.model';
+import { ColumnV2, DocumentV2, NodeV2, TopicCardV2, isTopicCard } from '../model/document.model';
 import { evaluateDocument } from './formula-evaluator';
 
 /** Document-scoped resolution: subtree refs, cross-topic refs, shadowing, cycles (ADR-0003). */
