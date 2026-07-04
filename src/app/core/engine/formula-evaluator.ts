@@ -56,6 +56,9 @@ function indexDocument(document: DocumentV2): DocumentIndex {
   const topicIdByColumnId = new Map<string, string>();
 
   for (const card of document.cards) {
+    if (card.kind !== 'topic') {
+      continue;
+    }
     const nodesByRef = new Map<string, NodeV2>();
     walkNodes(card.children, (node) => nodesByRef.set(node.refName, node));
     const index: TopicIndex = {
@@ -209,6 +212,9 @@ export function evaluateDocument(document: DocumentV2): DocumentEvaluation {
   // Parse every computed column once and resolve its column-level deps.
   const parsedColumns = new Map<string, ParsedColumn>();
   for (const card of document.cards) {
+    if (card.kind !== 'topic') {
+      continue;
+    }
     for (const column of card.columns) {
       if (column.kind !== 'computed') {
         continue;
@@ -529,6 +535,9 @@ export function evaluateDocument(document: DocumentV2): DocumentEvaluation {
   // Drive evaluation for every computed column, then project per topic.
   const topics = new Map<string, TopicEvaluation>();
   for (const card of document.cards) {
+    if (card.kind !== 'topic') {
+      continue;
+    }
     const computedCells = new Map<string, Map<string, CellComputation>>();
     const topicIndex = index.topicsById.get(card.id);
     for (const leaf of topicIndex?.leaves ?? []) {

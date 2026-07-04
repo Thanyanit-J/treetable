@@ -8,9 +8,12 @@ import {
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DocumentStoreService } from '../../core/store/document-store.service';
 import { TopicEvaluation } from '../../core/engine/formula-evaluator';
+import { CardV2 } from '../../core/model/document.model';
+import { ChartCardComponent } from './chart-card.component';
 import { ConfirmDialogComponent } from './ui/confirm-dialog.component';
 import { DetailsPanelComponent } from './details-panel.component';
 import { FormulaSuggestOverlayComponent } from './formula-suggest-overlay.component';
+import { NoteCardComponent } from './note-card.component';
 import { PageSidebarComponent } from './page-sidebar.component';
 import { TopicCardComponent } from './topic-card.component';
 
@@ -53,9 +56,11 @@ interface Toast {
     CdkDragHandle,
     CdkDropList,
     CdkDropListGroup,
+    ChartCardComponent,
     ConfirmDialogComponent,
     DetailsPanelComponent,
     FormulaSuggestOverlayComponent,
+    NoteCardComponent,
     PageSidebarComponent,
     TopicCardComponent,
   ],
@@ -158,17 +163,30 @@ interface Toast {
                         cdkDragHandle
                         type="button"
                         class="absolute left-1 top-1 z-30 flex h-6 w-6 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 hover:text-slate-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/card:opacity-100"
-                        [attr.aria-label]="'Drag card ' + card.displayName"
+                        [attr.aria-label]="'Drag card ' + cardLabel(card)"
                       >
                         <span aria-hidden="true">⠿</span>
                       </button>
-                      <app-topic-card
-                        [topic]="card"
-                        [evaluation]="evaluationFor(card.id)"
-                        (requestDeleteTopic)="queueTopicDelete($event)"
-                        (requestDeleteNode)="queueNodeDelete($event.topicId, $event.nodeId)"
-                        (notify)="showToast(false, $event)"
-                      />
+                      @switch (card.kind) {
+                        @case ('topic') {
+                          <app-topic-card
+                            [topic]="card"
+                            [evaluation]="evaluationFor(card.id)"
+                            (requestDeleteTopic)="queueTopicDelete($event)"
+                            (requestDeleteNode)="queueNodeDelete($event.topicId, $event.nodeId)"
+                            (notify)="showToast(false, $event)"
+                          />
+                        }
+                        @case ('note') {
+                          <app-note-card [card]="card" (requestDelete)="store.removeCard($event)" />
+                        }
+                        @case ('chartcard') {
+                          <app-chart-card
+                            [card]="card"
+                            (requestDelete)="store.removeCard($event)"
+                          />
+                        }
+                      }
                     </div>
                   }
                 </div>
@@ -271,6 +289,17 @@ export class DocumentPageComponent {
 
   protected evaluationFor(cardId: string): TopicEvaluation {
     return this.evaluations().get(cardId) ?? this.emptyEvaluation;
+  }
+
+  protected cardLabel(card: CardV2): string {
+    switch (card.kind) {
+      case 'topic':
+        return card.cardTitle ?? card.displayName;
+      case 'note':
+        return 'note';
+      case 'chartcard':
+        return 'charts';
+    }
   }
 
   /** Routes rail drops: into a stack (reorder/stack) or a gap (new column). */

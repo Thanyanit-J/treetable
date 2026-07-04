@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { isTopicCard } from '../model/document.model';
 import { migrateV1Document } from './v1-migration';
 
 const V1_SAMPLE = {
@@ -46,7 +47,7 @@ describe('v1 migration', () => {
   it('lifts per-cell formulas into Computed Columns', () => {
     const migrated = migrateV1Document(structuredClone(V1_SAMPLE));
     expect(migrated).not.toBeNull();
-    const topic = migrated!.cards[0]!;
+    const topic = migrated!.cards.filter(isTopicCard)[0]!;
     const valueColumn = topic.columns.find((column) => column.refName === '$Value')!;
 
     expect(valueColumn.kind).toBe('computed');
@@ -59,7 +60,7 @@ describe('v1 migration', () => {
 
   it('keeps literal values keyed by the new column ids and drops formula raws', () => {
     const migrated = migrateV1Document(structuredClone(V1_SAMPLE))!;
-    const topic = migrated.cards[0]!;
+    const topic = migrated.cards.filter(isTopicCard)[0]!;
     const amount = topic.columns.find((column) => column.refName === '$Amount')!;
     const value = topic.columns.find((column) => column.refName === '$Value')!;
     const bankA = topic.children[0]!;
@@ -70,7 +71,7 @@ describe('v1 migration', () => {
 
   it('generates unique Reference Names from labels', () => {
     const migrated = migrateV1Document(structuredClone(V1_SAMPLE))!;
-    const topic = migrated.cards[0]!;
+    const topic = migrated.cards.filter(isTopicCard)[0]!;
 
     expect(topic.refName).toBe('Wealth');
     expect(topic.children.map((node) => node.refName)).toEqual(['BankA', 'BankA_2']);

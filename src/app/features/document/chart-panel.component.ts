@@ -6,6 +6,7 @@ import {
 } from '../../core/engine/formula-evaluator';
 import {
   ChartConfigV2,
+  ChartType,
   ColumnV2,
   TopicCardV2,
   collectLeaves,
@@ -57,12 +58,8 @@ interface RenderedChart {
     <section class="mt-3 border-t border-slate-200 pt-3" aria-label="Charts">
       <div class="mb-2 flex items-center gap-2">
         <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Charts</span>
-        <button type="button" class="panel-button" (click)="store.addChart(topic().id, 'bar')">
-          + Bar
-        </button>
-        <button type="button" class="panel-button" (click)="store.addChart(topic().id, 'pie')">
-          + Pie
-        </button>
+        <button type="button" class="panel-button" (click)="addChart('bar')">+ Bar</button>
+        <button type="button" class="panel-button" (click)="addChart('pie')">+ Pie</button>
       </div>
 
       @if (renderedCharts().length === 0) {
@@ -83,7 +80,7 @@ interface RenderedChart {
                 type="button"
                 class="rounded px-1.5 text-xs text-slate-400 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-2 focus-visible:outline-sky-600"
                 [attr.aria-label]="'Remove chart'"
-                (click)="store.removeChart(topic().id, chart.config.id)"
+                (click)="removeChart(chart.config.id)"
               >
                 ✕
               </button>
@@ -183,7 +180,7 @@ interface RenderedChart {
                   [class.border-slate-200]="!chart.config.columns.includes(option.refName)"
                   [class.text-slate-500]="!chart.config.columns.includes(option.refName)"
                   [attr.aria-pressed]="chart.config.columns.includes(option.refName)"
-                  (click)="store.toggleChartColumn(topic().id, chart.config.id, option.refName)"
+                  (click)="toggleColumn(chart.config.id, option.refName)"
                 >
                   {{ option.displayName }}
                 </button>
@@ -219,10 +216,41 @@ export class ChartPanelComponent {
 
   readonly topic = input.required<TopicCardV2>();
   readonly evaluation = input.required<TopicEvaluation>();
+  /** Overrides the Topic's own charts (Chart Cards pass theirs in). */
+  readonly charts = input<ChartConfigV2[] | null>(null);
+  /** Where add/remove/toggle route; defaults to the Topic itself. */
+  readonly owner = input<{ kind: 'topic' | 'chartcard'; id: string } | null>(null);
 
   protected readonly barWidth = BAR_WIDTH;
   protected readonly barHeight = BAR_HEIGHT;
   protected readonly pieSize = PIE_SIZE;
+
+  protected addChart(type: ChartType): void {
+    const owner = this.owner();
+    if (owner?.kind === 'chartcard') {
+      this.store.addChartToCard(owner.id, type);
+    } else {
+      this.store.addChart(this.topic().id, type);
+    }
+  }
+
+  protected removeChart(chartId: string): void {
+    const owner = this.owner();
+    if (owner?.kind === 'chartcard') {
+      this.store.removeChartFromCard(owner.id, chartId);
+    } else {
+      this.store.removeChart(this.topic().id, chartId);
+    }
+  }
+
+  protected toggleColumn(chartId: string, refName: string): void {
+    const owner = this.owner();
+    if (owner?.kind === 'chartcard') {
+      this.store.toggleChartCardColumn(owner.id, chartId, refName);
+    } else {
+      this.store.toggleChartColumn(this.topic().id, chartId, refName);
+    }
+  }
 
   protected readonly columnOptions = computed(() =>
     this.topic().columns.filter((column) => column.kind !== 'chart'),
@@ -234,7 +262,7 @@ export class ChartPanelComponent {
     const leaves = collectLeaves(topic.children);
     const columnsByRef = new Map(topic.columns.map((column) => [column.refName, column]));
 
-    return (topic.charts ?? []).map((config) => {
+    return (this.charts() ?? topic.charts ?? []).map((config) => {
       const series: { refName: string; displayName: string; color: string; column: ColumnV2 }[] =
         [];
       const missing: string[] = [];

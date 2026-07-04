@@ -10,6 +10,7 @@ import { computeTopicLattice, hiddenLeavesOf } from '../lattice/lattice-layout';
 import {
   AccentColor,
   CardV2,
+  ChartCardV2,
   ChartType,
   ColumnV2,
   ConnectorStyle,
@@ -30,6 +31,7 @@ import {
   findNodeAndParent,
   isLeaf,
   makeId,
+  isTopicCard,
   moveNodeInTopic,
   nextNodeRefName,
   nodeExists,
@@ -266,6 +268,9 @@ export class DocumentStoreService {
     const collapsed = this.collapsedSignal();
     const toExpand = new Set<string>();
     for (const card of after.cards) {
+      if (card.kind !== 'topic') {
+        continue;
+      }
       const path: string[] = [];
       const descend = (node: NodeV2): void => {
         if (changed.has(node.id)) {
@@ -307,7 +312,9 @@ export class DocumentStoreService {
   private pruneViewState(document: DocumentV2): void {
     const nodeIds = new Set<string>();
     for (const card of document.cards) {
-      walkNodes(card.children, (node) => nodeIds.add(node.id));
+      if (card.kind === 'topic') {
+        walkNodes(card.children, (node) => nodeIds.add(node.id));
+      }
     }
 
     const collapsed = this.collapsedSignal();
@@ -331,13 +338,18 @@ export class DocumentStoreService {
     document: DocumentV2,
     nodeIds: ReadonlySet<string>,
   ): boolean {
-    const topic = document.cards.find((card) => card.id === selection.topicId);
-    if (!topic) {
+    const card = document.cards.find((candidate) => candidate.id === selection.topicId);
+    if (!card) {
       return false;
     }
+    if (selection.kind === 'card') {
+      return true;
+    }
+    if (card.kind !== 'topic') {
+      return false;
+    }
+    const topic = card;
     switch (selection.kind) {
-      case 'card':
-        return true;
       case 'node':
       case 'cell':
         return (
@@ -375,7 +387,7 @@ export class DocumentStoreService {
     let newNodeId: string | null = null;
     let newTopicId: string | null = null;
     this.mutate((document) => {
-      const takenRefs = new Set(document.cards.map((card) => card.refName));
+      const takenRefs = new Set(document.cards.filter(isTopicCard).map((card) => card.refName));
       const refName = uniqueRefName(slugifyEntityRefName(displayName), takenRefs);
       const node = createNode('New Node', 'NewNode');
       newNodeId = node.id;
@@ -389,10 +401,7 @@ export class DocumentStoreService {
       };
       newTopicId = card.id;
       document.cards.push(card);
-      const page =
-        document.pages.find((candidate) => candidate.id === this.activePageIdSignal()) ??
-        document.pages[0];
-      page?.stacks.push({ id: makeId('stack'), cardIds: [card.id] });
+      this.placeOnActivePage(document, card.id);
     });
     if (newTopicId && newNodeId) {
       this.selectionSignal.set({ kind: 'node', topicId: newTopicId, nodeId: newNodeId });
@@ -404,6 +413,146 @@ export class DocumentStoreService {
       document.cards = document.cards.filter((card) => card.id !== cardId);
       removeCardFromLayout(document, cardId);
     });
+  }
+
+  /** A Table is a Tree-Table without the tree: hidden root, flat rows. */
+  addTable(displayName = 'New Table'): void {
+    let newCardId: string | null = null;
+    this.mutate((document) => {
+      const takenRefs = new Set(document.cards.filter(isTopicCard).map((card) => card.refName));
+      const refName = uniqueRefName(slugifyEntityRefName(displayName), takenRefs);
+      const card: TopicCardV2 = {
+        kind: 'topic',
+        id: makeId('topic'),
+        refName,
+        displayName,
+        columns: [createInputColumn('A', '$A'), createInputColumn('B', '$B')],
+        children: [createNode('Row 1', 'Row1'), createNode('Row 2', 'Row2')],
+        showRoot: false,
+      };
+      newCardId = card.id;
+      document.cards.push(card);
+      this.placeOnActivePage(document, card.id);
+    });
+    if (newCardId) {
+      this.selectionSignal.set({ kind: 'card', topicId: newCardId });
+    }
+  }
+
+  addNote(): void {
+    let newCardId: string | null = null;
+    this.mutate((document) => {
+      const card: CardV2 = { kind: 'note', id: makeId('note'), text: '' };
+      newCardId = card.id;
+      document.cards.push(card);
+      this.placeOnActivePage(document, card.id);
+    });
+    if (newCardId) {
+      this.selectionSignal.set({ kind: 'card', topicId: newCardId });
+    }
+  }
+
+  setNoteText(cardId: string, text: string): void {
+    const card = this.cardById(cardId);
+    if (card?.kind !== 'note' || card.text === text) {
+      return;
+    }
+    this.mutate((document) => {
+      const draft = document.cards.find((candidate) => candidate.id === cardId);
+      if (draft?.kind === 'note') {
+        draft.text = text;
+      }
+    });
+  }
+
+  /** A Charts card visualizes another Topic's Leaves from anywhere. */
+  addChartCard(sourceTopicId: string): void {
+    const source = this.topicById(sourceTopicId);
+    const defaultColumn = source?.columns.find((column) => column.kind !== 'chart');
+    if (!source || !defaultColumn) {
+      return;
+    }
+    let newCardId: string | null = null;
+    this.mutate((document) => {
+      const card: ChartCardV2 = {
+        kind: 'chartcard',
+        id: makeId('chartcard'),
+        sourceTopicId,
+        charts: [{ id: makeId('chart'), type: 'bar', columns: [defaultColumn.refName] }],
+      };
+      newCardId = card.id;
+      document.cards.push(card);
+      this.placeOnActivePage(document, card.id);
+    });
+    if (newCardId) {
+      this.selectionSignal.set({ kind: 'card', topicId: newCardId });
+    }
+  }
+
+  addChartToCard(cardId: string, type: ChartType): void {
+    const card = this.cardById(cardId);
+    if (card?.kind !== 'chartcard') {
+      return;
+    }
+    const source = this.topicById(card.sourceTopicId);
+    const defaultColumn = source?.columns.find((column) => column.kind !== 'chart');
+    if (!defaultColumn) {
+      return;
+    }
+    this.mutate((document) => {
+      const draft = document.cards.find((candidate) => candidate.id === cardId);
+      if (draft?.kind === 'chartcard') {
+        draft.charts.push({ id: makeId('chart'), type, columns: [defaultColumn.refName] });
+      }
+    });
+  }
+
+  removeChartFromCard(cardId: string, chartId: string): void {
+    this.mutate((document) => {
+      const draft = document.cards.find((candidate) => candidate.id === cardId);
+      if (draft?.kind === 'chartcard') {
+        draft.charts = draft.charts.filter((chart) => chart.id !== chartId);
+      }
+    });
+  }
+
+  toggleChartCardColumn(cardId: string, chartId: string, columnRefName: string): void {
+    const card = this.cardById(cardId);
+    if (card?.kind !== 'chartcard') {
+      return;
+    }
+    const source = this.topicById(card.sourceTopicId);
+    this.mutate((document) => {
+      const draft = document.cards.find((candidate) => candidate.id === cardId);
+      if (draft?.kind !== 'chartcard') {
+        return;
+      }
+      const chart = draft.charts.find((candidate) => candidate.id === chartId);
+      if (!chart) {
+        return;
+      }
+      if (chart.columns.includes(columnRefName)) {
+        if (chart.columns.length > 1) {
+          chart.columns = chart.columns.filter((ref) => ref !== columnRefName);
+        }
+        return;
+      }
+      if (
+        source?.columns.some(
+          (column) => column.refName === columnRefName && column.kind !== 'chart',
+        )
+      ) {
+        chart.columns = [...chart.columns, columnRefName];
+      }
+    });
+  }
+
+  /** Places a freshly created card as its own stack on the active Page. */
+  private placeOnActivePage(document: DocumentV2, cardId: string): void {
+    const page =
+      document.pages.find((candidate) => candidate.id === this.activePageIdSignal()) ??
+      document.pages[0];
+    page?.stacks.push({ id: makeId('stack'), cardIds: [cardId] });
   }
 
   // -------------------------------------------------------------------------
@@ -618,7 +767,8 @@ export class DocumentStoreService {
     const target: RefNameTarget = { kind: 'topic', topicId: cardId, entityId: cardId };
     const taken = new Set(
       this.documentSignal()
-        .cards.filter((card) => card.id !== cardId)
+        .cards.filter(isTopicCard)
+        .filter((card) => card.id !== cardId)
         .map((card) => card.refName),
     );
     const plan = this.planSyncedRefRename(
@@ -1623,7 +1773,7 @@ export class DocumentStoreService {
   ): ImportResult {
     const nextRefName = nextRefNameRaw.trim();
     const document = this.documentSignal();
-    const topic = document.cards.find((card) => card.id === target.topicId);
+    const topic = this.findTopic(document, target.topicId);
     if (!topic) {
       return { ok: false, error: 'Topic not found.' };
     }
@@ -1705,7 +1855,8 @@ export class DocumentStoreService {
     if (target.kind === 'topic') {
       const taken = new Set(
         this.documentSignal()
-          .cards.filter((card) => card.id !== target.entityId)
+          .cards.filter(isTopicCard)
+          .filter((card) => card.id !== target.entityId)
           .map((card) => card.refName),
       );
       return uniqueRefName(slugifyEntityRefName(topic.displayName), taken);
@@ -1731,6 +1882,9 @@ export class DocumentStoreService {
   ): Map<string, string> {
     const expressionRewrites = new Map<string, string>();
     for (const card of document.cards) {
+      if (card.kind !== 'topic') {
+        continue;
+      }
       for (const column of card.columns) {
         if (column.kind !== 'computed' || !column.expression) {
           continue;
@@ -1785,6 +1939,9 @@ export class DocumentStoreService {
     }
 
     for (const card of draft.cards) {
+      if (card.kind !== 'topic') {
+        continue;
+      }
       for (const column of card.columns) {
         const rewritten = plan.rewrites.get(column.id);
         if (rewritten !== undefined) {
@@ -1804,6 +1961,15 @@ export class DocumentStoreService {
         chart.columns = chart.columns.map((ref) =>
           ref === plan.currentRefName ? plan.nextRefName : ref,
         );
+      }
+      for (const card of draft.cards) {
+        if (card.kind === 'chartcard' && card.sourceTopicId === target.topicId) {
+          for (const chart of card.charts) {
+            chart.columns = chart.columns.map((ref) =>
+              ref === plan.currentRefName ? plan.nextRefName : ref,
+            );
+          }
+        }
       }
     }
   }
@@ -1881,7 +2047,7 @@ export class DocumentStoreService {
 
     if (target.kind === 'topic') {
       const taken = document.cards.some(
-        (card) => card.id !== target.entityId && card.refName === nextRefName,
+        (card) => isTopicCard(card) && card.id !== target.entityId && card.refName === nextRefName,
       );
       return taken ? `${nextRefName} is already used by another topic.` : null;
     }
@@ -1942,7 +2108,11 @@ export class DocumentStoreService {
   // -------------------------------------------------------------------------
 
   topicById(topicId: string): TopicCardV2 | undefined {
-    return this.documentSignal().cards.find((card) => card.id === topicId);
+    return this.findTopic(this.documentSignal(), topicId);
+  }
+
+  cardById(cardId: string): CardV2 | undefined {
+    return this.documentSignal().cards.find((card) => card.id === cardId);
   }
 
   nodeHasAnyValue(topicId: string, nodeId: string): boolean {
@@ -1972,7 +2142,9 @@ export class DocumentStoreService {
   }
 
   private findTopic(document: DocumentV2, topicId: string): TopicCardV2 | undefined {
-    return document.cards.find((card) => card.id === topicId);
+    return document.cards.find(
+      (card): card is TopicCardV2 => isTopicCard(card) && card.id === topicId,
+    );
   }
 }
 
@@ -2001,6 +2173,9 @@ export function diffChangedNodeIds(before: DocumentV2, after: DocumentV2): Set<s
   const fingerprint = (document: DocumentV2): Map<string, string> => {
     const prints = new Map<string, string>();
     for (const card of document.cards) {
+      if (card.kind !== 'topic') {
+        continue;
+      }
       walkNodes(card.children, (node) => {
         prints.set(
           node.id,

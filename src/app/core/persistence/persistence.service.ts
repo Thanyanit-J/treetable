@@ -4,14 +4,17 @@ import {
   AccentColor,
   CardStackV2,
   CardV2,
+  ChartCardV2,
   ChartConfigV2,
   ColumnV2,
   DocumentFileV2,
   DocumentViewState,
   ImportResult,
   NodeV2,
+  NoteCardV2,
   PageV2,
   RollupMode,
+  TopicCardV2,
   makeId,
   normalizeDocumentLayout,
   walkNodes,
@@ -129,17 +132,51 @@ export class PersistenceService {
     }
 
     const takenCardRefs = new Set<string>();
-    const cards: CardV2[] = [];
+    type Slot = { card: CardV2 } | { chartRaw: unknown };
+    const slots: Slot[] = [];
     for (const [index, rawCard] of candidate.cards.entries()) {
+      const kind = (rawCard as { kind?: unknown } | null)?.kind;
+      if (kind === 'note') {
+        const note = this.normalizeNoteCard(rawCard);
+        if (note) {
+          slots.push({ card: note });
+        }
+        continue;
+      }
+      if (kind === 'chartcard') {
+        slots.push({ chartRaw: rawCard });
+        continue;
+      }
       const card = this.normalizeTopicCard(rawCard, index, takenCardRefs);
       if (card) {
-        cards.push(card);
+        slots.push({ card });
+      }
+    }
+
+    // Chart cards validate against the (now parsed) topics, order preserved.
+    const topicsById = new Map<string, TopicCardV2>();
+    for (const slot of slots) {
+      if ('card' in slot && slot.card.kind === 'topic') {
+        topicsById.set(slot.card.id, slot.card);
+      }
+    }
+    const cards: CardV2[] = [];
+    for (const slot of slots) {
+      if ('card' in slot) {
+        cards.push(slot.card);
+        continue;
+      }
+      const chartCard = this.normalizeChartCard(slot.chartRaw, topicsById);
+      if (chartCard) {
+        cards.push(chartCard);
       }
     }
 
     const nodeIds = new Set<string>();
     for (const card of cards) {
-      walkNodes(card.children, (node) => nodeIds.add(node.id));
+      if (card.kind === 'topic') {
+        walkNodes(card.children, (node) => nodeIds.add(node.id));
+      }
     }
 
     const rawView = (candidate.view ?? {}) as Partial<DocumentViewState>;
@@ -168,6 +205,67 @@ export class PersistenceService {
       document.view!.activePageId = rawView.activePageId;
     }
     return document;
+  }
+
+  private normalizeNoteCard(input: unknown): NoteCardV2 | null {
+    if (input === null || typeof input !== 'object') {
+      return null;
+    }
+    const candidate = input as Partial<NoteCardV2>;
+    return {
+      kind: 'note',
+      id:
+        typeof candidate.id === 'string' && candidate.id.length > 0 ? candidate.id : makeId('note'),
+      text: typeof candidate.text === 'string' ? candidate.text : '',
+    };
+  }
+
+  private normalizeChartCard(
+    input: unknown,
+    topicsById: ReadonlyMap<string, TopicCardV2>,
+  ): ChartCardV2 | null {
+    if (input === null || typeof input !== 'object') {
+      return null;
+    }
+    const candidate = input as Partial<ChartCardV2> & { charts?: unknown };
+    if (typeof candidate.sourceTopicId !== 'string' || candidate.sourceTopicId.length === 0) {
+      return null;
+    }
+    const source = topicsById.get(candidate.sourceTopicId);
+    const sourceRefs = source ? new Set(source.columns.map((column) => column.refName)) : null;
+
+    const rawCharts = Array.isArray(candidate.charts) ? candidate.charts : [];
+    const charts: ChartConfigV2[] = [];
+    for (const rawChart of rawCharts) {
+      if (rawChart === null || typeof rawChart !== 'object') {
+        continue;
+      }
+      const config = rawChart as Partial<ChartConfigV2>;
+      let columns = Array.isArray(config.columns)
+        ? config.columns.filter((ref): ref is string => typeof ref === 'string')
+        : [];
+      if (sourceRefs) {
+        columns = columns.filter((ref) => sourceRefs.has(ref));
+      }
+      if (columns.length === 0) {
+        continue;
+      }
+      charts.push({
+        id: typeof config.id === 'string' && config.id.length > 0 ? config.id : makeId('chart'),
+        type: config.type === 'pie' ? 'pie' : 'bar',
+        columns,
+      });
+    }
+
+    return {
+      kind: 'chartcard',
+      id:
+        typeof candidate.id === 'string' && candidate.id.length > 0
+          ? candidate.id
+          : makeId('chartcard'),
+      sourceTopicId: candidate.sourceTopicId,
+      charts,
+    };
   }
 
   /** Lenient Page/stack parsing; the layout invariant is repaired afterwards. */
@@ -219,7 +317,7 @@ export class PersistenceService {
     if (!input || typeof input !== 'object') {
       return null;
     }
-    const candidate = input as Partial<CardV2> & { columns?: unknown; children?: unknown };
+    const candidate = input as Partial<TopicCardV2> & { columns?: unknown; children?: unknown };
     if (candidate.kind !== undefined && candidate.kind !== 'topic') {
       return null;
     }

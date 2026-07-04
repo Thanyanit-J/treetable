@@ -5,7 +5,13 @@
  * token at the caret.
  */
 import { AGGREGATE_FUNCTIONS, COUNT_FUNCTIONS } from '../../core/engine/formula-ast';
-import { DocumentV2, NodeV2, TopicCardV2, walkNodes } from '../../core/model/document.model';
+import {
+  DocumentV2,
+  NodeV2,
+  TopicCardV2,
+  isTopicCard,
+  walkNodes,
+} from '../../core/model/document.model';
 
 export interface FormulaSuggestion {
   /** Text shown in the list. */
@@ -43,7 +49,9 @@ export function suggestForToken(
   topicId: string,
   token: string,
 ): FormulaSuggestion[] {
-  const topic = document.cards.find((card) => card.id === topicId);
+  const topic = document.cards.find(
+    (card): card is TopicCardV2 => isTopicCard(card) && card.id === topicId,
+  );
   if (!topic) {
     return [];
   }
@@ -94,7 +102,7 @@ function rootCandidates(document: DocumentV2, topic: TopicCardV2): FormulaSugges
     });
   });
   for (const card of document.cards) {
-    if (card.id !== topic.id) {
+    if (isTopicCard(card) && card.id !== topic.id) {
       out.push({
         label: card.refName,
         detail: `topic · ${card.displayName}`,
@@ -120,7 +128,9 @@ function scopedCandidates(
 
   for (const [index, qualifier] of qualifiers.entries()) {
     if (index === 0) {
-      const qualifiedTopic = document.cards.find((card) => card.refName === qualifier);
+      const qualifiedTopic = document.cards.find(
+        (card): card is TopicCardV2 => isTopicCard(card) && card.refName === qualifier,
+      );
       if (qualifiedTopic) {
         topic = qualifiedTopic;
         continue;

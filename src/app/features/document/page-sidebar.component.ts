@@ -5,12 +5,14 @@ import {
   Component,
   ElementRef,
   afterRenderEffect,
+  computed,
+  effect,
   inject,
   output,
   signal,
   viewChild,
 } from '@angular/core';
-import { PageV2 } from '../../core/model/document.model';
+import { PageV2, isTopicCard } from '../../core/model/document.model';
 import { DocumentStoreService } from '../../core/store/document-store.service';
 
 /**
@@ -28,9 +30,9 @@ import { DocumentStoreService } from '../../core/store/document-store.service';
         <button
           type="button"
           class="w-full rounded bg-sky-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-600"
-          (click)="store.addTopic()"
+          [cdkMenuTriggerFor]="addMenu"
         >
-          + Topic
+          + Add new
         </button>
       </div>
 
@@ -93,6 +95,116 @@ import { DocumentStoreService } from '../../core/store/document-store.service';
       </div>
     </aside>
 
+    <ng-template #addMenu>
+      <div
+        cdkMenu
+        class="z-50 w-48 rounded-lg border border-slate-200 bg-white p-1 text-sm text-slate-700 shadow-xl"
+      >
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          (cdkMenuItemTriggered)="createKind.set('topic')"
+        >
+          New tree-table…
+        </button>
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          (cdkMenuItemTriggered)="createKind.set('table')"
+        >
+          New table…
+        </button>
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          (cdkMenuItemTriggered)="store.addNote()"
+        >
+          New text note
+        </button>
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          [disabled]="topicOptions().length === 0"
+          (cdkMenuItemTriggered)="chartDialogOpen.set(true)"
+        >
+          New charts…
+        </button>
+        <div class="my-1 border-t border-slate-200" role="separator"></div>
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          (cdkMenuItemTriggered)="store.addPage()"
+        >
+          Add page
+        </button>
+      </div>
+    </ng-template>
+
+    <dialog
+      #createDialog
+      class="m-auto w-[min(22rem,90vw)] rounded-2xl border border-slate-200 p-0 shadow-2xl backdrop:bg-slate-900/40"
+      (close)="createKind.set(null)"
+    >
+      <form class="p-5" (submit)="confirmCreate($event)">
+        <h2 class="text-base font-semibold text-slate-900">
+          {{ createKind() === 'table' ? 'New table' : 'New tree-table' }}
+        </h2>
+        <label class="mt-3 block text-xs font-medium text-slate-500">
+          Name
+          <input
+            #createName
+            class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-800 focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-sky-600"
+            [attr.placeholder]="createKind() === 'table' ? 'New Table' : 'New Topic'"
+          />
+        </label>
+        <p class="mt-2 text-xs text-slate-400">
+          {{
+            createKind() === 'table'
+              ? 'A table is a tree-table without the tree — rows only.'
+              : 'The root node shares this name until renamed.'
+          }}
+        </p>
+        <div class="mt-4 flex justify-end gap-2">
+          <button type="button" class="dialog-secondary" (click)="createKind.set(null)">
+            Cancel
+          </button>
+          <button type="submit" class="dialog-primary">Create</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog
+      #chartDialog
+      class="m-auto w-[min(22rem,90vw)] rounded-2xl border border-slate-200 p-0 shadow-2xl backdrop:bg-slate-900/40"
+      (close)="chartDialogOpen.set(false)"
+    >
+      <form class="p-5" (submit)="confirmChartCard($event)">
+        <h2 class="text-base font-semibold text-slate-900">New charts card</h2>
+        <label class="mt-3 block text-xs font-medium text-slate-500">
+          Chart the data of
+          <select
+            #chartSource
+            class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-sky-600"
+          >
+            @for (topic of topicOptions(); track topic.id) {
+              <option [value]="topic.id">{{ topic.cardTitle ?? topic.displayName }}</option>
+            }
+          </select>
+        </label>
+        <div class="mt-4 flex justify-end gap-2">
+          <button type="button" class="dialog-secondary" (click)="chartDialogOpen.set(false)">
+            Cancel
+          </button>
+          <button type="submit" class="dialog-primary">Create</button>
+        </div>
+      </form>
+    </dialog>
+
     <ng-template #pageMenu>
       @if (menuPage(); as page) {
         <div
@@ -136,6 +248,33 @@ import { DocumentStoreService } from '../../core/store/document-store.service';
     .menu-item:disabled {
       opacity: 0.4;
     }
+    .dialog-primary {
+      border-radius: 0.5rem;
+      background: var(--color-sky-600);
+      padding: 0.375rem 0.75rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: white;
+    }
+    .dialog-primary:hover {
+      background: var(--color-sky-500);
+    }
+    .dialog-secondary {
+      border-radius: 0.5rem;
+      border: 1px solid var(--color-slate-300);
+      background: white;
+      padding: 0.375rem 0.75rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--color-slate-700);
+    }
+    .dialog-secondary:hover {
+      background: var(--color-slate-50);
+    }
+    button:focus-visible {
+      outline: 2px solid var(--color-sky-600);
+      outline-offset: 1px;
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -146,7 +285,15 @@ export class PageSidebarComponent {
 
   protected readonly renamingPageId = signal<string | null>(null);
   protected readonly menuPage = signal<PageV2 | null>(null);
+  protected readonly createKind = signal<'topic' | 'table' | null>(null);
+  protected readonly chartDialogOpen = signal(false);
+  protected readonly topicOptions = computed(() => this.store.cards().filter(isTopicCard));
+
   private readonly renameInputRef = viewChild<ElementRef<HTMLInputElement>>('renameInput');
+  private readonly createDialogRef = viewChild<ElementRef<HTMLDialogElement>>('createDialog');
+  private readonly createNameRef = viewChild<ElementRef<HTMLInputElement>>('createName');
+  private readonly chartDialogRef = viewChild<ElementRef<HTMLDialogElement>>('chartDialog');
+  private readonly chartSourceRef = viewChild<ElementRef<HTMLSelectElement>>('chartSource');
 
   constructor() {
     afterRenderEffect(() => {
@@ -156,6 +303,62 @@ export class PageSidebarComponent {
         input?.select();
       }
     });
+
+    effect(() => {
+      const dialog = this.createDialogRef()?.nativeElement;
+      if (!dialog) {
+        return;
+      }
+      if (this.createKind() !== null) {
+        if (!dialog.open) {
+          dialog.showModal();
+        }
+      } else if (dialog.open) {
+        dialog.close();
+      }
+    });
+
+    effect(() => {
+      const dialog = this.chartDialogRef()?.nativeElement;
+      if (!dialog) {
+        return;
+      }
+      if (this.chartDialogOpen()) {
+        if (!dialog.open) {
+          dialog.showModal();
+        }
+      } else if (dialog.open) {
+        dialog.close();
+      }
+    });
+  }
+
+  protected confirmCreate(event: Event): void {
+    event.preventDefault();
+    const kind = this.createKind();
+    const input = this.createNameRef()?.nativeElement;
+    if (!kind) {
+      return;
+    }
+    const name = (input?.value ?? '').trim();
+    if (kind === 'table') {
+      this.store.addTable(name || 'New Table');
+    } else {
+      this.store.addTopic(name || 'New Topic');
+    }
+    if (input) {
+      input.value = '';
+    }
+    this.createKind.set(null);
+  }
+
+  protected confirmChartCard(event: Event): void {
+    event.preventDefault();
+    const sourceId = this.chartSourceRef()?.nativeElement.value;
+    if (sourceId) {
+      this.store.addChartCard(sourceId);
+    }
+    this.chartDialogOpen.set(false);
   }
 
   protected isActive(page: PageV2): boolean {

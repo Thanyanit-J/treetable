@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { isTopicCard } from '../model/document.model';
 import { DocumentStoreService } from './document-store.service';
 
 /**
@@ -10,7 +11,8 @@ import { DocumentStoreService } from './document-store.service';
 describe('DocumentStoreService', () => {
   let store: DocumentStoreService;
 
-  const wealth = () => store.cards().find((card) => card.refName === 'Wealth')!;
+  const topics = () => store.cards().filter(isTopicCard);
+  const wealth = () => topics().find((card) => card.refName === 'Wealth')!;
   const savings = () => wealth().children.find((node) => node.refName === 'Savings')!;
   const bankA = () => savings().children.find((node) => node.refName === 'BankA')!;
   const amountColumn = () => wealth().columns.find((column) => column.refName === '$Amount')!;
@@ -22,7 +24,7 @@ describe('DocumentStoreService', () => {
   });
 
   it('loads the starter document when storage is empty', () => {
-    expect(store.cards().map((card) => card.refName)).toEqual(['Wealth', 'Business']);
+    expect(topics().map((card) => card.refName)).toEqual(['Wealth', 'Business']);
     expect(store.canUndo()).toBe(false);
   });
 
@@ -59,7 +61,7 @@ describe('DocumentStoreService', () => {
 
     expect(migratedStore.title()).toBe('Migrated');
     expect(migratedStore.cards()).toHaveLength(1);
-    expect(migratedStore.cards()[0]!.columns[0]!.rollup).toBe('sum');
+    expect(migratedStore.cards().filter(isTopicCard)[0]!.columns[0]!.rollup).toBe('sum');
     expect(localStorage.getItem('treetable.v2.document')).not.toBeNull();
   });
 
@@ -319,12 +321,12 @@ describe('DocumentStoreService', () => {
       expect(savings().children.find((node) => node.id === bankId)!.refName).toBe('BankAlpha');
 
       store.renameCard(wealth().id, 'Fortune');
-      expect(store.cards().find((card) => card.displayName === 'Fortune')!.refName).toBe('Fortune');
+      expect(topics().find((card) => card.displayName === 'Fortune')!.refName).toBe('Fortune');
     });
   });
 
   it('guards the last remaining column', () => {
-    const business = store.cards().find((card) => card.refName === 'Business')!;
+    const business = topics().find((card) => card.refName === 'Business')!;
     const result = store.deleteColumn(business.id, business.columns[0]!.id);
     expect(result).toMatchObject({ ok: false });
   });
@@ -393,13 +395,13 @@ describe('DocumentStoreService', () => {
     it('reorders rail stacks on the active page', () => {
       const pageId = store.activePage().id;
       store.moveStack(pageId, 1, 0);
-      expect(store.activeStacks().map((stack) => stack.cards[0]!.refName)).toEqual([
+      expect(store.activeStacks().map((stack) => stack.cards.filter(isTopicCard)[0]!.refName)).toEqual([
         'Business',
         'Wealth',
       ]);
 
       store.undo();
-      expect(store.activeStacks().map((stack) => stack.cards[0]!.refName)).toEqual([
+      expect(store.activeStacks().map((stack) => stack.cards.filter(isTopicCard)[0]!.refName)).toEqual([
         'Wealth',
         'Business',
       ]);
@@ -448,7 +450,8 @@ describe('DocumentStoreService', () => {
       store.addPage();
       store.addTopic('Fresh');
       expect(store.activeStacks()).toHaveLength(1);
-      expect(store.activeStacks()[0]!.cards[0]!.displayName).toBe('Fresh');
+      const fresh = store.activeStacks()[0]!.cards[0]!;
+      expect(fresh.kind === 'topic' ? fresh.displayName : null).toBe('Fresh');
     });
   });
 
@@ -649,8 +652,7 @@ describe('DocumentStoreService', () => {
     };
 
     const columnExpr = (topicRef: string, columnId: string): string | null =>
-      store
-        .cards()
+      topics()
         .find((card) => card.refName === topicRef || card.displayName === topicRef)!
         .columns.find((column) => column.id === columnId)!.expression;
 
@@ -700,7 +702,7 @@ describe('DocumentStoreService', () => {
       );
       expect(result.ok).toBe(true);
 
-      expect(store.cards()[0]!.refName).toBe('Assets');
+      expect(topics()[0]!.refName).toBe('Assets');
       expect(columnExpr('Business', 'b_mixed')).toBe(
         '= $Amount + SUM(Assets.$Amount) + SUM(Assets.Savings.$Amount)',
       );

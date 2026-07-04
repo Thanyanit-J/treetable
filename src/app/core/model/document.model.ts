@@ -84,7 +84,27 @@ export interface TopicCardV2 {
   connectorStyle?: ConnectorStyle;
 }
 
-export type CardV2 = TopicCardV2;
+/** Free-text card — no data, no references. */
+export interface NoteCardV2 {
+  kind: 'note';
+  id: string;
+  text: string;
+}
+
+/** Charts over another card's Leaves, living anywhere in the Document. */
+export interface ChartCardV2 {
+  kind: 'chartcard';
+  id: string;
+  /** The Topic whose Leaves feed these charts (stable id, rename-proof). */
+  sourceTopicId: string;
+  charts: ChartConfigV2[];
+}
+
+export type CardV2 = TopicCardV2 | NoteCardV2 | ChartCardV2;
+
+export function isTopicCard(card: CardV2): card is TopicCardV2 {
+  return card.kind === 'topic';
+}
 
 /** One rail column: cards stacked top-to-bottom. */
 export interface CardStackV2 {

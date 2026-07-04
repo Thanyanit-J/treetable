@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ColumnV2, DocumentV2, NodeV2, TopicCardV2 } from '../model/document.model';
+import {
+  ColumnV2,
+  DocumentV2,
+  NodeV2,
+  TopicCardV2,
+  isTopicCard,
+} from '../model/document.model';
 import { evaluateDocument } from './formula-evaluator';
 
 /** Document-scoped resolution: subtree refs, cross-topic refs, shadowing, cycles (ADR-0003). */
@@ -113,7 +119,7 @@ describe('document-scoped references', () => {
 
   it('lets Node Reference Names shadow Topic Reference Names inside their Topic', () => {
     const document = buildDocument([], [column('b_shadow', '$Shadow', '= SUM(Wealth.$X)')]);
-    const business = document.cards[1]!;
+    const business = document.cards.filter(isTopicCard)[1]!;
     business.children.push(node('n_wealth_node', 'Wealth', { b_x: '7' }));
 
     // Inside Business, `Wealth` binds to the local node (values 7), not the Wealth topic.
