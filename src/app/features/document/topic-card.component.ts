@@ -21,6 +21,8 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2;
 const MIN_CARD_WIDTH = 256;
 const MAX_CARD_WIDTH = 1600;
+const MIN_CARD_HEIGHT = 160;
+const MAX_CARD_HEIGHT = 1600;
 
 /**
  * Card chrome around one Topic's lattice. Edge-to-edge (no padding), a ⋯
@@ -39,6 +41,7 @@ const MAX_CARD_WIDTH = 1600;
       #cardRoot
       class="relative flex h-full min-w-64 shrink-0 flex-col"
       [style.width.px]="cardWidth()"
+      [style.height.px]="cardHeight()"
       (click)="onCardClick($event)"
       (wheel)="onWheel($event)"
     >
@@ -105,15 +108,42 @@ const MAX_CARD_WIDTH = 1600;
           </div>
         }
 
-        <!-- Right-edge resize handle; the content scrolls inside the card. -->
+        <!-- Resize handles on every border; content scrolls inside the card. -->
         <button
           type="button"
           class="absolute inset-y-0 right-0 z-30 w-1.5 cursor-col-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
-          aria-label="Resize card (drag, or use the left and right arrow keys; double-click resets)"
-          (pointerdown)="startResize($event)"
-          (keydown.arrowleft)="nudgeResize($event, -32)"
-          (keydown.arrowright)="nudgeResize($event, 32)"
+          aria-label="Resize card width (drag, or arrow keys; double-click resets)"
+          (pointerdown)="startResize($event, 'right')"
+          (keydown.arrowleft)="nudgeWidth($event, -32)"
+          (keydown.arrowright)="nudgeWidth($event, 32)"
           (dblclick)="cardWidth.set(null)"
+        ></button>
+        <button
+          type="button"
+          class="absolute inset-y-0 left-0 z-30 w-1.5 cursor-col-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+          aria-label="Resize card width from the left edge (drag, or arrow keys; double-click resets)"
+          (pointerdown)="startResize($event, 'left')"
+          (keydown.arrowleft)="nudgeWidth($event, -32)"
+          (keydown.arrowright)="nudgeWidth($event, 32)"
+          (dblclick)="cardWidth.set(null)"
+        ></button>
+        <button
+          type="button"
+          class="absolute inset-x-0 bottom-0 z-30 h-1.5 cursor-row-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+          aria-label="Resize card height (drag, or arrow keys; double-click resets)"
+          (pointerdown)="startResize($event, 'bottom')"
+          (keydown.arrowup)="nudgeHeight($event, -32)"
+          (keydown.arrowdown)="nudgeHeight($event, 32)"
+          (dblclick)="cardHeight.set(null)"
+        ></button>
+        <button
+          type="button"
+          class="absolute inset-x-0 top-0 z-30 h-1.5 cursor-row-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+          aria-label="Resize card height from the top edge (drag, or arrow keys; double-click resets)"
+          (pointerdown)="startResize($event, 'top')"
+          (keydown.arrowup)="nudgeHeight($event, -32)"
+          (keydown.arrowdown)="nudgeHeight($event, 32)"
+          (dblclick)="cardHeight.set(null)"
         ></button>
       </div>
     </article>
@@ -187,6 +217,7 @@ export class TopicCardComponent {
   protected readonly zoomPercent = computed(() => `${Math.round(this.zoom() * 100)}%`);
   /** Ephemeral view state like zoom; null = size to content. */
   protected readonly cardWidth = signal<number | null>(null);
+  protected readonly cardHeight = signal<number | null>(null);
   protected readonly editingTitle = signal(false);
   protected readonly cardTitle = computed(() => this.topic().cardTitle ?? this.topic().displayName);
   protected readonly cardSelected = computed(() => {
@@ -264,8 +295,8 @@ export class TopicCardComponent {
     this.zoom.set(Math.round(next * 100) / 100);
   }
 
-  /** Dragging the right edge resizes just this card; content scrolls inside. */
-  protected startResize(event: PointerEvent): void {
+  /** Dragging any border resizes just this card; content scrolls inside. */
+  protected startResize(event: PointerEvent, edge: 'left' | 'right' | 'top' | 'bottom'): void {
     if (event.button !== 0) {
       return;
     }
@@ -278,11 +309,20 @@ export class TopicCardComponent {
       // Pointer already released.
     }
     const startX = event.clientX;
+    const startY = event.clientY;
     const startWidth = this.cardRootRef().nativeElement.offsetWidth;
+    const startHeight = this.cardRootRef().nativeElement.offsetHeight;
+    const horizontal = edge === 'left' || edge === 'right';
+    const sign = edge === 'right' || edge === 'bottom' ? 1 : -1;
 
     const onMove = (moveEvent: PointerEvent): void => {
-      const width = Math.round(startWidth + (moveEvent.clientX - startX));
-      this.cardWidth.set(Math.min(MAX_CARD_WIDTH, Math.max(MIN_CARD_WIDTH, width)));
+      if (horizontal) {
+        const width = Math.round(startWidth + sign * (moveEvent.clientX - startX));
+        this.cardWidth.set(Math.min(MAX_CARD_WIDTH, Math.max(MIN_CARD_WIDTH, width)));
+      } else {
+        const height = Math.round(startHeight + sign * (moveEvent.clientY - startY));
+        this.cardHeight.set(Math.min(MAX_CARD_HEIGHT, Math.max(MIN_CARD_HEIGHT, height)));
+      }
     };
     const cleanup = (): void => {
       handle.removeEventListener('pointermove', onMove);
@@ -294,10 +334,16 @@ export class TopicCardComponent {
     handle.addEventListener('pointercancel', cleanup);
   }
 
-  protected nudgeResize(event: Event, delta: number): void {
+  protected nudgeWidth(event: Event, delta: number): void {
     event.preventDefault();
     const current = this.cardWidth() ?? this.cardRootRef().nativeElement.offsetWidth;
     this.cardWidth.set(Math.min(MAX_CARD_WIDTH, Math.max(MIN_CARD_WIDTH, current + delta)));
+  }
+
+  protected nudgeHeight(event: Event, delta: number): void {
+    event.preventDefault();
+    const current = this.cardHeight() ?? this.cardRootRef().nativeElement.offsetHeight;
+    this.cardHeight.set(Math.min(MAX_CARD_HEIGHT, Math.max(MIN_CARD_HEIGHT, current + delta)));
   }
 
   /** Shrinks (never enlarges) the lattice to the card's available width. */
