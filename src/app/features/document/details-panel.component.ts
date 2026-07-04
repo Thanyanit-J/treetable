@@ -57,7 +57,17 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
             @case ('card') {
               <p class="section-label">Topic</p>
               <label class="field">
-                <span>Name</span>
+                <span>Card title</span>
+                <input
+                  class="field-input"
+                  [value]="topic.cardTitle ?? ''"
+                  [attr.placeholder]="topic.displayName"
+                  (blur)="commitCardTitle(topic, $event)"
+                  (keydown.enter)="blurTarget($event)"
+                />
+              </label>
+              <label class="field">
+                <span>Root name</span>
                 <input
                   class="field-input"
                   [value]="topic.displayName"
@@ -631,6 +641,10 @@ export class DetailsPanelComponent {
   protected blurTarget(event: Event): void {
     event.preventDefault();
     (event.target as HTMLElement | null)?.blur();
+  }
+
+  protected commitCardTitle(topic: TopicCardV2, event: Event): void {
+    this.store.setCardTitle(topic.id, (event.target as HTMLInputElement).value);
   }
 
   protected commitCardName(topic: TopicCardV2, event: Event): void {

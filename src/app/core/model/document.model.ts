@@ -62,7 +62,10 @@ export interface TopicCardV2 {
   id: string;
   /** Reference Name unique per Document, e.g. `Wealth`. */
   refName: string;
+  /** The Root Node's name (the root pill label). */
   displayName: string;
+  /** Card title shown in the chrome strip; absent = follows the Root's name. */
+  cardTitle?: string;
   columns: ColumnV2[];
   children: NodeV2[];
   /** Charts shown in the card's Chart Panel. */

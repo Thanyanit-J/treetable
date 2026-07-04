@@ -364,6 +364,30 @@ export class DocumentStoreService {
     });
   }
 
+  /** Sets the card title; empty (or equal to the Root's name) re-syncs it. */
+  setCardTitle(topicId: string, title: string): void {
+    const topic = this.topicById(topicId);
+    if (!topic) {
+      return;
+    }
+    const next = title.trim();
+    const normalized = next.length === 0 || next === topic.displayName ? '' : next;
+    if (normalized === (topic.cardTitle ?? '')) {
+      return;
+    }
+    this.mutate((document) => {
+      const draftTopic = this.findTopic(document, topicId);
+      if (!draftTopic) {
+        return;
+      }
+      if (normalized === '') {
+        delete draftTopic.cardTitle;
+      } else {
+        draftTopic.cardTitle = normalized;
+      }
+    });
+  }
+
   renameCard(cardId: string, displayName: string): void {
     const next = displayName.trim();
     if (next.length === 0) {

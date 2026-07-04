@@ -3,6 +3,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  afterRenderEffect,
   computed,
   inject,
   input,
@@ -42,8 +43,32 @@ const MAX_CARD_WIDTH = 1600;
       (wheel)="onWheel($event)"
     >
       <!-- Chrome strip: borderless bar above the content shell holding the
-           drag grip (page-level, top-left) and the ⋯ menu (top-right). -->
-      <div class="h-7 shrink-0"></div>
+           drag grip (page-level, top-left), the card title and the ⋯ menu. -->
+      <div class="flex h-7 shrink-0 items-center pl-8 pr-8">
+        @if (editingTitle()) {
+          <input
+            #titleInput
+            class="min-w-16 field-sizing-content bg-transparent text-xs font-semibold text-slate-600 focus-visible:outline-none"
+            [value]="cardTitle()"
+            aria-label="Rename card title"
+            (blur)="commitCardTitle($event)"
+            (keydown.enter)="commitCardTitleAndBlur($event)"
+            (keydown.escape)="cancelTitleEdit($event)"
+            (contextmenu)="$event.stopPropagation()"
+          />
+        } @else {
+          <button
+            type="button"
+            class="max-w-full truncate text-xs font-semibold text-slate-600 focus-visible:outline-2 focus-visible:outline-sky-600"
+            [attr.aria-label]="
+              'Card ' + cardTitle() + (cardSelected() ? ' (selected — click again to rename)' : '')
+            "
+            (click)="onTitleClick()"
+          >
+            {{ cardTitle() }}
+          </button>
+        }
+      </div>
       <button
         type="button"
         class="absolute right-1 top-1 z-30 flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-slate-600 focus-visible:outline-2 focus-visible:outline-sky-600"
@@ -162,6 +187,12 @@ export class TopicCardComponent {
   protected readonly zoomPercent = computed(() => `${Math.round(this.zoom() * 100)}%`);
   /** Ephemeral view state like zoom; null = size to content. */
   protected readonly cardWidth = signal<number | null>(null);
+  protected readonly editingTitle = signal(false);
+  protected readonly cardTitle = computed(() => this.topic().cardTitle ?? this.topic().displayName);
+  protected readonly cardSelected = computed(() => {
+    const selection = this.store.selection();
+    return selection?.kind === 'card' && selection.topicId === this.topic().id;
+  });
   protected readonly showCharts = signal(false);
   protected readonly chartCount = computed(() => this.topic().charts?.length ?? 0);
   /** Focused = the current selection (of any kind) lives in this card. */
@@ -171,6 +202,44 @@ export class TopicCardComponent {
 
   private readonly cardRootRef = viewChild.required<ElementRef<HTMLElement>>('cardRoot');
   private readonly zoomSurfaceRef = viewChild.required<ElementRef<HTMLElement>>('zoomSurface');
+  private readonly titleInputRef = viewChild<ElementRef<HTMLInputElement>>('titleInput');
+
+  constructor() {
+    afterRenderEffect(() => {
+      if (this.editingTitle()) {
+        const input = this.titleInputRef()?.nativeElement;
+        input?.focus();
+        input?.select();
+      }
+    });
+  }
+
+  /** Selection-first for the title: click selects the card, click again renames. */
+  protected onTitleClick(): void {
+    if (this.cardSelected()) {
+      this.editingTitle.set(true);
+    } else {
+      this.store.select({ kind: 'card', topicId: this.topic().id });
+    }
+  }
+
+  protected commitCardTitle(event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    this.editingTitle.set(false);
+    this.store.setCardTitle(this.topic().id, value);
+  }
+
+  protected commitCardTitleAndBlur(event: Event): void {
+    event.preventDefault();
+    this.commitCardTitle(event);
+    (event.target as HTMLInputElement | null)?.blur();
+  }
+
+  protected cancelTitleEdit(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.editingTitle.set(false);
+  }
 
   /**
    * Clicking anywhere non-interactive in the card selects the card. Every
