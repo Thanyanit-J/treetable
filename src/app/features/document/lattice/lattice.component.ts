@@ -95,6 +95,15 @@ interface ConnectorPath {
               (pointerenter)="onRefHover(column, true)"
               (pointerleave)="onRefHover(column, false)"
             >
+              @if (column.kind === 'computed') {
+                <!-- Formula marker: computed cells look like any other cell. -->
+                <span
+                  aria-hidden="true"
+                  class="absolute left-1.5 top-1/2 -translate-y-1/2 font-mono text-[11px] font-bold text-slate-400"
+                  title="Formula column"
+                  >=</span
+                >
+              }
               <div class="flex items-start">
                 <div class="min-w-0 flex-1">
                   @if (isEditingHeader(column)) {
@@ -113,7 +122,10 @@ interface ConnectorPath {
                       class="w-full cursor-default touch-none px-2 py-1.5 text-center text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
                       [class.font-mono]="formulaEditingActive()"
                       [attr.aria-label]="
-                        'Column ' + column.displayName + ' (click again to rename, drag to reorder)'
+                        'Column ' +
+                        column.displayName +
+                        (column.kind === 'computed' ? ' (formula)' : '') +
+                        ' (click again to rename, drag to reorder)'
                       "
                       (pointerdown)="onHeaderPointerDown(column, $event)"
                       (keydown.enter)="beginHeaderEdit(column, $event)"
@@ -268,9 +280,6 @@ interface ConnectorPath {
                       "
                       [class.text-slate-700]="!cellHasError(row.nodeId, column)"
                       [class.text-rose-700]="cellHasError(row.nodeId, column)"
-                      [class.bg-slate-50]="
-                        column.kind === 'computed' && !cellInRange(row.nodeId, column)
-                      "
                       [class.cell-selected]="isCellSelected(row.nodeId, column)"
                       [attr.aria-label]="cellAriaLabel(row.nodeId, column)"
                       [attr.title]="cellTitle(row.nodeId, column)"
