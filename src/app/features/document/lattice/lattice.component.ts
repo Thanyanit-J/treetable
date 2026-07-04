@@ -31,6 +31,7 @@ import {
   TopicCardV2,
   collectLeaves,
   findNodeAndParent,
+  moveNodeInTopic,
 } from '../../../core/model/document.model';
 import { DocumentStoreService } from '../../../core/store/document-store.service';
 import { NodePillComponent } from './node-pill.component';
@@ -71,13 +72,14 @@ interface ConnectorPath {
           >
             <span class="sr-only">Hierarchy</span>
           </div>
-          @for (column of topic().columns; track column.id; let columnIndex = $index) {
+          @for (column of renderColumns(); track column.id; let columnIndex = $index) {
             <div
               role="columnheader"
               class="group border-y border-r border-slate-200 p-0 align-top"
               [class.border-l]="columnIndex === 0"
               [class.bg-slate-100]="!isColumnSelected(column)"
               [class.bg-sky-100]="isColumnSelected(column)"
+              [class.opacity-40]="draggingColumnId() === column.id"
               [style.grid-row]="1"
               [style.grid-column]="dataGridColumn(columnIndex)"
               [attr.data-header-col]="column.id"
@@ -98,7 +100,7 @@ interface ConnectorPath {
                   } @else {
                     <div
                       tabindex="0"
-                      class="w-full cursor-default px-2 pt-1.5 text-center text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                      class="w-full cursor-default touch-none px-2 pt-1.5 text-center text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
                       [attr.aria-label]="
                         'Column ' + column.displayName + ' (click again to rename, drag to reorder)'
                       "
@@ -174,7 +176,7 @@ interface ConnectorPath {
                 />
               </div>
             }
-            @for (column of topic().columns; track column.id; let columnIndex = $index) {
+            @for (column of renderColumns(); track column.id; let columnIndex = $index) {
               <div
                 role="gridcell"
                 class="p-0"
@@ -186,6 +188,7 @@ interface ConnectorPath {
                   selectedNodeId() === row.nodeId && !cellInRange(row.nodeId, column)
                 "
                 [class.bg-sky-100]="cellInRange(row.nodeId, column)"
+                [class.opacity-40]="draggingColumnId() === column.id"
                 [style.grid-row]="rowIndex + 2"
                 [style.grid-column]="dataGridColumn(columnIndex)"
                 [attr.data-cell-node]="row.kind === 'leaf' ? row.nodeId : null"
@@ -303,11 +306,12 @@ interface ConnectorPath {
             >
               Total
             </div>
-            @for (column of topic().columns; track column.id; let columnIndex = $index) {
+            @for (column of renderColumns(); track column.id; let columnIndex = $index) {
               <div
                 role="gridcell"
                 class="border-b border-r border-slate-200 bg-white"
                 [class.border-l]="columnIndex === 0"
+                [class.opacity-40]="draggingColumnId() === column.id"
                 [style.grid-row]="footerGridRow()"
                 [style.grid-column]="dataGridColumn(columnIndex)"
               >
@@ -331,20 +335,6 @@ interface ConnectorPath {
         }
       </svg>
 
-      @if (dropLineTop() !== null) {
-        <div
-          aria-hidden="true"
-          class="pointer-events-none absolute left-0 right-0 z-20 h-0.5 rounded bg-sky-500"
-          [style.top.px]="dropLineTop()"
-        ></div>
-      }
-      @if (columnDropLineLeft() !== null) {
-        <div
-          aria-hidden="true"
-          class="pointer-events-none absolute bottom-0 top-0 z-20 w-0.5 rounded bg-sky-500"
-          [style.left.px]="columnDropLineLeft()"
-        ></div>
-      }
     </div>
 
     <ng-template #columnMenu>
@@ -459,9 +449,51 @@ export class LatticeComponent {
   readonly notify = output<string>();
 
   protected readonly selectedNodeId = this.store.selectedNodeId;
-  protected readonly lattice = computed(() =>
-    computeTopicLattice(this.topic(), this.store.collapsedNodeIds()),
-  );
+
+  /**
+   * The Topic as currently rendered: the real one, or — while a drag is in
+   * flight — a clone with the pending node move / column reorder applied.
+   * This is what makes the drag preview *be* the drop result (the same
+   * `moveNodeInTopic` runs on commit), while the store and its undo history
+   * stay untouched until pointer-up.
+   */
+  protected readonly renderTopic = computed<TopicCardV2>(() => {
+    const topic = this.topic();
+    const dragging = this.draggingPill();
+    const nodePreview = this.nodeDragPreview();
+    const columnPreview = this.columnDragPreview();
+    if ((!dragging || !nodePreview) && !columnPreview) {
+      return topic;
+    }
+    const draft = structuredClone(topic);
+    if (dragging && nodePreview) {
+      moveNodeInTopic(draft, dragging.nodeId, nodePreview.parentId, nodePreview.index);
+    }
+    if (columnPreview) {
+      const fromIndex = draft.columns.findIndex((column) => column.id === columnPreview.columnId);
+      if (fromIndex >= 0) {
+        const [column] = draft.columns.splice(fromIndex, 1);
+        if (column) {
+          draft.columns.splice(columnPreview.toIndex, 0, column);
+        }
+      }
+    }
+    return draft;
+  });
+
+  protected readonly renderColumns = computed(() => this.renderTopic().columns);
+
+  protected readonly lattice = computed(() => {
+    let collapsed = this.store.collapsedNodeIds();
+    // Preview into a collapsed Branch shows it expanded — the drop expands it too.
+    const previewParentId = this.nodeDragPreview()?.parentId;
+    if (previewParentId && collapsed.has(previewParentId)) {
+      const next = new Set(collapsed);
+      next.delete(previewParentId);
+      collapsed = next;
+    }
+    return computeTopicLattice(this.renderTopic(), collapsed);
+  });
   protected readonly pillAlignment = computed(() => this.topic().pillAlignment ?? 'center');
   protected readonly connectorPaths = signal<ConnectorPath[]>([]);
   /** `header:<colId>` or `cell:<nodeId>:<colId>` — at most one editor at a time. */
@@ -832,23 +864,30 @@ export class LatticeComponent {
   }
 
   // -------------------------------------------------------------------------
-  // Drag: reorder among siblings (drop between rows) or re-parent (drop on a
-  // pill). Keyboard path: Move up / Move down in the pill menu.
+  // Drag: live preview. While the pointer moves, the pending move is applied
+  // to a render-only clone (renderTopic), so the dragged node's rows and its
+  // neighbors rearrange in real time; pointer-up commits exactly the
+  // previewed move as ONE store call = one undo step. Hit-testing runs
+  // against the previewed DOM each move, so the user aims at what they see.
+  // Keyboard path: Move up / Move down in the pill menu.
   // -------------------------------------------------------------------------
 
   protected readonly draggingPill = signal<LatticePill | null>(null);
   protected readonly dropPillId = signal<string | null>(null);
-  protected readonly dropLineTop = signal<number | null>(null);
+  private readonly nodeDragPreview = signal<{ parentId: string | null; index: number } | null>(
+    null,
+  );
 
   private dragSession: {
     pill: LatticePill;
     parentId: string | null;
     fromIndex: number;
-    descendants: ReadonlySet<string>;
-    pillRects: { pill: LatticePill; left: number; top: number; right: number; bottom: number }[];
-    siblingBands: { top: number; bottom: number }[];
-    pendingParentId: string | null;
-    pendingIndex: number | null;
+    /** Pills the node may be dropped onto (everything but itself + subtree). */
+    targetIds: ReadonlySet<string>;
+    /** Original siblings (minus the dragged node), in document order. */
+    siblingIds: readonly string[];
+    rootRect: DOMRect;
+    zoomRatio: number;
     cleanup: () => void;
   } | null = null;
 
@@ -876,258 +915,245 @@ export class LatticeComponent {
     }
     const siblings = this.siblingPillsOf(pill);
     const index = siblings.findIndex((candidate) => candidate.nodeId === pill.nodeId);
-    this.store.moveNode(this.topic().id, pill.nodeId, this.parentIdOf(pill), index + delta);
+    const parentId = pill.parentPillId === ROOT_PILL_ID ? null : pill.parentPillId;
+    this.store.moveNode(this.topic().id, pill.nodeId, parentId, index + delta);
   }
 
   protected startPillDrag(pill: LatticePill, event: PointerEvent): void {
-    if (pill.kind === 'root' || event.button !== 0 || this.dragSession) {
+    if (pill.kind === 'root' || event.button !== 0 || this.dragSession || this.columnDragSession) {
       return;
     }
     event.preventDefault();
-    const grip = event.target as HTMLElement;
-    grip.setPointerCapture(event.pointerId);
-
     const root = this.latticeRootRef().nativeElement;
+    // Capture on the lattice root: it survives the re-renders the live
+    // preview causes, unlike the grip/label the gesture started on.
+    try {
+      root.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer already released.
+    }
     const rootRect = root.getBoundingClientRect();
     const zoomRatio = root.offsetWidth > 0 ? rootRect.width / root.offsetWidth : 1;
 
-    const descendants = new Set<string>();
+    const subtree = new Set<string>([pill.nodeId]);
     if (pill.node) {
       const collect = (children: readonly NodeV2[]): void => {
         for (const child of children) {
-          descendants.add(child.id);
+          subtree.add(child.id);
           collect(child.children);
         }
       };
       collect(pill.node.children);
     }
-
-    const pillRects: {
-      pill: LatticePill;
-      left: number;
-      top: number;
-      right: number;
-      bottom: number;
-    }[] = [];
+    const targetIds = new Set<string>();
     for (const candidate of this.lattice().pills) {
-      const element = root.querySelector<HTMLElement>(
-        `[data-pill-id="${CSS.escape(candidate.nodeId)}"]`,
-      );
-      if (!element) {
-        continue;
+      if (!subtree.has(candidate.nodeId)) {
+        targetIds.add(candidate.nodeId);
       }
-      const rect = layoutRectWithin(root, element);
-      pillRects.push({
-        pill: candidate,
-        left: rect.left,
-        top: rect.top,
-        right: rect.right,
-        bottom: rect.bottom,
-      });
     }
 
     const siblings = this.siblingPillsOf(pill);
     const fromIndex = siblings.findIndex((candidate) => candidate.nodeId === pill.nodeId);
-    const siblingBands = siblings.map((sibling) => {
-      const rect = pillRects.find((candidate) => candidate.pill.nodeId === sibling.nodeId);
-      return { top: rect?.top ?? 0, bottom: rect?.bottom ?? 0 };
-    });
+    const siblingIds = siblings
+      .filter((candidate) => candidate.nodeId !== pill.nodeId)
+      .map((candidate) => candidate.nodeId);
 
-    const onMove = (moveEvent: PointerEvent): void =>
-      this.updateDrag(moveEvent, rootRect, zoomRatio);
-    const onUp = (): void => this.finishDrag(true);
-    const onCancel = (): void => this.finishDrag(false);
-    const onKeydown = (keyEvent: KeyboardEvent): void => {
-      if (keyEvent.key === 'Escape') {
-        this.finishDrag(false);
+    const pointerId = event.pointerId;
+    const onMove = (moveEvent: PointerEvent): void => {
+      if (moveEvent.pointerId === pointerId) {
+        this.updateNodeDrag(moveEvent);
       }
     };
-    grip.addEventListener('pointermove', onMove);
-    grip.addEventListener('pointerup', onUp);
-    grip.addEventListener('pointercancel', onCancel);
+    const onUp = (upEvent: PointerEvent): void => {
+      if (upEvent.pointerId === pointerId) {
+        this.finishNodeDrag(true);
+      }
+    };
+    const onCancel = (cancelEvent: PointerEvent): void => {
+      if (cancelEvent.pointerId === pointerId) {
+        this.finishNodeDrag(false);
+      }
+    };
+    const onKeydown = (keyEvent: KeyboardEvent): void => {
+      if (keyEvent.key === 'Escape') {
+        this.finishNodeDrag(false);
+      }
+    };
+    root.addEventListener('pointermove', onMove);
+    root.addEventListener('pointerup', onUp);
+    root.addEventListener('pointercancel', onCancel);
     document.addEventListener('keydown', onKeydown);
 
     this.dragSession = {
       pill,
-      parentId: this.parentIdOf(pill),
+      parentId: pill.parentPillId === ROOT_PILL_ID ? null : pill.parentPillId,
       fromIndex,
-      descendants,
-      pillRects,
-      siblingBands,
-      pendingParentId: null,
-      pendingIndex: null,
+      targetIds,
+      siblingIds,
+      rootRect,
+      zoomRatio,
       cleanup: () => {
-        grip.removeEventListener('pointermove', onMove);
-        grip.removeEventListener('pointerup', onUp);
-        grip.removeEventListener('pointercancel', onCancel);
+        root.removeEventListener('pointermove', onMove);
+        root.removeEventListener('pointerup', onUp);
+        root.removeEventListener('pointercancel', onCancel);
         document.removeEventListener('keydown', onKeydown);
       },
     };
     this.draggingPill.set(pill);
   }
 
-  private updateDrag(event: PointerEvent, rootRect: DOMRect, zoomRatio: number): void {
+  private updateNodeDrag(event: PointerEvent): void {
     const session = this.dragSession;
     if (!session) {
       return;
     }
-    const x = (event.clientX - rootRect.left) / zoomRatio;
-    const y = (event.clientY - rootRect.top) / zoomRatio;
+    const root = this.latticeRootRef().nativeElement;
+    const x = (event.clientX - session.rootRect.left) / session.zoomRatio;
+    const y = (event.clientY - session.rootRect.top) / session.zoomRatio;
 
-    const hit = session.pillRects.find(
-      (candidate) =>
-        candidate.pill.nodeId !== session.pill.nodeId &&
-        !session.descendants.has(candidate.pill.nodeId) &&
-        x >= candidate.left &&
-        x <= candidate.right &&
-        y >= candidate.top &&
-        y <= candidate.bottom,
-    );
-    if (hit) {
-      this.dropPillId.set(hit.pill.nodeId);
-      this.dropLineTop.set(null);
-      session.pendingParentId = hit.pill.nodeId === ROOT_PILL_ID ? null : hit.pill.nodeId;
-      session.pendingIndex = Number.MAX_SAFE_INTEGER;
-      return;
-    }
-
-    let rawIndex = 0;
-    for (const band of session.siblingBands) {
-      if (y > (band.top + band.bottom) / 2) {
-        rawIndex += 1;
+    // Re-parent: pointer over another pill → preview as its last child.
+    for (const element of root.querySelectorAll<HTMLElement>('[data-pill-id]')) {
+      const id = element.dataset['pillId'];
+      if (!id || !session.targetIds.has(id)) {
+        continue;
+      }
+      const rect = layoutRectWithin(root, element);
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+        this.applyNodePreview(
+          { parentId: id === ROOT_PILL_ID ? null : id, index: Number.MAX_SAFE_INTEGER },
+          id,
+        );
+        return;
       }
     }
-    const adjustedIndex = rawIndex > session.fromIndex ? rawIndex - 1 : rawIndex;
-    if (adjustedIndex === session.fromIndex) {
-      this.clearDropIndicators();
-      session.pendingParentId = null;
-      session.pendingIndex = null;
-      return;
-    }
 
-    const lineTop =
-      rawIndex === 0
-        ? (session.siblingBands[0]?.top ?? 0) - 3
-        : (session.siblingBands[rawIndex - 1]?.bottom ?? 0) + 1;
-    this.dropPillId.set(null);
-    this.dropLineTop.set(lineTop);
-    session.pendingParentId = session.parentId;
-    session.pendingIndex = adjustedIndex;
+    // Reorder: insertion index among the original siblings, by midpoint rule
+    // on their current (previewed) positions.
+    let index = 0;
+    for (const siblingId of session.siblingIds) {
+      const element = root.querySelector<HTMLElement>(`[data-pill-id="${CSS.escape(siblingId)}"]`);
+      if (!element) {
+        continue;
+      }
+      const rect = layoutRectWithin(root, element);
+      if (y > (rect.top + rect.bottom) / 2) {
+        index += 1;
+      }
+    }
+    if (index === session.fromIndex) {
+      this.applyNodePreview(null, null);
+    } else {
+      this.applyNodePreview({ parentId: session.parentId, index }, null);
+    }
   }
 
-  private finishDrag(apply: boolean): void {
+  private applyNodePreview(
+    preview: { parentId: string | null; index: number } | null,
+    dropPillId: string | null,
+  ): void {
+    if (this.dropPillId() !== dropPillId) {
+      this.dropPillId.set(dropPillId);
+    }
+    const current = this.nodeDragPreview();
+    const unchanged =
+      current === preview ||
+      (current !== null &&
+        preview !== null &&
+        current.parentId === preview.parentId &&
+        current.index === preview.index);
+    if (!unchanged) {
+      this.nodeDragPreview.set(preview);
+    }
+  }
+
+  private finishNodeDrag(apply: boolean): void {
     const session = this.dragSession;
     if (!session) {
       return;
     }
     session.cleanup();
     this.dragSession = null;
-    this.draggingPill.set(null);
 
-    const dropPillId = this.dropPillId();
-    this.clearDropIndicators();
-
-    if (!apply || (session.pendingIndex === null && dropPillId === null)) {
-      return;
-    }
-
-    if (dropPillId !== null) {
-      const targetParentId = dropPillId === ROOT_PILL_ID ? null : dropPillId;
-      this.store.moveNode(
-        this.topic().id,
-        session.pill.nodeId,
-        targetParentId,
-        Number.MAX_SAFE_INTEGER,
-      );
-      if (targetParentId) {
-        this.store.expandNode(targetParentId);
+    const preview = this.nodeDragPreview();
+    if (
+      apply &&
+      preview &&
+      !this.isCurrentPosition(session.pill.nodeId, preview.parentId, preview.index)
+    ) {
+      // Committing before clearing the preview renders the same layout the
+      // preview showed — the drop lands exactly as previewed, in one step.
+      this.store.moveNode(this.topic().id, session.pill.nodeId, preview.parentId, preview.index);
+      if (preview.parentId !== null) {
+        this.store.expandNode(preview.parentId);
       }
-      return;
     }
-
-    if (session.pendingIndex !== null) {
-      this.store.moveNode(
-        this.topic().id,
-        session.pill.nodeId,
-        session.pendingParentId,
-        session.pendingIndex,
-      );
-    }
-  }
-
-  private clearDropIndicators(): void {
+    this.draggingPill.set(null);
     this.dropPillId.set(null);
-    this.dropLineTop.set(null);
+    this.nodeDragPreview.set(null);
   }
 
-  private parentIdOf(pill: LatticePill): string | null {
-    return pill.parentPillId === ROOT_PILL_ID ? null : pill.parentPillId;
+  /** A drop landing exactly where the node already is must not touch history. */
+  private isCurrentPosition(nodeId: string, parentId: string | null, index: number): boolean {
+    const topic = this.topic();
+    const located = findNodeAndParent(topic.children, nodeId);
+    if (!located) {
+      return false;
+    }
+    if ((located.parent?.id ?? null) !== parentId) {
+      return false;
+    }
+    const siblingsWithoutNode =
+      (located.parent ? located.parent.children.length : topic.children.length) - 1;
+    return Math.max(0, Math.min(index, siblingsWithoutNode)) === located.index;
   }
 
   // -------------------------------------------------------------------------
-  // Column header drag: horizontal reorder (click still selects/edits)
+  // Column header drag: horizontal reorder with live preview (click still
+  // selects/edits)
   // -------------------------------------------------------------------------
 
-  protected readonly columnDropLineLeft = signal<number | null>(null);
+  private readonly columnDragPreview = signal<{ columnId: string; toIndex: number } | null>(null);
+  protected readonly draggingColumnId = signal<string | null>(null);
+
+  private columnDragSession: {
+    column: ColumnV2;
+    fromIndex: number;
+    /** The other columns' ids, in original order. */
+    otherIds: readonly string[];
+    rootRect: DOMRect;
+    zoomRatio: number;
+    cleanup: () => void;
+  } | null = null;
 
   protected onHeaderPointerDown(column: ColumnV2, event: PointerEvent): void {
-    if (event.button !== 0) {
+    if (event.button !== 0 || this.dragSession || this.columnDragSession) {
       return;
     }
     event.preventDefault();
     const wasSelected = this.isColumnSelected(column);
     const headerElement = event.currentTarget as HTMLElement;
-    headerElement.setPointerCapture(event.pointerId);
-
-    const root = this.latticeRootRef().nativeElement;
-    const rootRect = root.getBoundingClientRect();
-    const zoomRatio = root.offsetWidth > 0 ? rootRect.width / root.offsetWidth : 1;
-    const columns = this.topic().columns;
-    const bands = columns.map((candidate) => {
-      const element = root.querySelector<HTMLElement>(
-        `[data-header-col="${CSS.escape(candidate.id)}"]`,
-      );
-      const rect = element ? layoutRectWithin(root, element) : null;
-      return { left: rect?.left ?? 0, right: rect?.right ?? 0 };
-    });
-    const fromIndex = columns.findIndex((candidate) => candidate.id === column.id);
+    try {
+      headerElement.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer already released.
+    }
 
     const startX = event.clientX;
-    let dragging = false;
-    let pendingIndex: number | null = null;
-
+    const startY = event.clientY;
+    const cleanup = (): void => {
+      headerElement.removeEventListener('pointermove', onMove);
+      headerElement.removeEventListener('pointerup', onUp);
+      headerElement.removeEventListener('pointercancel', cleanup);
+    };
     const onMove = (moveEvent: PointerEvent): void => {
-      if (!dragging && Math.abs(moveEvent.clientX - startX) < 4) {
+      if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 4) {
         return;
       }
-      dragging = true;
-      const x = (moveEvent.clientX - rootRect.left) / zoomRatio;
-      let rawIndex = 0;
-      for (const band of bands) {
-        if (x > (band.left + band.right) / 2) {
-          rawIndex += 1;
-        }
-      }
-      const adjusted = rawIndex > fromIndex ? rawIndex - 1 : rawIndex;
-      if (adjusted === fromIndex) {
-        pendingIndex = null;
-        this.columnDropLineLeft.set(null);
-        return;
-      }
-      pendingIndex = adjusted;
-      this.columnDropLineLeft.set(
-        rawIndex === 0 ? (bands[0]?.left ?? 0) - 2 : (bands[rawIndex - 1]?.right ?? 0),
-      );
+      cleanup();
+      this.startColumnDrag(column, moveEvent);
     };
     const onUp = (): void => {
       cleanup();
-      this.columnDropLineLeft.set(null);
-      if (dragging) {
-        if (pendingIndex !== null) {
-          this.store.moveColumn(this.topic().id, column.id, pendingIndex);
-        }
-        return;
-      }
       if (wasSelected) {
         this.beginHeaderEdit(column);
       } else {
@@ -1135,14 +1161,112 @@ export class LatticeComponent {
         headerElement.focus({ preventScroll: true });
       }
     };
-    const cleanup = (): void => {
-      headerElement.removeEventListener('pointermove', onMove);
-      headerElement.removeEventListener('pointerup', onUp);
-      headerElement.removeEventListener('pointercancel', cleanup);
-    };
     headerElement.addEventListener('pointermove', onMove);
     headerElement.addEventListener('pointerup', onUp);
     headerElement.addEventListener('pointercancel', cleanup);
+  }
+
+  private startColumnDrag(column: ColumnV2, event: PointerEvent): void {
+    const root = this.latticeRootRef().nativeElement;
+    try {
+      root.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer already released.
+    }
+    const rootRect = root.getBoundingClientRect();
+    const zoomRatio = root.offsetWidth > 0 ? rootRect.width / root.offsetWidth : 1;
+    const columns = this.topic().columns;
+
+    const pointerId = event.pointerId;
+    const onMove = (moveEvent: PointerEvent): void => {
+      if (moveEvent.pointerId === pointerId) {
+        this.updateColumnDrag(moveEvent);
+      }
+    };
+    const onUp = (upEvent: PointerEvent): void => {
+      if (upEvent.pointerId === pointerId) {
+        this.finishColumnDrag(true);
+      }
+    };
+    const onCancel = (cancelEvent: PointerEvent): void => {
+      if (cancelEvent.pointerId === pointerId) {
+        this.finishColumnDrag(false);
+      }
+    };
+    const onKeydown = (keyEvent: KeyboardEvent): void => {
+      if (keyEvent.key === 'Escape') {
+        this.finishColumnDrag(false);
+      }
+    };
+    root.addEventListener('pointermove', onMove);
+    root.addEventListener('pointerup', onUp);
+    root.addEventListener('pointercancel', onCancel);
+    document.addEventListener('keydown', onKeydown);
+
+    this.columnDragSession = {
+      column,
+      fromIndex: columns.findIndex((candidate) => candidate.id === column.id),
+      otherIds: columns.filter((candidate) => candidate.id !== column.id).map((c) => c.id),
+      rootRect,
+      zoomRatio,
+      cleanup: () => {
+        root.removeEventListener('pointermove', onMove);
+        root.removeEventListener('pointerup', onUp);
+        root.removeEventListener('pointercancel', onCancel);
+        document.removeEventListener('keydown', onKeydown);
+      },
+    };
+    this.draggingColumnId.set(column.id);
+    this.updateColumnDrag(event);
+  }
+
+  private updateColumnDrag(event: PointerEvent): void {
+    const session = this.columnDragSession;
+    if (!session) {
+      return;
+    }
+    const root = this.latticeRootRef().nativeElement;
+    const x = (event.clientX - session.rootRect.left) / session.zoomRatio;
+
+    // Insertion index among the other columns, by midpoint rule on their
+    // current (previewed) header positions.
+    let index = 0;
+    for (const otherId of session.otherIds) {
+      const element = root.querySelector<HTMLElement>(`[data-header-col="${CSS.escape(otherId)}"]`);
+      if (!element) {
+        continue;
+      }
+      const rect = layoutRectWithin(root, element);
+      if (x > (rect.left + rect.right) / 2) {
+        index += 1;
+      }
+    }
+
+    const preview =
+      index === session.fromIndex ? null : { columnId: session.column.id, toIndex: index };
+    const current = this.columnDragPreview();
+    const unchanged =
+      current === preview ||
+      (current !== null && preview !== null && current.toIndex === preview.toIndex);
+    if (!unchanged) {
+      this.columnDragPreview.set(preview);
+    }
+  }
+
+  private finishColumnDrag(apply: boolean): void {
+    const session = this.columnDragSession;
+    if (!session) {
+      return;
+    }
+    session.cleanup();
+    this.columnDragSession = null;
+
+    const preview = this.columnDragPreview();
+    if (apply && preview) {
+      this.store.moveColumn(this.topic().id, preview.columnId, preview.toIndex);
+    }
+    this.draggingColumnId.set(null);
+    this.columnDragPreview.set(null);
   }
 
   // -------------------------------------------------------------------------

@@ -19,9 +19,12 @@ import {
   cloneDocument,
   createInputColumn,
   createNode,
+  ensureCanHostChildren,
   findNodeAndParent,
   isLeaf,
   makeId,
+  moveNodeInTopic,
+  nextNodeRefName,
   nodeExists,
   walkNodes,
 } from '../model/document.model';
@@ -353,7 +356,7 @@ export class DocumentStoreService {
       if (!topic) {
         return;
       }
-      const node = createNode(displayName, this.nextNodeRefName(topic, displayName));
+      const node = createNode(displayName, nextNodeRefName(topic, displayName));
 
       if (parentNodeId === null) {
         topic.children.push(node);
@@ -391,7 +394,7 @@ export class DocumentStoreService {
       if (!located) {
         return;
       }
-      const node = createNode(displayName, this.nextNodeRefName(topic, displayName));
+      const node = createNode(displayName, nextNodeRefName(topic, displayName));
       const siblings = located.parent ? located.parent.children : topic.children;
       siblings.splice(located.index + 1, 0, node);
       newNodeId = node.id;
@@ -474,31 +477,9 @@ export class DocumentStoreService {
 
     this.mutate((document) => {
       const topic = this.findTopic(document, topicId);
-      if (!topic) {
-        return;
+      if (topic) {
+        moveNodeInTopic(topic, nodeId, targetParentId, targetIndex);
       }
-      const located = findNodeAndParent(topic.children, nodeId);
-      if (!located) {
-        return;
-      }
-
-      const fromSiblings = located.parent ? located.parent.children : topic.children;
-      fromSiblings.splice(located.index, 1);
-
-      let targetSiblings = topic.children;
-      if (targetParentId !== null) {
-        const target = findNodeAndParent(topic.children, targetParentId);
-        if (!target) {
-          // Reinsert where it was — target vanished mid-operation.
-          fromSiblings.splice(located.index, 0, located.node);
-          return;
-        }
-        this.ensureCanHostChildren(topic, target.node);
-        targetSiblings = target.node.children;
-      }
-
-      const index = Math.max(0, Math.min(targetIndex, targetSiblings.length));
-      targetSiblings.splice(index, 0, located.node);
     });
   }
 
@@ -518,26 +499,6 @@ export class DocumentStoreService {
         document.cards.splice(toIndex, 0, card);
       }
     });
-  }
-
-  /**
-   * Prepares a Node to receive children: a data-bearing Leaf moves its
-   * values into an auto-created carrier child so no data is destroyed
-   * (see CONTEXT.md relationships).
-   */
-  private ensureCanHostChildren(topic: TopicCardV2, parent: NodeV2): void {
-    if (parent.children.length > 0) {
-      return;
-    }
-    if (Object.values(parent.values).some((raw) => raw.trim().length > 0)) {
-      const carrier = createNode(
-        parent.displayName,
-        this.nextNodeRefName(topic, parent.displayName),
-      );
-      carrier.values = parent.values;
-      parent.children.push(carrier);
-    }
-    parent.values = {};
   }
 
   setNodeAccent(topicId: string, nodeId: string, accent: AccentColor | null): void {
@@ -789,7 +750,7 @@ export class DocumentStoreService {
         topic.children.push(clone);
         return;
       }
-      this.ensureCanHostChildren(topic, target.node);
+      ensureCanHostChildren(topic, target.node);
       target.node.children.push(clone);
     });
 
@@ -1441,12 +1402,6 @@ export class DocumentStoreService {
 
   private findTopic(document: DocumentV2, topicId: string): TopicCardV2 | undefined {
     return document.cards.find((card) => card.id === topicId);
-  }
-
-  private nextNodeRefName(topic: TopicCardV2, displayName: string): string {
-    const taken = new Set<string>();
-    walkNodes(topic.children, (node) => taken.add(node.refName));
-    return uniqueRefName(slugifyEntityRefName(displayName), taken);
   }
 }
 

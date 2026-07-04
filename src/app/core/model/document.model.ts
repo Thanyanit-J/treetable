@@ -9,6 +9,8 @@
  * expressions). Evaluated values are always derived, never persisted.
  */
 
+import { slugifyEntityRefName, uniqueRefName } from './ref-name';
+
 export type ColumnKind = 'input' | 'computed' | 'chart';
 export type ColumnValueType = 'number' | 'text';
 export type RollupMode = 'none' | 'sum';
@@ -189,4 +191,65 @@ export function nodeExists(nodes: readonly NodeV2[], nodeId: string): boolean {
     }
   });
   return found;
+}
+
+/** A Reference Name for a new Node, unique within the Topic. */
+export function nextNodeRefName(topic: TopicCardV2, displayName: string): string {
+  const taken = new Set<string>();
+  walkNodes(topic.children, (node) => taken.add(node.refName));
+  return uniqueRefName(slugifyEntityRefName(displayName), taken);
+}
+
+/**
+ * Prepares a Node to receive children: a data-bearing Leaf moves its values
+ * into an auto-created carrier child so no data is destroyed (CONTEXT.md
+ * relationships).
+ */
+export function ensureCanHostChildren(topic: TopicCardV2, parent: NodeV2): void {
+  if (parent.children.length > 0) {
+    return;
+  }
+  if (Object.values(parent.values).some((raw) => raw.trim().length > 0)) {
+    const carrier = createNode(parent.displayName, nextNodeRefName(topic, parent.displayName));
+    carrier.values = parent.values;
+    parent.children.push(carrier);
+  }
+  parent.values = {};
+}
+
+/**
+ * Moves a Node (with its whole subtree) to `targetParentId` (null = top
+ * level) at `targetIndex`, counted after the node's removal. Callers are
+ * responsible for validating the move (no self/descendant targets); the
+ * DocumentStore uses this inside one undo step, the lattice uses it to
+ * render drag previews without touching the store.
+ */
+export function moveNodeInTopic(
+  topic: TopicCardV2,
+  nodeId: string,
+  targetParentId: string | null,
+  targetIndex: number,
+): void {
+  const located = findNodeAndParent(topic.children, nodeId);
+  if (!located) {
+    return;
+  }
+
+  const fromSiblings = located.parent ? located.parent.children : topic.children;
+  fromSiblings.splice(located.index, 1);
+
+  let targetSiblings = topic.children;
+  if (targetParentId !== null) {
+    const target = findNodeAndParent(topic.children, targetParentId);
+    if (!target) {
+      // Reinsert where it was — target vanished mid-operation.
+      fromSiblings.splice(located.index, 0, located.node);
+      return;
+    }
+    ensureCanHostChildren(topic, target.node);
+    targetSiblings = target.node.children;
+  }
+
+  const index = Math.max(0, Math.min(targetIndex, targetSiblings.length));
+  targetSiblings.splice(index, 0, located.node);
 }
