@@ -463,6 +463,9 @@ export class PersistenceService {
     if (candidate.customRefName === true) {
       column.customRefName = true;
     }
+    if (candidate.hidden === true) {
+      column.hidden = true;
+    }
     return column;
   }
 

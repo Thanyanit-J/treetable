@@ -555,7 +555,10 @@ export class LatticeComponent {
     return draft;
   });
 
-  protected readonly renderColumns = computed(() => this.renderTopic().columns);
+  /** Visible columns only — hidden ones keep their data but leave the grid. */
+  protected readonly renderColumns = computed(() =>
+    this.renderTopic().columns.filter((column) => column.hidden !== true),
+  );
 
   protected readonly lattice = computed(() => {
     let collapsed = this.store.collapsedNodeIds();
@@ -609,18 +612,18 @@ export class LatticeComponent {
 
   protected readonly gridTemplateColumns = computed(() => {
     const tree = `repeat(${this.lattice().depthCount}, max-content)`;
-    const data = `repeat(${Math.max(1, this.topic().columns.length)}, minmax(6rem, max-content))`;
+    const data = `repeat(${Math.max(1, this.renderColumns().length)}, minmax(6rem, max-content))`;
     return `${tree} ${data}`;
   });
 
   protected readonly columnCount = computed(
-    () => this.lattice().depthCount + this.topic().columns.length,
+    () => this.lattice().depthCount + this.renderColumns().length,
   );
   protected readonly rowCount = computed(
     () => this.lattice().rows.length + 1 + (this.hasFooter() ? 1 : 0),
   );
   protected readonly hasFooter = computed(() =>
-    this.topic().columns.some((column) => column.rollup !== 'none'),
+    this.renderColumns().some((column) => column.rollup !== 'none'),
   );
 
   protected pillsStartingAt(rowStart: number): LatticePill[] {
@@ -686,7 +689,7 @@ export class LatticeComponent {
     const rowIndex = rows.findIndex((row) => row.nodeId === nodeId);
     const anchorRow = rows.findIndex((row) => row.nodeId === selection.anchor.nodeId);
     const focusRow = rows.findIndex((row) => row.nodeId === selection.focus.nodeId);
-    const columns = this.topic().columns;
+    const columns = this.renderColumns();
     const columnIndex = columns.findIndex((candidate) => candidate.id === column.id);
     const anchorColumn = columns.findIndex(
       (candidate) => candidate.id === selection.anchor.columnId,
@@ -1424,7 +1427,7 @@ export class LatticeComponent {
     if (selection?.kind !== 'range' || selection.topicId !== this.topic().id) {
       return false;
     }
-    const columns = this.topic().columns;
+    const columns = this.renderColumns();
     const index = columns.findIndex((candidate) => candidate.id === column.id);
     const anchor = columns.findIndex((candidate) => candidate.id === selection.anchor.columnId);
     const focus = columns.findIndex((candidate) => candidate.id === selection.focus.columnId);
@@ -1443,7 +1446,7 @@ export class LatticeComponent {
     }
     const rootRect = root.getBoundingClientRect();
     const zoomRatio = root.offsetWidth > 0 ? rootRect.width / root.offsetWidth : 1;
-    const columns = this.topic().columns;
+    const columns = this.renderColumns();
 
     const pointerId = event.pointerId;
     const onMove = (moveEvent: PointerEvent): void => {
@@ -1473,7 +1476,7 @@ export class LatticeComponent {
 
     this.columnDragSession = {
       column,
-      fromIndex: columns.findIndex((candidate) => candidate.id === column.id),
+      fromIndex: this.topic().columns.findIndex((candidate) => candidate.id === column.id),
       otherIds: columns.filter((candidate) => candidate.id !== column.id).map((c) => c.id),
       rootRect,
       zoomRatio,
@@ -1510,8 +1513,21 @@ export class LatticeComponent {
       }
     }
 
-    const preview =
-      index === session.fromIndex ? null : { columnId: session.column.id, toIndex: index };
+    // Map the visible insertion index onto the full column order (hidden
+    // columns keep their relative spots).
+    const allColumns = this.topic().columns;
+    const fromFull = allColumns.findIndex((candidate) => candidate.id === session.column.id);
+    const visibleOthers = allColumns.filter(
+      (candidate) => candidate.hidden !== true && candidate.id !== session.column.id,
+    );
+    const anchorColumn = visibleOthers[index];
+    let toFull = anchorColumn
+      ? allColumns.findIndex((candidate) => candidate.id === anchorColumn.id)
+      : allColumns.length;
+    if (fromFull < toFull) {
+      toFull -= 1;
+    }
+    const preview = toFull === fromFull ? null : { columnId: session.column.id, toIndex: toFull };
     const current = this.columnDragPreview();
     const unchanged =
       current === preview ||

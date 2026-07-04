@@ -231,6 +231,51 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                 />
                 Show root node
               </label>
+              <fieldset class="field">
+                <legend>Columns</legend>
+                <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                  Visible
+                </p>
+                <div cdkDropList (cdkDropListDropped)="onColumnListDrop(topic, $event)">
+                  @for (column of visibleColumns(topic); track column.id) {
+                    <div cdkDrag [cdkDragData]="column.id" class="flex items-center">
+                      <button
+                        cdkDragHandle
+                        type="button"
+                        class="flex h-5 w-4 shrink-0 cursor-grab items-center justify-center rounded text-slate-300 hover:bg-slate-100 hover:text-slate-500 focus-visible:outline-2 focus-visible:outline-sky-600"
+                        [attr.aria-label]="'Reorder column ' + column.displayName"
+                      >
+                        <span aria-hidden="true" class="text-[10px] leading-none">⠿</span>
+                      </button>
+                      <label
+                        class="flex min-w-0 flex-1 items-center gap-2 py-1 text-sm text-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked
+                          [disabled]="visibleColumns(topic).length <= 1"
+                          (change)="store.setColumnHidden(topic.id, column.id, true)"
+                        />
+                        <span class="truncate">{{ column.displayName }}</span>
+                      </label>
+                    </div>
+                  }
+                </div>
+                <p class="mb-1 mt-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                  Hidden
+                </p>
+                @for (column of hiddenColumns(topic); track column.id) {
+                  <label class="flex min-w-0 items-center gap-2 py-1 pl-4 text-sm text-slate-500">
+                    <input
+                      type="checkbox"
+                      (change)="store.setColumnHidden(topic.id, column.id, false)"
+                    />
+                    <span class="truncate">{{ column.displayName }}</span>
+                  </label>
+                } @empty {
+                  <p class="pl-4 text-xs text-slate-400">None</p>
+                }
+              </fieldset>
               <button
                 type="button"
                 class="danger-button"
@@ -865,6 +910,21 @@ export class DetailsPanelComponent {
 
   protected toggleShowRoot(topic: TopicCardV2, event: Event): void {
     this.store.setShowRoot(topic.id, (event.target as HTMLInputElement).checked);
+  }
+
+  protected visibleColumns(topic: TopicCardV2): ColumnV2[] {
+    return topic.columns.filter((column) => column.hidden !== true);
+  }
+
+  protected hiddenColumns(topic: TopicCardV2): ColumnV2[] {
+    return topic.columns.filter((column) => column.hidden === true);
+  }
+
+  protected onColumnListDrop(topic: TopicCardV2, event: CdkDragDrop<unknown>): void {
+    const columnId = event.item.data;
+    if (typeof columnId === 'string' && event.previousIndex !== event.currentIndex) {
+      this.store.moveVisibleColumn(topic.id, columnId, event.currentIndex);
+    }
   }
 
   /** Re-syncing derives the Reference Name from the display name in one step. */

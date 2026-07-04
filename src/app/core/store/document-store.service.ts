@@ -1539,7 +1539,9 @@ export class DocumentStoreService {
       return selection.anchor;
     }
     const rows = computeTopicLattice(topic, this.collapsedSignal()).rows.map((row) => row.nodeId);
-    const columnIds = topic.columns.map((column) => column.id);
+    const columnIds = topic.columns
+      .filter((column) => column.hidden !== true)
+      .map((column) => column.id);
     const rowIndex = Math.min(
       rows.indexOf(selection.anchor.nodeId),
       rows.indexOf(selection.focus.nodeId),
@@ -1573,10 +1575,11 @@ export class DocumentStoreService {
         : selection.anchor;
     const focus = selection.kind === 'cell' ? anchor : selection.focus;
 
+    const visibleColumns = topic.columns.filter((column) => column.hidden !== true);
     const rowIndexOf = (nodeId: string): number =>
       lattice.rows.findIndex((row) => row.nodeId === nodeId);
     const columnIndexOf = (columnId: string): number =>
-      topic.columns.findIndex((column) => column.id === columnId);
+      visibleColumns.findIndex((column) => column.id === columnId);
 
     const r1 = rowIndexOf(anchor.nodeId);
     const r2 = rowIndexOf(focus.nodeId);
@@ -1602,7 +1605,7 @@ export class DocumentStoreService {
         editable: boolean;
       } | null)[] = [];
       for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c += 1) {
-        const column = topic.columns[c]!;
+        const column = visibleColumns[c]!;
         if (row.kind !== 'leaf') {
           // Collapsed Rollup Row: the displayed summary copies, never edits.
           const branch = findNodeAndParent(topic.children, row.nodeId)?.node;
@@ -1651,8 +1654,9 @@ export class DocumentStoreService {
       return null;
     }
     const lattice = computeTopicLattice(topic, this.collapsedSignal());
+    const visibleColumns = topic.columns.filter((column) => column.hidden !== true);
     const anchorRow = lattice.rows.findIndex((row) => row.nodeId === anchor.nodeId);
-    const anchorColumn = topic.columns.findIndex((column) => column.id === anchor.columnId);
+    const anchorColumn = visibleColumns.findIndex((column) => column.id === anchor.columnId);
     if (anchorRow < 0 || anchorColumn < 0) {
       return null;
     }
@@ -1660,7 +1664,7 @@ export class DocumentStoreService {
     return matrix.map((matrixRow, rowOffset) =>
       matrixRow.map((_, columnOffset) => {
         const row = lattice.rows[anchorRow + rowOffset];
-        const column = topic.columns[anchorColumn + columnOffset];
+        const column = visibleColumns[anchorColumn + columnOffset];
         if (!row || row.kind !== 'leaf' || !column || column.kind !== 'input') {
           return null;
         }
@@ -1740,6 +1744,58 @@ export class DocumentStoreService {
         delete leaf.values[columnId];
       }
     }
+  }
+
+  /** Hides a column from the table (data and formulas keep working). */
+  setColumnHidden(topicId: string, columnId: string, hidden: boolean): void {
+    const topic = this.topicById(topicId);
+    const column = topic?.columns.find((candidate) => candidate.id === columnId);
+    if (!topic || !column || (column.hidden ?? false) === hidden) {
+      return;
+    }
+    if (hidden && topic.columns.filter((candidate) => candidate.hidden !== true).length <= 1) {
+      return; // The table keeps at least one visible column.
+    }
+    this.mutate((document) => {
+      const draftColumn = this.findTopic(document, topicId)?.columns.find(
+        (candidate) => candidate.id === columnId,
+      );
+      if (!draftColumn) {
+        return;
+      }
+      if (hidden) {
+        draftColumn.hidden = true;
+      } else {
+        delete draftColumn.hidden;
+      }
+    });
+  }
+
+  /**
+   * Moves a column so it sits at `toVisibleIndex` among the VISIBLE columns
+   * (hidden ones keep their relative spots in the full order).
+   */
+  moveVisibleColumn(topicId: string, columnId: string, toVisibleIndex: number): void {
+    const topic = this.topicById(topicId);
+    if (!topic) {
+      return;
+    }
+    const columns = topic.columns;
+    const fromFull = columns.findIndex((candidate) => candidate.id === columnId);
+    if (fromFull < 0) {
+      return;
+    }
+    const visibleOthers = columns.filter(
+      (candidate) => candidate.hidden !== true && candidate.id !== columnId,
+    );
+    const anchor = visibleOthers[toVisibleIndex];
+    let toFull = anchor
+      ? columns.findIndex((candidate) => candidate.id === anchor.id)
+      : columns.length;
+    if (fromFull < toFull) {
+      toFull -= 1;
+    }
+    this.moveColumn(topicId, columnId, toFull);
   }
 
   setColumnValueType(topicId: string, columnId: string, valueType: 'number' | 'text'): void {

@@ -34,6 +34,8 @@ export interface ColumnV2 {
   rollup: RollupMode;
   /** Reference Name of the column a Chart Column visualizes; null unless kind is 'chart'. */
   chartSource?: string | null;
+  /** Hidden from the table presentation; data and formulas keep working. */
+  hidden?: boolean;
 }
 
 export interface NodeV2 {
