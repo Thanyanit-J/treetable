@@ -124,7 +124,15 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                     <button
                       type="button"
                       class="choice"
-                      [class.choice-active]="(topic.connectorStyle ?? 'straight') === 'straight'"
+                      [class.choice-active]="(topic.connectorStyle ?? 'elbow') === 'elbow'"
+                      (click)="store.setConnectorStyle(topic.id, 'elbow')"
+                    >
+                      Elbow
+                    </button>
+                    <button
+                      type="button"
+                      class="choice"
+                      [class.choice-active]="topic.connectorStyle === 'straight'"
                       (click)="store.setConnectorStyle(topic.id, 'straight')"
                     >
                       Straight

@@ -55,7 +55,7 @@ export interface ChartConfigV2 {
 }
 
 export type PillAlignment = 'center' | 'top';
-export type ConnectorStyle = 'straight' | 'curved';
+export type ConnectorStyle = 'elbow' | 'straight' | 'curved';
 
 export interface TopicCardV2 {
   kind: 'topic';
@@ -69,7 +69,7 @@ export interface TopicCardV2 {
   charts?: ChartConfigV2[];
   /** Branch pills centered in their span (default) or aligned to the top row. */
   pillAlignment?: PillAlignment;
-  /** Tree connector lines: straight segments (default) or curves. */
+  /** Tree connector lines: right-angle elbows (default), straight segments, or curves. */
   connectorStyle?: ConnectorStyle;
 }
 

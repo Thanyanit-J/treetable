@@ -27,6 +27,7 @@ import {
 } from '../../../core/lattice/lattice-layout';
 import {
   ColumnV2,
+  ConnectorStyle,
   NodeV2,
   TopicCardV2,
   collectLeaves,
@@ -1496,7 +1497,7 @@ export class LatticeComponent {
 
     const paths: ConnectorPath[] = [];
     const dataRegionLeft = this.measureDataRegionLeft(root);
-    const curved = (this.topic().connectorStyle ?? 'straight') === 'curved';
+    const style = this.topic().connectorStyle ?? 'elbow';
 
     for (const pill of this.lattice().pills) {
       if (pill.kind === 'root') {
@@ -1505,13 +1506,7 @@ export class LatticeComponent {
       const to = pillRects.get(pill.nodeId);
       const from = pillRects.get(pill.parentPillId);
       if (to && from) {
-        const dx = Math.max(12, (to.left - from.right) / 2);
-        paths.push({
-          id: `edge-${pill.nodeId}`,
-          d: curved
-            ? `M ${from.right} ${from.centerY} C ${from.right + dx} ${from.centerY}, ${to.left - dx} ${to.centerY}, ${to.left} ${to.centerY}`
-            : `M ${from.right} ${from.centerY} L ${to.left} ${to.centerY}`,
-        });
+        paths.push({ id: `edge-${pill.nodeId}`, d: connectorPath(style, from, to) });
       }
 
       if ((pill.kind === 'leaf' || pill.kind === 'collapsed') && to && dataRegionLeft !== null) {
@@ -1539,6 +1534,30 @@ export class LatticeComponent {
 
   private findNode(nodeId: string): NodeV2 | null {
     return findNodeAndParent(this.topic().children, nodeId)?.node ?? null;
+  }
+}
+
+/**
+ * Parent→child connector path from the parent pill's right edge to the child
+ * pill's left edge: right-angle elbow (horizontal → vertical → horizontal),
+ * one straight segment, or a cubic curve.
+ */
+function connectorPath(
+  style: ConnectorStyle,
+  from: { right: number; centerY: number },
+  to: { left: number; centerY: number },
+): string {
+  switch (style) {
+    case 'straight':
+      return `M ${from.right} ${from.centerY} L ${to.left} ${to.centerY}`;
+    case 'curved': {
+      const dx = Math.max(12, (to.left - from.right) / 2);
+      return `M ${from.right} ${from.centerY} C ${from.right + dx} ${from.centerY}, ${to.left - dx} ${to.centerY}, ${to.left} ${to.centerY}`;
+    }
+    case 'elbow': {
+      const midX = (from.right + to.left) / 2;
+      return `M ${from.right} ${from.centerY} L ${midX} ${from.centerY} L ${midX} ${to.centerY} L ${to.left} ${to.centerY}`;
+    }
   }
 }
 
