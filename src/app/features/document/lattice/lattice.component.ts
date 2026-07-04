@@ -33,7 +33,11 @@ import {
   findNodeAndParent,
   moveNodeInTopic,
 } from '../../../core/model/document.model';
-import { DocumentStoreService } from '../../../core/store/document-store.service';
+import {
+  DocumentStoreService,
+  FormulaEditorSession,
+} from '../../../core/store/document-store.service';
+import { insertReferenceIntoInput } from '../formula-ref-insert';
 import { NodePillComponent } from './node-pill.component';
 
 interface ConnectorPath {
@@ -80,11 +84,14 @@ interface ConnectorPath {
               [class.bg-slate-100]="!isColumnSelected(column)"
               [class.bg-sky-100]="isColumnSelected(column)"
               [class.opacity-40]="draggingColumnId() === column.id"
+              [class.formula-target]="isRefTarget(column)"
               [style.grid-row]="1"
               [style.grid-column]="dataGridColumn(columnIndex)"
               [attr.data-header-col]="column.id"
               [cdkContextMenuTriggerFor]="columnMenu"
               (contextmenu)="menuColumn.set(column); selectColumn(column)"
+              (pointerenter)="onRefHover(column, true)"
+              (pointerleave)="onRefHover(column, false)"
             >
               <div class="flex items-start">
                 <div class="min-w-0 flex-1">
@@ -181,12 +188,15 @@ interface ConnectorPath {
                 "
                 [class.bg-sky-100]="cellInRange(row.nodeId, column)"
                 [class.opacity-40]="draggingColumnId() === column.id"
+                [class.formula-target]="isRefTarget(column)"
                 [style.grid-row]="rowIndex + 2"
                 [style.grid-column]="dataGridColumn(columnIndex)"
                 [attr.data-cell-node]="row.kind === 'leaf' ? row.nodeId : null"
                 [attr.data-cell-col]="row.kind === 'leaf' ? column.id : null"
                 [cdkContextMenuTriggerFor]="row.kind === 'leaf' ? cellMenu : null"
                 (contextmenu)="onCellContextMenu(row, column)"
+                (pointerenter)="onRefHover(column, true)"
+                (pointerleave)="onRefHover(column, false)"
               >
                 @if (row.kind === 'collapsed' && !hasFooter()) {
                   <!-- No Rollup configured anywhere: a collapsed Branch shows no Row (CONTEXT.md). -->
@@ -204,6 +214,8 @@ interface ConnectorPath {
                     [class.text-right]="column.kind !== 'input' || column.valueType === 'number'"
                     [value]="cellEditValue(row.nodeId, column)"
                     [attr.aria-label]="cellAriaLabel(row.nodeId, column)"
+                    (focus)="syncCellFormulaSession(column, $event)"
+                    (input)="syncCellFormulaSession(column, $event)"
                     (blur)="commitCellEdit(row.nodeId, column, $event)"
                     (keydown.enter)="commitCellEditAndBlur(row.nodeId, column, $event)"
                     (keydown.escape)="cancelEditing($event)"
@@ -423,6 +435,14 @@ interface ConnectorPath {
     .cell-selected {
       outline: 2px solid var(--color-sky-500);
       outline-offset: -2px;
+    }
+    .formula-target {
+      outline: 2px solid var(--color-violet-400);
+      outline-offset: -2px;
+      background: var(--color-violet-50);
+    }
+    .formula-target * {
+      cursor: copy;
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -667,6 +687,7 @@ export class LatticeComponent {
     event.preventDefault();
     event.stopPropagation();
     this.editingKey.set(null);
+    this.releaseCellFormulaSession();
     (event.target as HTMLElement | null)?.blur();
   }
 
@@ -683,6 +704,7 @@ export class LatticeComponent {
     }
     const value = (event.target as HTMLInputElement).value;
     this.editingKey.set(null);
+    this.releaseCellFormulaSession();
     const previous = this.cellEditValue(nodeId, column);
     if (value === previous) {
       return;
@@ -722,6 +744,9 @@ export class LatticeComponent {
 
   protected onCellPointerDown(row: LatticeRow, column: ColumnV2, event: PointerEvent): void {
     if (event.button !== 0 || row.kind !== 'leaf') {
+      return;
+    }
+    if (this.tryInsertRef(column, event)) {
       return;
     }
     event.preventDefault();
@@ -801,6 +826,84 @@ export class LatticeComponent {
 
   protected canPasteCells(): boolean {
     return this.store.clipboard()?.kind === 'cells';
+  }
+
+  // -------------------------------------------------------------------------
+  // Formula editing: while any formula editor is active (a `=` cell editor
+  // here or the Inspector's formula field), headers show Reference Names,
+  // hovering a column highlights it, and clicking a column inserts its
+  // Reference Name at the editor's caret instead of moving the selection.
+  // -------------------------------------------------------------------------
+
+  protected readonly refHoverColumnId = signal<string | null>(null);
+  private cellFormulaSession: FormulaEditorSession | null = null;
+
+  protected canInsertRef(column: ColumnV2): boolean {
+    const session = this.store.formulaEditor();
+    if (!session || column.kind === 'chart') {
+      return false;
+    }
+    // The edited column itself is not a target (self-reference).
+    return !(session.topicId === this.topic().id && session.columnId === column.id);
+  }
+
+  protected isRefTarget(column: ColumnV2): boolean {
+    return this.refHoverColumnId() === column.id && this.canInsertRef(column);
+  }
+
+  protected onRefHover(column: ColumnV2, entering: boolean): void {
+    if (!entering) {
+      if (this.refHoverColumnId() === column.id) {
+        this.refHoverColumnId.set(null);
+      }
+      return;
+    }
+    this.refHoverColumnId.set(this.canInsertRef(column) ? column.id : null);
+  }
+
+  /**
+   * Routes a column click into the active formula editor. `preventDefault`
+   * on pointerdown keeps the editor focused — clicking never blurs it.
+   * Foreign columns insert their Topic-qualified path (ADR-0003).
+   */
+  private tryInsertRef(column: ColumnV2, event: PointerEvent): boolean {
+    const session = this.store.formulaEditor();
+    if (!session || !this.canInsertRef(column)) {
+      return false;
+    }
+    event.preventDefault();
+    const refText =
+      session.topicId === this.topic().id
+        ? column.refName
+        : `${this.topic().refName}.${column.refName}`;
+    session.insertRef(refText);
+    return true;
+  }
+
+  /** Registers/refreshes the cell editor as the formula editor while its value is a formula. */
+  protected syncCellFormulaSession(column: ColumnV2, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const isFormula = column.kind === 'computed' || input.value.trimStart().startsWith('=');
+    if (isFormula) {
+      if (this.cellFormulaSession?.columnId !== column.id) {
+        this.releaseCellFormulaSession();
+        this.cellFormulaSession = {
+          topicId: this.topic().id,
+          columnId: column.id,
+          insertRef: (refText) => insertReferenceIntoInput(input, refText),
+        };
+        this.store.setFormulaEditor(this.cellFormulaSession);
+      }
+    } else {
+      this.releaseCellFormulaSession();
+    }
+  }
+
+  private releaseCellFormulaSession(): void {
+    if (this.cellFormulaSession) {
+      this.store.clearFormulaEditor(this.cellFormulaSession);
+      this.cellFormulaSession = null;
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -1073,6 +1176,9 @@ export class LatticeComponent {
 
   protected onHeaderPointerDown(column: ColumnV2, event: PointerEvent): void {
     if (event.button !== 0 || this.dragSession || this.columnDragSession) {
+      return;
+    }
+    if (this.tryInsertRef(column, event)) {
       return;
     }
     event.preventDefault();

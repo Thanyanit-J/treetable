@@ -61,6 +61,18 @@ export type ClipboardContent =
   | { kind: 'cells'; matrix: string[][]; cut: { topicId: string; cells: CellRef[] } | null };
 
 /**
+ * The formula editor currently owning the caret. While one is active,
+ * lattices highlight reference targets and clicking a column inserts its
+ * Reference Name via `insertRef` instead of moving the selection.
+ */
+export interface FormulaEditorSession {
+  topicId: string;
+  /** Column whose formula is being edited (excluded as an insert target). */
+  columnId: string | null;
+  insertRef(refText: string): void;
+}
+
+/**
  * Document store implementing the history contract from CONTEXT.md:
  *
  * - Every Document data/styling edit is one step in a single Document-wide
@@ -80,6 +92,7 @@ export class DocumentStoreService {
   private readonly collapsedSignal;
   private readonly selectionSignal = signal<SelectionV2 | null>(null);
   private readonly clipboardSignal = signal<ClipboardContent | null>(null);
+  private readonly formulaEditorSignal = signal<FormulaEditorSession | null>(null);
   private readonly pastSignal = signal<DocumentV2[]>([]);
   private readonly futureSignal = signal<DocumentV2[]>([]);
 
@@ -88,6 +101,7 @@ export class DocumentStoreService {
   readonly cards;
   readonly selection = this.selectionSignal.asReadonly();
   readonly clipboard = this.clipboardSignal.asReadonly();
+  readonly formulaEditor = this.formulaEditorSignal.asReadonly();
   /** Node whose lattice row is highlighted, derived from the selection. */
   readonly selectedNodeId = computed(() => {
     const selection = this.selectionSignal();
@@ -134,6 +148,17 @@ export class DocumentStoreService {
 
   select(selection: SelectionV2 | null): void {
     this.selectionSignal.set(selection);
+  }
+
+  setFormulaEditor(session: FormulaEditorSession): void {
+    this.formulaEditorSignal.set(session);
+  }
+
+  /** Clears only if `session` is still the active one (sessions may hand over). */
+  clearFormulaEditor(session: FormulaEditorSession): void {
+    if (this.formulaEditorSignal() === session) {
+      this.formulaEditorSignal.set(null);
+    }
   }
 
   toggleCollapse(nodeId: string): void {

@@ -14,7 +14,12 @@ import {
   TopicCardV2,
   findNodeAndParent,
 } from '../../core/model/document.model';
-import { DocumentStoreService, RefNameTarget } from '../../core/store/document-store.service';
+import {
+  DocumentStoreService,
+  FormulaEditorSession,
+  RefNameTarget,
+} from '../../core/store/document-store.service';
+import { insertReferenceIntoInput } from './formula-ref-insert';
 
 const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
   sky: 'bg-sky-400',
@@ -328,9 +333,13 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                           class="field-input font-mono"
                           [value]="column.expression ?? '='"
                           placeholder="= $Amount * $Rate"
+                          (focus)="beginFormulaSession(topic, column, $event)"
                           (blur)="commitExpression(topic, column, $event)"
                           (keydown.enter)="blurTarget($event)"
                         />
+                        <span class="mt-1 block text-[11px] font-normal text-slate-400">
+                          Click a column in any card to insert its reference.
+                        </span>
                       </label>
                     }
                     @case ('chart') {
@@ -543,6 +552,7 @@ export class InspectorPanelComponent {
   protected readonly collapsed = signal(false);
   protected readonly accentColors = ACCENT_COLORS;
   protected readonly refNameError = signal<string | null>(null);
+  private formulaSession: FormulaEditorSession | null = null;
 
   protected readonly selectionKind = computed(() => this.store.selection()?.kind ?? null);
 
@@ -624,7 +634,26 @@ export class InspectorPanelComponent {
     this.refNameError.set(null);
   }
 
+  /**
+   * While the formula field is focused it owns ref insertion: lattices
+   * highlight target columns and clicking one splices its Reference Name in
+   * at the caret (clicks never blur this field — see lattice tryInsertRef).
+   */
+  protected beginFormulaSession(topic: TopicCardV2, column: ColumnV2, event: FocusEvent): void {
+    const input = event.target as HTMLInputElement;
+    this.formulaSession = {
+      topicId: topic.id,
+      columnId: column.id,
+      insertRef: (refText) => insertReferenceIntoInput(input, refText),
+    };
+    this.store.setFormulaEditor(this.formulaSession);
+  }
+
   protected commitExpression(topic: TopicCardV2, column: ColumnV2, event: Event): void {
+    if (this.formulaSession) {
+      this.store.clearFormulaEditor(this.formulaSession);
+      this.formulaSession = null;
+    }
     const input = event.target as HTMLInputElement;
     let value = input.value.trim();
     if (value.length === 0) {
