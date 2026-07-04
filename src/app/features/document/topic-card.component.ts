@@ -35,12 +35,16 @@ const MAX_ZOOM = 2;
     <article
       #cardRoot
       class="relative flex h-full min-w-64 shrink-0 flex-col border-r border-slate-200 bg-white"
-      [class.ring-2]="isCardSelected()"
-      [class.ring-inset]="isCardSelected()"
-      [class.ring-sky-400]="isCardSelected()"
       (click)="onCardClick($event)"
       (wheel)="onWheel($event)"
     >
+      <!-- Overlay, not host classes: the ring must paint above the lattice. -->
+      @if (isCardSelected()) {
+        <div
+          aria-hidden="true"
+          class="pointer-events-none absolute inset-0 z-30 ring-2 ring-inset ring-sky-400"
+        ></div>
+      }
       <!-- Chrome strip: reserves space so the ⋯ menu and the page-level drag
            handle sit above the lattice/chart content instead of overlapping it. -->
       <div
