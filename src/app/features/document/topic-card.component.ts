@@ -41,11 +41,11 @@ const MAX_CARD_WIDTH = 1600;
       (click)="onCardClick($event)"
       (wheel)="onWheel($event)"
     >
-      <!-- Overlay, not host classes: the ring must paint above the lattice. -->
-      @if (isCardSelected()) {
+      <!-- Focus bar: any selection inside this card lights its left edge. -->
+      @if (isCardFocused()) {
         <div
           aria-hidden="true"
-          class="pointer-events-none absolute inset-0 z-30 ring-2 ring-inset ring-sky-400"
+          class="pointer-events-none absolute inset-y-0 left-0 z-30 w-1 bg-sky-400"
         ></div>
       }
       <!-- Chrome strip: reserves space so the ⋯ menu and the page-level drag
@@ -164,10 +164,10 @@ export class TopicCardComponent {
   protected readonly cardWidth = signal<number | null>(null);
   protected readonly showCharts = signal(false);
   protected readonly chartCount = computed(() => this.topic().charts?.length ?? 0);
-  protected readonly isCardSelected = computed(() => {
-    const selection = this.store.selection();
-    return selection?.kind === 'card' && selection.topicId === this.topic().id;
-  });
+  /** Focused = the current selection (of any kind) lives in this card. */
+  protected readonly isCardFocused = computed(
+    () => this.store.selection()?.topicId === this.topic().id,
+  );
 
   private readonly cardRootRef = viewChild.required<ElementRef<HTMLElement>>('cardRoot');
   private readonly zoomSurfaceRef = viewChild.required<ElementRef<HTMLElement>>('zoomSurface');
