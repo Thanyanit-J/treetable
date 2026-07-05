@@ -19,6 +19,7 @@ import {
   clampCardHeight,
   clampCardWidth,
   clampColumnWidth,
+  clampRowHeight,
   makeId,
   normalizeDocumentLayout,
   walkNodes,
@@ -618,6 +619,9 @@ export class PersistenceService {
     };
     if (candidate.customRefName === true) {
       node.customRefName = true;
+    }
+    if (typeof candidate.rowHeight === 'number' && Number.isFinite(candidate.rowHeight)) {
+      node.rowHeight = clampRowHeight(candidate.rowHeight);
     }
     return node;
   }

@@ -855,6 +855,18 @@ describe('DocumentStoreService', () => {
       expect(amountColumn().width).toBeUndefined();
     });
 
+    it('stores a dragged row height (clamped) and releases back to auto', () => {
+      store.setRowHeight(wealth().id, bankA().id, 10);
+      expect(bankA().rowHeight).toBe(24);
+
+      store.setRowHeight(wealth().id, bankA().id, 72);
+      expect(bankA().rowHeight).toBe(72);
+
+      store.setRowHeight(wealth().id, bankA().id, 72); // no-op
+      store.setRowHeight(wealth().id, bankA().id, null);
+      expect(bankA().rowHeight).toBeUndefined();
+    });
+
     it('toggles wrap sparsely with no-op guards', () => {
       const column = amountColumn();
       store.setColumnWrap(wealth().id, column.id, false); // already clipping

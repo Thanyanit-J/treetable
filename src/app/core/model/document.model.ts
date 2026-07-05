@@ -60,6 +60,15 @@ export interface NodeV2 {
   children: NodeV2[];
   /** Typed raw values keyed by column id. Meaningful on Leaves, for input columns. */
   values: Record<string, string>;
+  /** Explicit row height in px (a minimum, so wrapped text still grows). */
+  rowHeight?: number;
+}
+
+export const ROW_MIN_HEIGHT = 24;
+export const ROW_MAX_HEIGHT = 480;
+
+export function clampRowHeight(height: number): number {
+  return Math.min(ROW_MAX_HEIGHT, Math.max(ROW_MIN_HEIGHT, Math.round(height)));
 }
 
 export type ChartType = 'bar' | 'line' | 'pie';

@@ -29,6 +29,7 @@ import {
   clampCardHeight,
   clampCardWidth,
   clampColumnWidth,
+  clampRowHeight,
   cloneDocument,
   collectLeaves,
   createInputColumn,
@@ -1576,6 +1577,28 @@ export class DocumentStoreService {
         delete draft.width;
       } else {
         draft.width = next;
+      }
+    });
+  }
+
+  /** Persists a row-border drag; `null` releases the row back to auto height. */
+  setRowHeight(topicId: string, nodeId: string, height: number | null): void {
+    const topic = this.topicById(topicId);
+    const located = topic ? findNodeAndParent(topic.children, nodeId) : null;
+    const next = height === null ? undefined : clampRowHeight(height);
+    if (!located || located.node.rowHeight === next) {
+      return;
+    }
+    this.mutate((document) => {
+      const draftTopic = this.findTopic(document, topicId);
+      const draft = draftTopic ? findNodeAndParent(draftTopic.children, nodeId) : null;
+      if (!draft) {
+        return;
+      }
+      if (next === undefined) {
+        delete draft.node.rowHeight;
+      } else {
+        draft.node.rowHeight = next;
       }
     });
   }

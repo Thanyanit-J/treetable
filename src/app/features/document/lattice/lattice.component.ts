@@ -31,6 +31,7 @@ import {
   NodeV2,
   TopicCardV2,
   clampColumnWidth,
+  clampRowHeight,
   collectLeaves,
   findNodeAndParent,
   moveNodeInTopic,
@@ -229,6 +230,7 @@ interface ConnectorPath {
                 tabindex="0"
                 class="flex h-full min-h-9 items-center border-b border-l border-r border-slate-200 px-2 py-1.5 text-xs italic text-slate-400 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
                 [class.bg-sky-50]="selectedNodeId() === row.nodeId"
+                [style.min-height.px]="rowMinHeight(row)"
                 [style.grid-row]="rowIndex + 2"
                 [style.grid-column]="hiddenRowGridColumn()"
                 [attr.aria-colspan]="renderColumns().length"
@@ -242,8 +244,9 @@ interface ConnectorPath {
               @for (column of renderColumns(); track column.id; let columnIndex = $index) {
                 <div
                   role="gridcell"
-                  class="border-b border-r border-slate-200 p-0"
+                  class="relative border-b border-r border-slate-200 p-0"
                   [class.overflow-hidden]="column.width !== undefined"
+                  [style.min-height.px]="rowMinHeight(row)"
                   [class.border-l]="columnIndex === 0"
                   [class.bg-sky-50]="
                     (selectedNodeId() === row.nodeId || isColumnSelected(column)) &&
@@ -334,6 +337,29 @@ interface ConnectorPath {
                       {{ cellDisplay(row.nodeId, column) }}
                     </div>
                   }
+                  <!-- Border drags work along the whole line, not just the
+                       header: every cell edge carries a handle (the header
+                       keeps the keyboard-accessible one). -->
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    aria-hidden="true"
+                    class="absolute inset-y-0 right-0 z-10 w-1 cursor-col-resize touch-none hover:bg-sky-300/70"
+                    (pointerdown)="startColumnResize(column, $event)"
+                    (dblclick)="
+                      $event.stopPropagation(); store.setColumnWidth(topic().id, column.id, null)
+                    "
+                  ></button>
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    aria-hidden="true"
+                    class="absolute inset-x-0 bottom-0 z-10 h-1 cursor-row-resize touch-none hover:bg-sky-300/70"
+                    (pointerdown)="startRowResize(row, $event)"
+                    (dblclick)="
+                      $event.stopPropagation(); store.setRowHeight(topic().id, row.nodeId, null)
+                    "
+                  ></button>
                 </div>
               }
             }
@@ -734,12 +760,75 @@ export class LatticeComponent {
     return parts.join(' ');
   });
 
+  /** Live height override while a row-border drag is in flight. */
+  protected readonly resizingRow = signal<{ nodeId: string; height: number } | null>(null);
+
+  /** The row's explicit minimum height, live during a drag. */
+  protected rowMinHeight(row: LatticeRow): number | null {
+    const resizing = this.resizingRow();
+    if (resizing?.nodeId === row.nodeId) {
+      return resizing.height;
+    }
+    return this.findNode(row.nodeId)?.rowHeight ?? null;
+  }
+
   /**
-   * Header-edge drag: live preview via resizingColumn, one undo step on
-   * release. Pointer deltas are screen px — divide by the rendered/layout
-   * ratio so widths stay in layout units under card zoom.
+   * Border drag (column edges and row bottoms, along their whole line):
+   * live preview via the resizing signals, one undo step on release.
+   * Pointer deltas are screen px — divided by the rendered/layout ratio of
+   * the handle's cell so sizes stay in layout units under card zoom.
    */
   protected startColumnResize(column: ColumnV2, event: PointerEvent): void {
+    const cell = (event.currentTarget as HTMLElement).parentElement;
+    this.startBorderDrag(event, {
+      start: column.width ?? cell?.offsetWidth ?? 96,
+      scale:
+        cell && cell.offsetWidth > 0 ? cell.getBoundingClientRect().width / cell.offsetWidth : 1,
+      axis: 'x',
+      preview: (width) =>
+        this.resizingColumn.set({ id: column.id, width: clampColumnWidth(width) }),
+      commit: () => {
+        const result = this.resizingColumn();
+        if (result) {
+          this.store.setColumnWidth(this.topic().id, column.id, result.width);
+        }
+        this.resizingColumn.set(null);
+      },
+      cancel: () => this.resizingColumn.set(null),
+    });
+  }
+
+  protected startRowResize(row: LatticeRow, event: PointerEvent): void {
+    const cell = (event.currentTarget as HTMLElement).parentElement;
+    this.startBorderDrag(event, {
+      start: this.findNode(row.nodeId)?.rowHeight ?? cell?.offsetHeight ?? 36,
+      scale:
+        cell && cell.offsetHeight > 0 ? cell.getBoundingClientRect().height / cell.offsetHeight : 1,
+      axis: 'y',
+      preview: (height) =>
+        this.resizingRow.set({ nodeId: row.nodeId, height: clampRowHeight(height) }),
+      commit: () => {
+        const result = this.resizingRow();
+        if (result) {
+          this.store.setRowHeight(this.topic().id, row.nodeId, result.height);
+        }
+        this.resizingRow.set(null);
+      },
+      cancel: () => this.resizingRow.set(null),
+    });
+  }
+
+  private startBorderDrag(
+    event: PointerEvent,
+    session: {
+      start: number;
+      scale: number;
+      axis: 'x' | 'y';
+      preview: (size: number) => void;
+      commit: () => void;
+      cancel: () => void;
+    },
+  ): void {
     if (event.button !== 0) {
       return;
     }
@@ -751,17 +840,11 @@ export class LatticeComponent {
     } catch {
       // Pointer already released.
     }
-    const header = handle.closest<HTMLElement>('[data-header-col]');
-    const startWidth = column.width ?? header?.offsetWidth ?? 96;
-    const scale =
-      header && header.offsetWidth > 0
-        ? header.getBoundingClientRect().width / header.offsetWidth
-        : 1;
-    const startX = event.clientX;
+    const startPointer = session.axis === 'x' ? event.clientX : event.clientY;
 
     const onMove = (moveEvent: PointerEvent): void => {
-      const width = clampColumnWidth(startWidth + (moveEvent.clientX - startX) / scale);
-      this.resizingColumn.set({ id: column.id, width });
+      const pointer = session.axis === 'x' ? moveEvent.clientX : moveEvent.clientY;
+      session.preview(session.start + (pointer - startPointer) / session.scale);
     };
     const cleanup = (): void => {
       handle.removeEventListener('pointermove', onMove);
@@ -770,15 +853,11 @@ export class LatticeComponent {
     };
     const onUp = (): void => {
       cleanup();
-      const result = this.resizingColumn();
-      if (result) {
-        this.store.setColumnWidth(this.topic().id, column.id, result.width);
-      }
-      this.resizingColumn.set(null);
+      session.commit();
     };
     const onCancel = (): void => {
       cleanup();
-      this.resizingColumn.set(null);
+      session.cancel();
     };
     handle.addEventListener('pointermove', onMove);
     handle.addEventListener('pointerup', onUp);
