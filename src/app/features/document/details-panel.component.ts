@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -48,7 +49,7 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
  */
 @Component({
   selector: 'app-details-panel',
-  imports: [ConfirmDialogComponent, VisibilityListComponent],
+  imports: [ConfirmDialogComponent, NgTemplateOutlet, VisibilityListComponent],
   template: `
     <aside
       class="relative flex h-full shrink-0 flex-col border-l border-slate-200 bg-white"
@@ -591,146 +592,10 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                   />
                   Auto-sync with name
                 </label>
-                @if (column.kind !== 'chart') {
-                  <fieldset class="field">
-                    <legend>Type</legend>
-                    <div class="flex gap-1">
-                      <button
-                        type="button"
-                        class="choice"
-                        [class.choice-active]="column.kind === 'input'"
-                        (click)="requestValueKind(topic, column)"
-                      >
-                        Value
-                      </button>
-                      <button
-                        type="button"
-                        class="choice"
-                        [class.choice-active]="column.kind === 'computed'"
-                        (click)="store.setColumnKind(topic.id, column.id, 'computed')"
-                      >
-                        Formula
-                      </button>
-                    </div>
-                  </fieldset>
-                }
-                @switch (column.kind) {
-                  @case ('input') {
-                    <fieldset class="field">
-                      <legend>Value type</legend>
-                      <div class="flex gap-1">
-                        <button
-                          type="button"
-                          class="choice"
-                          [class.choice-active]="column.valueType === 'number'"
-                          (click)="store.setColumnValueType(topic.id, column.id, 'number')"
-                        >
-                          Number
-                        </button>
-                        <button
-                          type="button"
-                          class="choice"
-                          [class.choice-active]="column.valueType === 'text'"
-                          (click)="store.setColumnValueType(topic.id, column.id, 'text')"
-                        >
-                          Text
-                        </button>
-                      </div>
-                    </fieldset>
-                  }
-                  @case ('computed') {
-                    <label class="field">
-                      <span>Formula</span>
-                      <input
-                        class="field-input font-mono"
-                        [value]="column.expression ?? '='"
-                        placeholder="= $Amount * $Rate"
-                        (focus)="beginFormulaSession(topic, column, $event)"
-                        (input)="suggest.refresh()"
-                        (keyup)="onFormulaKeyup($event)"
-                        (click)="suggest.refresh()"
-                        (blur)="commitExpression(topic, column, $event)"
-                        (keydown.enter)="onFormulaEnter($event)"
-                        (keydown.arrowdown)="onSuggestMove($event, 1)"
-                        (keydown.arrowup)="onSuggestMove($event, -1)"
-                        (keydown.control.i)="onSuggestToggle($event)"
-                        (keydown.meta.i)="onSuggestToggle($event)"
-                        (keydown.escape)="onFormulaEscape($event)"
-                      />
-                      <span class="mt-1 block text-[11px] font-normal text-slate-400">
-                        Click a column in any card to insert its reference.
-                      </span>
-                    </label>
-                  }
-                  @case ('chart') {
-                    <label class="field">
-                      <span>Bar chart of</span>
-                      <!-- [selected] per option, not [value] on the select: the
-                           select's value would be assigned before the @for
-                           options exist, silently showing the first option. -->
-                      <select
-                        class="field-input"
-                        (change)="commitChartSource(topic, column, $event)"
-                      >
-                        @for (option of chartSourceOptions(topic, column); track option.id) {
-                          <option
-                            [value]="option.refName"
-                            [selected]="option.refName === column.chartSource"
-                          >
-                            {{ option.displayName }}
-                          </option>
-                        }
-                      </select>
-                    </label>
-                    <p class="text-xs text-slate-400">
-                      A chart column visualizes another column — re-point it or delete it.
-                    </p>
-                  }
-                }
-                @if (column.kind !== 'chart') {
-                  <label class="field">
-                    <span>Summary (footer + collapsed rows)</span>
-                    <select
-                      class="field-input"
-                      [value]="column.rollup"
-                      (change)="commitRollup(topic, column, $event)"
-                    >
-                      <option value="none">None</option>
-                      <option value="sum">Sum</option>
-                      <option value="avg">Average</option>
-                      <option value="min">Min</option>
-                      <option value="max">Max</option>
-                      <option value="count">Count</option>
-                    </select>
-                  </label>
-                  <fieldset class="field">
-                    <legend>When text overflows</legend>
-                    <div class="flex gap-1">
-                      <button
-                        type="button"
-                        class="choice"
-                        [class.choice-active]="column.wrap !== true"
-                        (click)="store.setColumnWrap(topic.id, column.id, false)"
-                      >
-                        Clip
-                      </button>
-                      <button
-                        type="button"
-                        class="choice"
-                        [class.choice-active]="column.wrap === true"
-                        (click)="store.setColumnWrap(topic.id, column.id, true)"
-                      >
-                        Wrap
-                      </button>
-                    </div>
-                    <p class="mt-1 text-xs text-slate-400">
-                      Drag a column header's right edge to set its width; double-click the edge to
-                      fit content again{{
-                        column.width ? ' (currently ' + column.width + 'px)' : ''
-                      }}.
-                    </p>
-                  </fieldset>
-                }
+                <ng-container
+                  [ngTemplateOutlet]="columnSettings"
+                  [ngTemplateOutletContext]="{ topic: topic, column: column }"
+                />
                 <button type="button" class="danger-button" (click)="deleteColumn(topic, column)">
                   Delete column
                 </button>
@@ -770,7 +635,7 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                   </label>
                 } @else if (context.column.kind === 'computed') {
                   <p class="text-xs text-slate-400">
-                    Computed by the column formula — edit it in the column settings.
+                    Computed by the column formula — edit it below.
                   </p>
                 }
                 @if (context.node.children.length === 0) {
@@ -804,6 +669,11 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                     </button>
                   </div>
                 }
+                <p class="section-label">Column · {{ context.column.displayName }}</p>
+                <ng-container
+                  [ngTemplateOutlet]="columnSettings"
+                  [ngTemplateOutletContext]="{ topic: topic, column: context.column }"
+                />
               }
             }
             @case ('range') {
@@ -915,6 +785,154 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
       (confirmed)="confirmFormulaToValue()"
       (cancelled)="pendingFormulaToValue.set(null)"
     />
+
+    <!-- Column controls shared by the column section and the cell section. -->
+    <ng-template #columnSettings let-topic="topic" let-column="column">
+      @if (column.kind !== 'chart') {
+        <fieldset class="field">
+          <legend>Type</legend>
+          <div class="flex gap-1">
+            <button
+              type="button"
+              class="choice"
+              [class.choice-active]="column.kind === 'input'"
+              (click)="requestValueKind(topic, column)"
+            >
+              Value
+            </button>
+            <button
+              type="button"
+              class="choice"
+              [class.choice-active]="column.kind === 'computed'"
+              (click)="store.setColumnKind(topic.id, column.id, 'computed')"
+            >
+              Formula
+            </button>
+          </div>
+        </fieldset>
+      }
+      @switch (column.kind) {
+        @case ('input') {
+          <fieldset class="field">
+            <legend>Value type</legend>
+            <div class="flex gap-1">
+              <button
+                type="button"
+                class="choice"
+                [class.choice-active]="column.valueType === 'number'"
+                (click)="store.setColumnValueType(topic.id, column.id, 'number')"
+              >
+                Number
+              </button>
+              <button
+                type="button"
+                class="choice"
+                [class.choice-active]="column.valueType === 'text'"
+                (click)="store.setColumnValueType(topic.id, column.id, 'text')"
+              >
+                Text
+              </button>
+            </div>
+          </fieldset>
+        }
+        @case ('computed') {
+          <label class="field">
+            <span>Formula</span>
+            <input
+              class="field-input font-mono"
+              [value]="column.expression ?? '='"
+              placeholder="= $Amount * $Rate"
+              (focus)="beginFormulaSession(topic, column, $event)"
+              (input)="suggest.refresh()"
+              (keyup)="onFormulaKeyup($event)"
+              (click)="suggest.refresh()"
+              (blur)="commitExpression(topic, column, $event)"
+              (keydown.enter)="onFormulaEnter($event)"
+              (keydown.arrowdown)="onSuggestMove($event, 1)"
+              (keydown.arrowup)="onSuggestMove($event, -1)"
+              (keydown.control.i)="onSuggestToggle($event)"
+              (keydown.meta.i)="onSuggestToggle($event)"
+              (keydown.escape)="onFormulaEscape($event)"
+            />
+            <span class="mt-1 block text-[11px] font-normal text-slate-400">
+              Click a column in any card to insert its reference.
+            </span>
+          </label>
+        }
+        @case ('chart') {
+          <label class="field">
+            <span>Bar chart of</span>
+            <!-- [selected] per option, not [value] on the select: the
+                 select's value would be assigned before the @for
+                 options exist, silently showing the first option. -->
+            <select class="field-input" (change)="commitChartSource(topic, column, $event)">
+              @for (option of chartSourceOptions(topic, column); track option.id) {
+                <option [value]="option.refName" [selected]="option.refName === column.chartSource">
+                  {{ option.displayName }}
+                </option>
+              }
+            </select>
+          </label>
+          <p class="text-xs text-slate-400">
+            A chart column visualizes another column — re-point it or delete it.
+          </p>
+        }
+      }
+      @if (column.kind !== 'chart') {
+        <label class="field">
+          <span>Summary (footer + collapsed rows)</span>
+          <select
+            class="field-input"
+            [value]="column.rollup"
+            (change)="commitRollup(topic, column, $event)"
+          >
+            <option value="none">None</option>
+            <option value="sum">Sum</option>
+            <option value="avg">Average</option>
+            <option value="min">Min</option>
+            <option value="max">Max</option>
+            <option value="count">Count</option>
+          </select>
+        </label>
+        <fieldset class="field">
+          <legend>When text overflows</legend>
+          <div class="flex gap-1">
+            <button
+              type="button"
+              class="choice"
+              [class.choice-active]="column.wrap !== true"
+              (click)="store.setColumnWrap(topic.id, column.id, false)"
+            >
+              Clip
+            </button>
+            <button
+              type="button"
+              class="choice"
+              [class.choice-active]="column.wrap === true"
+              (click)="store.setColumnWrap(topic.id, column.id, true)"
+            >
+              Wrap
+            </button>
+          </div>
+          <label class="mt-2 block">
+            <span class="mb-1 block text-[11px] font-medium text-slate-400">Width (px)</span>
+            <input
+              class="field-input"
+              type="number"
+              min="48"
+              max="960"
+              placeholder="auto"
+              [value]="column.width ?? ''"
+              (change)="commitColumnWidth(topic, column, $event)"
+              (keydown.enter)="blurTarget($event)"
+            />
+          </label>
+          <p class="mt-1 text-xs text-slate-400">
+            Or drag any segment of the column's right border; double-click it to fit content.
+          </p>
+        </fieldset>
+      }
+    </ng-template>
   `,
   styles: `
     .section-label {
@@ -1377,6 +1395,16 @@ export class DetailsPanelComponent {
 
   protected toggleCardAutoExpand(topic: TopicCardV2, event: Event): void {
     this.store.setCardAutoExpand(topic.id, (event.target as HTMLInputElement).checked);
+  }
+
+  protected commitColumnWidth(topic: TopicCardV2, column: ColumnV2, event: Event): void {
+    const raw = (event.target as HTMLInputElement).value.trim();
+    const parsed = raw.length > 0 ? Number(raw) : null;
+    this.store.setColumnWidth(
+      topic.id,
+      column.id,
+      parsed !== null && Number.isFinite(parsed) ? parsed : null,
+    );
   }
 
   protected visibleColumns(topic: TopicCardV2): ColumnV2[] {
