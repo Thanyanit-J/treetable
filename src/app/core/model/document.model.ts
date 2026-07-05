@@ -56,6 +56,8 @@ export type ChartType = 'bar' | 'pie';
 export interface ChartConfigV2 {
   id: string;
   type: ChartType;
+  /** User-given title; absent = derived from the charted columns. */
+  name?: string;
   /** Column Reference Names (same Topic) charted over the Leaves; pie uses the first. */
   columns: string[];
 }

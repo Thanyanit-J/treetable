@@ -776,6 +776,29 @@ export class DocumentStoreService {
     });
   }
 
+  renameChart(ownerCardId: string, chartId: string, name: string): void {
+    const owner = this.cardById(ownerCardId);
+    const chart = owner ? this.chartsOf(owner)?.find((c) => c.id === chartId) : undefined;
+    const trimmed = name.trim();
+    if (!chart || (chart.name ?? '') === trimmed) {
+      return;
+    }
+    this.mutate((document) => {
+      const draftOwner = document.cards.find((candidate) => candidate.id === ownerCardId);
+      const draftChart = draftOwner
+        ? this.chartsOf(draftOwner)?.find((candidate) => candidate.id === chartId)
+        : undefined;
+      if (!draftChart) {
+        return;
+      }
+      if (trimmed.length === 0) {
+        delete draftChart.name; // Back to the derived title.
+      } else {
+        draftChart.name = trimmed;
+      }
+    });
+  }
+
   removeOwnedChart(ownerCardId: string, chartId: string): void {
     this.mutate((document) => {
       const draftOwner = document.cards.find((candidate) => candidate.id === ownerCardId);

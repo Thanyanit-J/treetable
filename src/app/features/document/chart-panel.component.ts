@@ -66,8 +66,7 @@ interface RenderedChart {
           >
             <figcaption class="mb-1 flex items-center justify-between gap-3">
               <span class="text-xs font-medium text-slate-600">
-                {{ chart.config.type === 'pie' ? 'Pie' : 'Bar' }} ·
-                {{ chartTitle(chart) }}
+                {{ chartCaption(chart) }}
               </span>
               <button
                 type="button"
@@ -308,7 +307,14 @@ export class ChartPanelComponent {
   });
 
   protected chartTitle(chart: RenderedChart): string {
-    return chart.series.map((entry) => entry.displayName).join(', ') || '—';
+    return chart.config.name ?? (chart.series.map((entry) => entry.displayName).join(', ') || '—');
+  }
+
+  protected chartCaption(chart: RenderedChart): string {
+    if (chart.config.name !== undefined) {
+      return chart.config.name;
+    }
+    return `${chart.config.type === 'pie' ? 'Pie' : 'Bar'} · ${this.chartTitle(chart)}`;
   }
 
   private renderBars(

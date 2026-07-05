@@ -241,24 +241,10 @@ export class PersistenceService {
     const rawCharts = Array.isArray(candidate.charts) ? candidate.charts : [];
     const charts: ChartConfigV2[] = [];
     for (const rawChart of rawCharts) {
-      if (rawChart === null || typeof rawChart !== 'object') {
-        continue;
+      const chart = this.normalizeChartConfig(rawChart, sourceRefs);
+      if (chart) {
+        charts.push(chart);
       }
-      const config = rawChart as Partial<ChartConfigV2>;
-      let columns = Array.isArray(config.columns)
-        ? config.columns.filter((ref): ref is string => typeof ref === 'string')
-        : [];
-      if (sourceRefs) {
-        columns = columns.filter((ref) => sourceRefs.has(ref));
-      }
-      if (columns.length === 0) {
-        continue;
-      }
-      charts.push({
-        id: typeof config.id === 'string' && config.id.length > 0 ? config.id : makeId('chart'),
-        type: config.type === 'pie' ? 'pie' : 'bar',
-        columns,
-      });
     }
 
     return {
@@ -270,6 +256,35 @@ export class PersistenceService {
       sourceTopicId: candidate.sourceTopicId,
       charts,
     };
+  }
+
+  /** One chart config; column refs are filtered against the source's columns. */
+  private normalizeChartConfig(
+    input: unknown,
+    validRefs: ReadonlySet<string> | null,
+  ): ChartConfigV2 | null {
+    if (input === null || typeof input !== 'object') {
+      return null;
+    }
+    const config = input as Partial<ChartConfigV2>;
+    let columns = Array.isArray(config.columns)
+      ? config.columns.filter((ref): ref is string => typeof ref === 'string')
+      : [];
+    if (validRefs) {
+      columns = columns.filter((ref) => validRefs.has(ref));
+    }
+    if (columns.length === 0) {
+      return null;
+    }
+    const chart: ChartConfigV2 = {
+      id: typeof config.id === 'string' && config.id.length > 0 ? config.id : makeId('chart'),
+      type: config.type === 'pie' ? 'pie' : 'bar',
+      columns,
+    };
+    if (typeof config.name === 'string' && config.name.trim().length > 0) {
+      chart.name = config.name;
+    }
+    return chart;
   }
 
   /** Lenient Page/stack parsing; the layout invariant is repaired afterwards. */
@@ -355,25 +370,7 @@ export class PersistenceService {
       ? ((candidate as { charts?: unknown[] }).charts as unknown[])
       : [];
     const charts: ChartConfigV2[] = rawCharts
-      .map((chart): ChartConfigV2 | null => {
-        if (!chart || typeof chart !== 'object') {
-          return null;
-        }
-        const config = chart as Partial<ChartConfigV2>;
-        const chartColumns = Array.isArray(config.columns)
-          ? config.columns.filter(
-              (ref): ref is string => typeof ref === 'string' && columnRefs.has(ref),
-            )
-          : [];
-        if (chartColumns.length === 0) {
-          return null;
-        }
-        return {
-          id: typeof config.id === 'string' && config.id.length > 0 ? config.id : makeId('chart'),
-          type: config.type === 'pie' ? 'pie' : 'bar',
-          columns: chartColumns,
-        };
-      })
+      .map((chart) => this.normalizeChartConfig(chart, columnRefs))
       .filter((chart): chart is ChartConfigV2 => chart !== null);
 
     const card: CardV2 = {

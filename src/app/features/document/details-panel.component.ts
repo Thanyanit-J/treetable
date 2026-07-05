@@ -68,6 +68,16 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
       <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
         @if (chartContext(); as ctx) {
           <p class="section-label">Chart</p>
+          <label class="field">
+            <span>Name</span>
+            <input
+              class="field-input"
+              [value]="ctx.chart.name ?? ''"
+              [attr.placeholder]="autoChartTitle(ctx)"
+              (blur)="commitChartName(ctx, $event)"
+              (keydown.enter)="blurTarget($event)"
+            />
+          </label>
           <fieldset class="field">
             <legend>Type</legend>
             <div class="flex gap-1">
@@ -905,6 +915,24 @@ export class DetailsPanelComponent {
     return (
       context.sourceTopic?.columns.find((column) => column.refName === refName)?.displayName ??
       refName
+    );
+  }
+
+  protected autoChartTitle(context: {
+    chart: ChartConfigV2;
+    sourceTopic: TopicCardV2 | null;
+  }): string {
+    return context.chart.columns.map((ref) => this.sourceLabel(context, ref)).join(', ') || '—';
+  }
+
+  protected commitChartName(
+    context: { ownerId: string; chart: ChartConfigV2 },
+    event: Event,
+  ): void {
+    this.store.renameChart(
+      context.ownerId,
+      context.chart.id,
+      (event.target as HTMLInputElement).value,
     );
   }
 
