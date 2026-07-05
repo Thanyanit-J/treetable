@@ -11,7 +11,7 @@ import { ChartPanelComponent } from './chart-panel.component';
   imports: [CdkMenu, CdkMenuItem, CdkMenuTrigger, ChartPanelComponent],
   template: `
     <article class="relative flex h-full min-w-64 shrink-0 flex-col">
-      <div class="flex h-7 shrink-0 items-center pl-8 pr-8">
+      <div class="flex h-7 shrink-0 items-center pl-2 pr-8">
         <span class="truncate text-xs font-semibold text-slate-600">
           Charts · {{ sourceTopic()?.displayName ?? 'missing source' }}
         </span>

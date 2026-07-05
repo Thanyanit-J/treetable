@@ -47,8 +47,8 @@ const MAX_CARD_HEIGHT = 1600;
       (wheel)="onWheel($event)"
     >
       <!-- Chrome strip: borderless bar above the content shell holding the
-           drag grip (page-level, top-left), the card title and the ⋯ menu. -->
-      <div class="flex h-7 shrink-0 items-center pl-8 pr-8">
+           card title and the ⋯ menu; the drag grip sits just outside, left. -->
+      <div class="flex h-7 shrink-0 items-center pl-2 pr-8">
         @if (editingTitle()) {
           <input
             #titleInput

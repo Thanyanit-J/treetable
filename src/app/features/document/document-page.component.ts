@@ -179,7 +179,7 @@ interface Toast {
                     >
                       <button
                         type="button"
-                        class="absolute left-1 top-1 z-30 flex h-6 w-6 cursor-grab touch-none items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 hover:text-slate-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/card:opacity-100"
+                        class="absolute -left-6 top-1 z-30 flex h-6 w-6 cursor-grab touch-none items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/card:opacity-100"
                         [attr.aria-label]="'Drag card ' + cardLabel(card)"
                         (pointerdown)="startCardDrag($event, card.id)"
                       >

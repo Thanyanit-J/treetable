@@ -9,7 +9,7 @@ import { DocumentStoreService } from '../../core/store/document-store.service';
   imports: [CdkMenu, CdkMenuItem, CdkMenuTrigger],
   template: `
     <article class="relative flex h-full w-72 min-w-64 shrink-0 flex-col">
-      <div class="flex h-7 shrink-0 items-center pl-8 pr-8">
+      <div class="flex h-7 shrink-0 items-center pl-2 pr-8">
         <span class="text-xs font-semibold text-slate-600">Note</span>
       </div>
       <button
