@@ -95,15 +95,6 @@ interface ConnectorPath {
               (pointerenter)="onRefHover(column, true)"
               (pointerleave)="onRefHover(column, false)"
             >
-              @if (column.kind === 'computed') {
-                <!-- Formula marker: computed cells look like any other cell. -->
-                <span
-                  aria-hidden="true"
-                  class="absolute left-1.5 top-1/2 -translate-y-1/2 font-mono text-[11px] font-bold text-slate-400"
-                  title="Formula column"
-                  >=</span
-                >
-              }
               <div class="flex items-start">
                 <div class="min-w-0 flex-1">
                   @if (isEditingHeader(column)) {
@@ -130,6 +121,15 @@ interface ConnectorPath {
                       (pointerdown)="onHeaderPointerDown(column, $event)"
                       (keydown.enter)="beginHeaderEdit(column, $event)"
                     >
+                      @if (column.kind === 'computed') {
+                        <!-- Formula marker: computed cells look like any other cell. -->
+                        <span
+                          aria-hidden="true"
+                          class="mr-1 font-mono text-[11px] font-bold text-slate-400"
+                          title="Formula column"
+                          >=</span
+                        >
+                      }
                       {{ headerLabel(column) }}
                     </div>
                   }
