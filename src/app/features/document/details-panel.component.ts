@@ -420,11 +420,6 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                   />
                   Auto-expand beyond this size
                 </label>
-                <p class="mt-1 text-xs text-slate-400">
-                  On: the table grows past these sizes as content grows (clipped columns push the
-                  width, wrapped ones the height) but never below them. Off: exact size, overflow
-                  scrolls inside. Blank follows content.
-                </p>
               </fieldset>
               <fieldset class="field">
                 <legend>Columns</legend>
@@ -594,7 +589,7 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                 </label>
                 <ng-container
                   [ngTemplateOutlet]="columnSettings"
-                  [ngTemplateOutletContext]="{ topic: topic, column: column }"
+                  [ngTemplateOutletContext]="{ topic: topic, column: column, node: null }"
                 />
                 <button type="button" class="danger-button" (click)="deleteColumn(topic, column)">
                   Delete column
@@ -672,7 +667,11 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                 <p class="section-label">Column · {{ context.column.displayName }}</p>
                 <ng-container
                   [ngTemplateOutlet]="columnSettings"
-                  [ngTemplateOutletContext]="{ topic: topic, column: context.column }"
+                  [ngTemplateOutletContext]="{
+                    topic: topic,
+                    column: context.column,
+                    node: context.node,
+                  }"
                 />
               }
             }
@@ -786,8 +785,9 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
       (cancelled)="pendingFormulaToValue.set(null)"
     />
 
-    <!-- Column controls shared by the column section and the cell section. -->
-    <ng-template #columnSettings let-topic="topic" let-column="column">
+    <!-- Column controls shared by the column section and the cell section;
+         a cell also brings its node, unlocking the row height field. -->
+    <ng-template #columnSettings let-topic="topic" let-column="column" let-node="node">
       @if (column.kind !== 'chart') {
         <fieldset class="field">
           <legend>Type</legend>
@@ -914,22 +914,38 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
               Wrap
             </button>
           </div>
-          <label class="mt-2 block">
-            <span class="mb-1 block text-[11px] font-medium text-slate-400">Width (px)</span>
-            <input
-              class="field-input"
-              type="number"
-              min="48"
-              max="960"
-              placeholder="auto"
-              [value]="column.width ?? ''"
-              (change)="commitColumnWidth(topic, column, $event)"
-              (keydown.enter)="blurTarget($event)"
-            />
-          </label>
-          <p class="mt-1 text-xs text-slate-400">
-            Or drag any segment of the column's right border; double-click it to fit content.
-          </p>
+          <div class="mt-2 flex gap-2">
+            <label class="min-w-0 flex-1">
+              <span class="mb-1 block text-[11px] font-medium text-slate-400">Width (px)</span>
+              <input
+                class="field-input"
+                type="number"
+                min="48"
+                max="960"
+                placeholder="auto"
+                [value]="column.width ?? ''"
+                (change)="commitColumnWidth(topic, column, $event)"
+                (keydown.enter)="blurTarget($event)"
+              />
+            </label>
+            @if (node) {
+              <label class="min-w-0 flex-1">
+                <span class="mb-1 block text-[11px] font-medium text-slate-400">
+                  Row height (px)
+                </span>
+                <input
+                  class="field-input"
+                  type="number"
+                  min="24"
+                  max="480"
+                  placeholder="auto"
+                  [value]="node.rowHeight ?? ''"
+                  (change)="commitRowHeight(topic, node, $event)"
+                  (keydown.enter)="blurTarget($event)"
+                />
+              </label>
+            }
+          </div>
         </fieldset>
       }
     </ng-template>
@@ -1403,6 +1419,16 @@ export class DetailsPanelComponent {
     this.store.setColumnWidth(
       topic.id,
       column.id,
+      parsed !== null && Number.isFinite(parsed) ? parsed : null,
+    );
+  }
+
+  protected commitRowHeight(topic: TopicCardV2, node: NodeV2, event: Event): void {
+    const raw = (event.target as HTMLInputElement).value.trim();
+    const parsed = raw.length > 0 ? Number(raw) : null;
+    this.store.setRowHeight(
+      topic.id,
+      node.id,
       parsed !== null && Number.isFinite(parsed) ? parsed : null,
     );
   }
