@@ -1359,11 +1359,31 @@ export class DocumentStoreService {
   }
 
   setColumnRollup(topicId: string, columnId: string, rollup: RollupMode): void {
+    this.setColumnsRollup(topicId, [columnId], rollup);
+  }
+
+  /** Sets the Summary of several columns at once — ONE undo step. */
+  setColumnsRollup(topicId: string, columnIds: readonly string[], rollup: RollupMode): void {
+    const topic = this.topicById(topicId);
+    if (!topic) {
+      return;
+    }
+    const targets = new Set(columnIds);
+    const changing = new Set(
+      topic.columns
+        .filter(
+          (column) => targets.has(column.id) && column.kind !== 'chart' && column.rollup !== rollup,
+        )
+        .map((column) => column.id),
+    );
+    if (changing.size === 0) {
+      return;
+    }
     this.mutate((document) => {
-      const topic = this.findTopic(document, topicId);
-      const column = topic?.columns.find((candidate) => candidate.id === columnId);
-      if (column && column.kind !== 'chart') {
-        column.rollup = rollup;
+      for (const column of this.findTopic(document, topicId)?.columns ?? []) {
+        if (changing.has(column.id)) {
+          column.rollup = rollup;
+        }
       }
     });
   }

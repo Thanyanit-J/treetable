@@ -339,11 +339,16 @@ interface ConnectorPath {
             >
               Summary
             </div>
+            <!-- Only columns WITH a summary get a bordered footer cell; the
+                 rest of the footer row stays blank. -->
             @for (column of renderColumns(); track column.id; let columnIndex = $index) {
               <div
                 role="gridcell"
-                class="border-b border-r border-slate-200 bg-white"
-                [class.border-l]="columnIndex === 0"
+                class="border-slate-200"
+                [class.border-b]="column.rollup !== 'none'"
+                [class.border-r]="column.rollup !== 'none'"
+                [class.bg-white]="column.rollup !== 'none'"
+                [class.border-l]="column.rollup !== 'none' && footerNeedsLeftBorder(columnIndex)"
                 [class.opacity-40]="draggingColumnId() === column.id"
                 [style.grid-row]="footerGridRow()"
                 [style.grid-column]="dataGridColumn(columnIndex)"
@@ -1676,6 +1681,14 @@ export class LatticeComponent {
   protected footerRollupDisplay(column: ColumnV2): string {
     const total = rollupValue(column, collectLeaves(this.topic().children), this.evaluation());
     return total === null ? '' : formatNumericValue(total);
+  }
+
+  /** A summarized footer cell draws its own left edge when its neighbour is blank. */
+  protected footerNeedsLeftBorder(columnIndex: number): boolean {
+    if (columnIndex === 0) {
+      return true;
+    }
+    return this.renderColumns()[columnIndex - 1]?.rollup === 'none';
   }
 
   // Columns -------------------------------------------------------------------

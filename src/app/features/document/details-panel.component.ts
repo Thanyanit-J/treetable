@@ -622,6 +622,29 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                   Clear
                 </button>
               </div>
+              @if (rangeColumns().length > 0) {
+                <label class="field">
+                  <span>
+                    Summary — {{ rangeColumns().length }}
+                    {{ rangeColumns().length === 1 ? 'column' : 'columns' }} at once
+                  </span>
+                  <select
+                    class="field-input"
+                    [value]="rangeRollupValue()"
+                    (change)="commitRangeRollup(topic, $event)"
+                  >
+                    @if (rangeRollupValue() === '') {
+                      <option value="" disabled>Mixed</option>
+                    }
+                    <option value="none">None</option>
+                    <option value="sum">Sum</option>
+                    <option value="avg">Average</option>
+                    <option value="min">Min</option>
+                    <option value="max">Max</option>
+                    <option value="count">Count</option>
+                  </select>
+                </label>
+              }
             }
           }
           @if (refNameError(); as message) {
@@ -1206,6 +1229,40 @@ export class DetailsPanelComponent {
   protected commitRollup(topic: TopicCardV2, column: ColumnV2, event: Event): void {
     const mode = (event.target as HTMLSelectElement).value as RollupMode;
     this.store.setColumnRollup(topic.id, column.id, mode);
+  }
+
+  /** Non-chart columns spanned by the current range selection (visible order). */
+  protected readonly rangeColumns = computed<ColumnV2[]>(() => {
+    const selection = this.store.selection();
+    const topic = this.topic();
+    if (!topic || selection?.kind !== 'range') {
+      return [];
+    }
+    const visible = topic.columns.filter((column) => column.hidden !== true);
+    const anchorIndex = visible.findIndex((column) => column.id === selection.anchor.columnId);
+    const focusIndex = visible.findIndex((column) => column.id === selection.focus.columnId);
+    if (anchorIndex < 0 || focusIndex < 0) {
+      return [];
+    }
+    const [start, end] =
+      anchorIndex <= focusIndex ? [anchorIndex, focusIndex] : [focusIndex, anchorIndex];
+    return visible.slice(start, end + 1).filter((column) => column.kind !== 'chart');
+  });
+
+  /** The shared Summary of the spanned columns, or '' when they disagree. */
+  protected rangeRollupValue(): string {
+    const columns = this.rangeColumns();
+    const first = columns[0]?.rollup ?? 'none';
+    return columns.every((column) => column.rollup === first) ? first : '';
+  }
+
+  protected commitRangeRollup(topic: TopicCardV2, event: Event): void {
+    const mode = (event.target as HTMLSelectElement).value as RollupMode;
+    this.store.setColumnsRollup(
+      topic.id,
+      this.rangeColumns().map((column) => column.id),
+      mode,
+    );
   }
 
   protected chartSourceOptions(topic: TopicCardV2, column: ColumnV2): ColumnV2[] {

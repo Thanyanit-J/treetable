@@ -591,6 +591,20 @@ describe('DocumentStoreService', () => {
     });
   });
 
+  describe('bulk summaries', () => {
+    it('sets the Summary of several columns as one undo step', () => {
+      const ids = [
+        wealth().columns.find((column) => column.refName === '$Amount')!.id,
+        wealth().columns.find((column) => column.refName === '$Rate')!.id,
+      ];
+      store.setColumnsRollup(wealth().id, ids, 'avg');
+      expect(wealth().columns.map((column) => column.rollup)).toEqual(['avg', 'avg', 'sum']);
+
+      store.undo();
+      expect(wealth().columns.map((column) => column.rollup)).toEqual(['sum', 'none', 'sum']);
+    });
+  });
+
   describe('setRefName', () => {
     const REF_FIXTURE = {
       version: 2,
