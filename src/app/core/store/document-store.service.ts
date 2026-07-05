@@ -732,6 +732,50 @@ export class DocumentStoreService {
     });
   }
 
+  setChartCategoryAxis(ownerCardId: string, chartId: string, axis: 'rows' | 'columns'): void {
+    const owner = this.cardById(ownerCardId);
+    const chart = owner ? this.chartsOf(owner)?.find((c) => c.id === chartId) : undefined;
+    if (!chart || (chart.categoryAxis ?? 'rows') === axis) {
+      return;
+    }
+    this.mutate((document) => {
+      const draftOwner = document.cards.find((candidate) => candidate.id === ownerCardId);
+      const draftChart = draftOwner
+        ? this.chartsOf(draftOwner)?.find((candidate) => candidate.id === chartId)
+        : undefined;
+      if (!draftChart) {
+        return;
+      }
+      if (axis === 'columns') {
+        draftChart.categoryAxis = 'columns';
+      } else {
+        delete draftChart.categoryAxis;
+      }
+    });
+  }
+
+  setChartHorizontal(ownerCardId: string, chartId: string, horizontal: boolean): void {
+    const owner = this.cardById(ownerCardId);
+    const chart = owner ? this.chartsOf(owner)?.find((c) => c.id === chartId) : undefined;
+    if (!chart || (chart.horizontal ?? false) === horizontal) {
+      return;
+    }
+    this.mutate((document) => {
+      const draftOwner = document.cards.find((candidate) => candidate.id === ownerCardId);
+      const draftChart = draftOwner
+        ? this.chartsOf(draftOwner)?.find((candidate) => candidate.id === chartId)
+        : undefined;
+      if (!draftChart) {
+        return;
+      }
+      if (horizontal) {
+        draftChart.horizontal = true;
+      } else {
+        delete draftChart.horizontal;
+      }
+    });
+  }
+
   /**
    * Includes or excludes a batch of source columns as ONE undo step.
    * Additions append in the source table's order; a chart keeps at least

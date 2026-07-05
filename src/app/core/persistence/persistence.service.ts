@@ -302,6 +302,12 @@ export class PersistenceService {
     ) {
       chart.rowRollup = config.rowRollup; // 'sum' stays implicit.
     }
+    if (config.categoryAxis === 'columns') {
+      chart.categoryAxis = 'columns'; // 'rows' stays implicit.
+    }
+    if (config.horizontal === true) {
+      chart.horizontal = true;
+    }
     return chart;
   }
 

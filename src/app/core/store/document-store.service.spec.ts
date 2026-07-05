@@ -628,6 +628,31 @@ describe('DocumentStoreService', () => {
     });
   });
 
+  describe('chart axis options', () => {
+    it('stores the swapped category axis and horizontal direction sparsely', () => {
+      store.addChart(wealth().id, 'bar');
+      const chartId = wealth().charts![0]!.id;
+
+      store.setChartCategoryAxis(wealth().id, chartId, 'columns');
+      store.setChartHorizontal(wealth().id, chartId, true);
+      expect(wealth().charts![0]).toMatchObject({ categoryAxis: 'columns', horizontal: true });
+
+      store.setChartCategoryAxis(wealth().id, chartId, 'rows');
+      store.setChartHorizontal(wealth().id, chartId, false);
+      expect(wealth().charts![0]!.categoryAxis).toBeUndefined();
+      expect(wealth().charts![0]!.horizontal).toBeUndefined();
+    });
+
+    it('ignores a repeat of the current axis (no history step)', () => {
+      store.addChart(wealth().id, 'bar');
+      const chartId = wealth().charts![0]!.id;
+      store.setChartCategoryAxis(wealth().id, chartId, 'rows'); // already the default
+
+      store.undo(); // must undo addChart, not an axis no-op
+      expect(wealth().charts ?? []).toHaveLength(0);
+    });
+  });
+
   describe('card sizing', () => {
     it('stores a sizing mode and clears it on grow', () => {
       store.setCardSizingMode(wealth().id, 'wrap');

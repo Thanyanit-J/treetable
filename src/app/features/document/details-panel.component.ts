@@ -110,6 +110,53 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
             </div>
           </fieldset>
           <fieldset class="field">
+            <legend>{{ ctx.chart.type === 'pie' ? 'Slices from' : 'X axis' }}</legend>
+            <div class="flex gap-1">
+              <button
+                type="button"
+                class="choice"
+                [class.choice-active]="(ctx.chart.categoryAxis ?? 'rows') === 'rows'"
+                (click)="store.setChartCategoryAxis(ctx.ownerId, ctx.chart.id, 'rows')"
+              >
+                Rows
+              </button>
+              <button
+                type="button"
+                class="choice"
+                [class.choice-active]="ctx.chart.categoryAxis === 'columns'"
+                (click)="store.setChartCategoryAxis(ctx.ownerId, ctx.chart.id, 'columns')"
+              >
+                Columns
+              </button>
+            </div>
+            <p class="mt-1 text-xs text-slate-400">
+              The other dimension becomes the coloured series.
+            </p>
+          </fieldset>
+          @if (ctx.chart.type === 'bar') {
+            <fieldset class="field">
+              <legend>Direction</legend>
+              <div class="flex gap-1">
+                <button
+                  type="button"
+                  class="choice"
+                  [class.choice-active]="!ctx.chart.horizontal"
+                  (click)="store.setChartHorizontal(ctx.ownerId, ctx.chart.id, false)"
+                >
+                  Vertical
+                </button>
+                <button
+                  type="button"
+                  class="choice"
+                  [class.choice-active]="ctx.chart.horizontal === true"
+                  (click)="store.setChartHorizontal(ctx.ownerId, ctx.chart.id, true)"
+                >
+                  Horizontal
+                </button>
+              </div>
+            </fieldset>
+          }
+          <fieldset class="field">
             <legend>Sources</legend>
             <app-visibility-list
               [visible]="sourceItems(ctx)"

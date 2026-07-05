@@ -67,6 +67,13 @@ export interface ChartConfigV2 {
   rows?: string[];
   /** Aggregate applied per column to a Branch row's subtree; absent = sum. */
   rowRollup?: ChartRowRollup;
+  /**
+   * Which dimension runs along the category (x) axis — pie slices likewise.
+   * Absent = rows (columns are the coloured series); 'columns' swaps them.
+   */
+  categoryAxis?: 'columns';
+  /** Bar only: horizontal bars, categories down the y axis. Absent = vertical. */
+  horizontal?: true;
 }
 
 /** Distinct from a column's Summary — this only shapes Branch rows in charts. */

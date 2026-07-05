@@ -17,6 +17,13 @@ import { DocumentStoreService } from '../../core/store/document-store.service';
 
 const SERIES_COLORS = ['#0ea5e9', '#f59e0b', '#10b981', '#f43f5e', '#8b5cf6', '#64748b'];
 
+function transpose(matrix: number[][]): number[][] {
+  const innerLength = matrix[0]?.length ?? 0;
+  return Array.from({ length: innerLength }, (_, index) =>
+    matrix.map((entries) => entries[index] ?? 0),
+  );
+}
+
 /** Rounded tick values covering [min, max] in 1/2/5 × 10ᵏ steps. */
 function niceTicks(min: number, max: number, count = 4): number[] {
   const span = max - min || 1;
@@ -364,7 +371,20 @@ export class ChartPanelComponent {
         rows.map((node) => this.rowValue(entry.column, node, evaluation, rollup)),
       );
 
-      const categories = rows.map((node) => node.displayName);
+      // categoryAxis 'columns' swaps the dimensions: columns become the
+      // categories and each row turns into a coloured series.
+      const swapped = config.categoryAxis === 'columns';
+      const categories = swapped
+        ? series.map((entry) => entry.displayName)
+        : rows.map((node) => node.displayName);
+      const plotSeries = swapped
+        ? rows.map((node, index) => ({
+            displayName: node.displayName,
+            color: SERIES_COLORS[index % SERIES_COLORS.length]!,
+          }))
+        : series;
+      const matrix = swapped ? transpose(values) : values;
+
       if (config.type === 'pie') {
         return {
           config,
@@ -378,13 +398,13 @@ export class ChartPanelComponent {
           zeroLine: null,
           ...this.renderPie(
             categories,
-            values,
-            series.map((entry) => entry.displayName),
+            matrix,
+            plotSeries.map((entry) => entry.displayName),
           ),
         };
       }
 
-      const legend = series.map((entry) => ({ color: entry.color, label: entry.displayName }));
+      const legend = plotSeries.map((entry) => ({ color: entry.color, label: entry.displayName }));
       if (config.type === 'line') {
         return {
           config,
@@ -393,7 +413,7 @@ export class ChartPanelComponent {
           slices: [],
           bars: [],
           legend,
-          ...this.renderLine(categories, values, series),
+          ...this.renderLine(categories, matrix, plotSeries),
         };
       }
 
@@ -404,7 +424,9 @@ export class ChartPanelComponent {
         slices: [],
         lines: [],
         legend,
-        ...this.renderBars(categories, values, series),
+        ...(config.horizontal
+          ? this.renderHorizontalBars(categories, matrix, plotSeries)
+          : this.renderBars(categories, matrix, plotSeries)),
       };
     });
   });
@@ -521,6 +543,75 @@ export class ChartPanelComponent {
         y: BAR_HEIGHT - 8,
         anchor: 'middle' as const,
         label: label.length > 8 ? `${label.slice(0, 7)}…` : label,
+      })),
+    };
+  }
+
+  /** Categories run down the y axis; the value axis lies along the bottom. */
+  private renderHorizontalBars(
+    categories: string[],
+    values: number[][],
+    series: { color: string; displayName: string }[],
+  ): Pick<RenderedChart, 'bars' | 'gridLines' | 'tickLabels' | 'categoryLabels' | 'zeroLine'> {
+    const margin = { top: 8, right: 12, bottom: 22, left: 76 };
+    const plotWidth = BAR_WIDTH - margin.left - margin.right;
+    const plotHeight = BAR_HEIGHT - margin.top - margin.bottom;
+    if (categories.length === 0 || series.length === 0) {
+      return { bars: [], gridLines: [], tickLabels: [], categoryLabels: [], zeroLine: null };
+    }
+
+    const all = values.flat();
+    const min = Math.min(0, ...all);
+    const max = Math.max(0, ...all);
+    const range = max - min || 1;
+    const xOf = (value: number): number => margin.left + ((value - min) / range) * plotWidth;
+    const zeroX = xOf(0);
+
+    const gridLines: ChartLine[] = [];
+    const tickLabels: ChartText[] = [];
+    for (const tick of niceTicks(min, max)) {
+      const x = xOf(tick);
+      gridLines.push({ x1: x, y1: margin.top, x2: x, y2: margin.top + plotHeight });
+      tickLabels.push({
+        x,
+        y: BAR_HEIGHT - 8,
+        anchor: 'middle',
+        label: formatNumericValue(tick),
+      });
+    }
+
+    const groupHeight = plotHeight / categories.length;
+    const barHeight = Math.min(18, (groupHeight * 0.8) / series.length);
+
+    const bars: BarDatum[] = [];
+    for (const [seriesIndex, seriesValues] of values.entries()) {
+      for (const [categoryIndex, value] of seriesValues.entries()) {
+        const groupStart = margin.top + categoryIndex * groupHeight;
+        const y =
+          groupStart + groupHeight / 2 - (series.length * barHeight) / 2 + seriesIndex * barHeight;
+        const x = Math.min(zeroX, xOf(value));
+        const width = Math.max(1, Math.abs(xOf(value) - zeroX));
+        bars.push({
+          x,
+          y,
+          width,
+          height: Math.max(2, barHeight - 2),
+          color: series[seriesIndex]?.color ?? SERIES_COLORS[0]!,
+          label: `${categories[categoryIndex]} — ${series[seriesIndex]?.displayName}: ${formatNumericValue(value)}`,
+        });
+      }
+    }
+
+    return {
+      bars,
+      gridLines,
+      tickLabels,
+      zeroLine: { x1: zeroX, y1: margin.top, x2: zeroX, y2: margin.top + plotHeight },
+      categoryLabels: categories.map((label, index) => ({
+        x: margin.left - 6,
+        y: margin.top + index * groupHeight + groupHeight / 2 + 3,
+        anchor: 'end' as const,
+        label: label.length > 11 ? `${label.slice(0, 10)}…` : label,
       })),
     };
   }
