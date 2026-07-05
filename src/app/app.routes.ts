@@ -4,8 +4,6 @@ export const routes: Routes = [
   {
     path: '',
     loadComponent: () =>
-      import('./features/tree-graph/tree-graph-page.component').then(
-        (m) => m.TreeGraphPageComponent,
-      ),
+      import('./features/document/document-page.component').then((m) => m.DocumentPageComponent),
   },
 ];
