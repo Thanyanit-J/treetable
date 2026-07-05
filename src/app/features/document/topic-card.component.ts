@@ -5,6 +5,7 @@ import {
   ElementRef,
   afterRenderEffect,
   computed,
+  effect,
   inject,
   input,
   output,
@@ -108,43 +109,50 @@ const MAX_CARD_HEIGHT = 1600;
           </div>
         }
 
-        <!-- Resize handles on every border; content scrolls inside the card. -->
-        <button
-          type="button"
-          class="absolute inset-y-0 right-0 z-30 w-1.5 cursor-col-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
-          aria-label="Resize card width (drag, or arrow keys; double-click resets)"
-          (pointerdown)="startResize($event, 'right')"
-          (keydown.arrowleft)="nudgeWidth($event, -32)"
-          (keydown.arrowright)="nudgeWidth($event, 32)"
-          (dblclick)="cardWidth.set(null)"
-        ></button>
-        <button
-          type="button"
-          class="absolute inset-y-0 left-0 z-30 w-1.5 cursor-col-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
-          aria-label="Resize card width from the left edge (drag, or arrow keys; double-click resets)"
-          (pointerdown)="startResize($event, 'left')"
-          (keydown.arrowleft)="nudgeWidth($event, -32)"
-          (keydown.arrowright)="nudgeWidth($event, 32)"
-          (dblclick)="cardWidth.set(null)"
-        ></button>
-        <button
-          type="button"
-          class="absolute inset-x-0 bottom-0 z-30 h-1.5 cursor-row-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
-          aria-label="Resize card height (drag, or arrow keys; double-click resets)"
-          (pointerdown)="startResize($event, 'bottom')"
-          (keydown.arrowup)="nudgeHeight($event, -32)"
-          (keydown.arrowdown)="nudgeHeight($event, 32)"
-          (dblclick)="cardHeight.set(null)"
-        ></button>
-        <button
-          type="button"
-          class="absolute inset-x-0 top-0 z-30 h-1.5 cursor-row-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
-          aria-label="Resize card height from the top edge (drag, or arrow keys; double-click resets)"
-          (pointerdown)="startResize($event, 'top')"
-          (keydown.arrowup)="nudgeHeight($event, -32)"
-          (keydown.arrowdown)="nudgeHeight($event, 32)"
-          (dblclick)="cardHeight.set(null)"
-        ></button>
+        <!-- Resize handles; content scrolls inside the card. Width handles
+             only exist when another stack sits beside this card, height
+             handles only when cards are stacked in the same column — sizing
+             is about arranging against neighbours, so a lone card has none. -->
+        @if (canResizeWidth()) {
+          <button
+            type="button"
+            class="absolute inset-y-0 right-0 z-30 w-1.5 cursor-col-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+            aria-label="Resize card width (drag, or arrow keys; double-click resets)"
+            (pointerdown)="startResize($event, 'right')"
+            (keydown.arrowleft)="nudgeWidth($event, -32)"
+            (keydown.arrowright)="nudgeWidth($event, 32)"
+            (dblclick)="cardWidth.set(null)"
+          ></button>
+          <button
+            type="button"
+            class="absolute inset-y-0 left-0 z-30 w-1.5 cursor-col-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+            aria-label="Resize card width from the left edge (drag, or arrow keys; double-click resets)"
+            (pointerdown)="startResize($event, 'left')"
+            (keydown.arrowleft)="nudgeWidth($event, -32)"
+            (keydown.arrowright)="nudgeWidth($event, 32)"
+            (dblclick)="cardWidth.set(null)"
+          ></button>
+        }
+        @if (canResizeHeight()) {
+          <button
+            type="button"
+            class="absolute inset-x-0 bottom-0 z-30 h-1.5 cursor-row-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+            aria-label="Resize card height (drag, or arrow keys; double-click resets)"
+            (pointerdown)="startResize($event, 'bottom')"
+            (keydown.arrowup)="nudgeHeight($event, -32)"
+            (keydown.arrowdown)="nudgeHeight($event, 32)"
+            (dblclick)="cardHeight.set(null)"
+          ></button>
+          <button
+            type="button"
+            class="absolute inset-x-0 top-0 z-30 h-1.5 cursor-row-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+            aria-label="Resize card height from the top edge (drag, or arrow keys; double-click resets)"
+            (pointerdown)="startResize($event, 'top')"
+            (keydown.arrowup)="nudgeHeight($event, -32)"
+            (keydown.arrowdown)="nudgeHeight($event, 32)"
+            (dblclick)="cardHeight.set(null)"
+          ></button>
+        }
       </div>
     </article>
 
@@ -208,6 +216,9 @@ export class TopicCardComponent {
 
   readonly topic = input.required<TopicCardV2>();
   readonly evaluation = input.required<TopicEvaluation>();
+  /** Whether a neighbouring stack / stacked card makes the dimension matter. */
+  readonly canResizeWidth = input(true);
+  readonly canResizeHeight = input(true);
 
   readonly requestDeleteTopic = output<string>();
   readonly requestDeleteNode = output<{ topicId: string; nodeId: string }>();
@@ -241,6 +252,16 @@ export class TopicCardComponent {
         const input = this.titleInputRef()?.nativeElement;
         input?.focus();
         input?.select();
+      }
+    });
+    // When a dimension stops being resizable its handles disappear, so drop
+    // any explicit size too — otherwise it would be stuck with no way to reset.
+    effect(() => {
+      if (!this.canResizeWidth()) {
+        this.cardWidth.set(null);
+      }
+      if (!this.canResizeHeight()) {
+        this.cardHeight.set(null);
       }
     });
   }
