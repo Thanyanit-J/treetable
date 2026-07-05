@@ -169,12 +169,7 @@ const MAX_CARD_HEIGHT = 1600;
         >
           Add node
         </button>
-        <button
-          cdkMenuItem
-          type="button"
-          class="menu-item"
-          (cdkMenuItemTriggered)="showCharts.set(!showCharts())"
-        >
+        <button cdkMenuItem type="button" class="menu-item" (cdkMenuItemTriggered)="toggleCharts()">
           {{ showCharts() ? 'Hide charts' : 'Show charts'
           }}{{ chartCount() > 0 ? ' (' + chartCount() + ')' : '' }}
         </button>
@@ -264,6 +259,20 @@ export class TopicCardComponent {
         this.cardHeight.set(null);
       }
     });
+    // Deleting the last chart (via the Details panel) folds the section away.
+    effect(() => {
+      if (this.chartCount() === 0) {
+        this.showCharts.set(false);
+      }
+    });
+  }
+
+  /** Charts are born here: showing an empty panel creates its single chart. */
+  protected toggleCharts(): void {
+    if (!this.showCharts() && this.chartCount() === 0) {
+      this.store.addChart(this.topic().id, 'bar');
+    }
+    this.showCharts.set(!this.showCharts());
   }
 
   /** Selection-first for the title: click selects the card, click again renames. */

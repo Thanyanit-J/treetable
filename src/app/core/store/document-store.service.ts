@@ -509,24 +509,6 @@ export class DocumentStoreService {
     }
   }
 
-  addChartToCard(cardId: string, type: ChartType): void {
-    const card = this.cardById(cardId);
-    if (card?.kind !== 'chartcard') {
-      return;
-    }
-    const source = this.topicById(card.sourceTopicId);
-    const defaultColumn = source?.columns.find((column) => column.kind !== 'chart');
-    if (!defaultColumn) {
-      return;
-    }
-    this.mutate((document) => {
-      const draft = document.cards.find((candidate) => candidate.id === cardId);
-      if (draft?.kind === 'chartcard') {
-        draft.charts.push({ id: makeId('chart'), type, columns: [defaultColumn.refName] });
-      }
-    });
-  }
-
   removeChartFromCard(cardId: string, chartId: string): void {
     this.mutate((document) => {
       const draft = document.cards.find((candidate) => candidate.id === cardId);

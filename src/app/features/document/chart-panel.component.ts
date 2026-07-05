@@ -6,7 +6,6 @@ import {
 } from '../../core/engine/formula-evaluator';
 import {
   ChartConfigV2,
-  ChartType,
   ColumnV2,
   TopicCardV2,
   collectLeaves,
@@ -68,14 +67,6 @@ interface RenderedChart {
               <span class="text-xs font-medium text-slate-600">
                 {{ chartCaption(chart) }}
               </span>
-              <button
-                type="button"
-                class="rounded px-1.5 text-xs text-slate-400 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-2 focus-visible:outline-sky-600"
-                [attr.aria-label]="'Remove chart'"
-                (click)="removeChart(chart.config.id)"
-              >
-                ✕
-              </button>
             </figcaption>
 
             @if (chart.missing.length > 0) {
@@ -163,31 +154,7 @@ interface RenderedChart {
           </figure>
         }
       </div>
-
-      <!-- The single affordance for creating charts, centered. -->
-      <div class="flex justify-center gap-2 py-2">
-        <button type="button" class="panel-button" (click)="addChart('bar')">+ Bar chart</button>
-        <button type="button" class="panel-button" (click)="addChart('pie')">+ Pie chart</button>
-      </div>
     </section>
-  `,
-  styles: `
-    .panel-button {
-      border-radius: 0.375rem;
-      border: 1px solid var(--color-slate-200);
-      background: white;
-      padding: 0.125rem 0.5rem;
-      font-size: 0.75rem;
-      font-weight: 500;
-      color: var(--color-slate-600);
-    }
-    .panel-button:hover {
-      background: var(--color-slate-50);
-    }
-    .panel-button:focus-visible {
-      outline: 2px solid var(--color-sky-600);
-      outline-offset: 1px;
-    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -227,24 +194,6 @@ export class ChartPanelComponent {
     }
     event.stopPropagation();
     this.store.select({ kind: 'chart', topicId: this.ownerId(), chartId });
-  }
-
-  protected addChart(type: ChartType): void {
-    const owner = this.owner();
-    if (owner?.kind === 'chartcard') {
-      this.store.addChartToCard(owner.id, type);
-    } else {
-      this.store.addChart(this.topic().id, type);
-    }
-  }
-
-  protected removeChart(chartId: string): void {
-    const owner = this.owner();
-    if (owner?.kind === 'chartcard') {
-      this.store.removeChartFromCard(owner.id, chartId);
-    } else {
-      this.store.removeChart(this.topic().id, chartId);
-    }
   }
 
   protected readonly renderedCharts = computed<RenderedChart[]>(() => {
