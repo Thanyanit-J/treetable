@@ -10,9 +10,11 @@ import {
 import {
   ACCENT_COLORS,
   AccentColor,
+  ChartCardV2,
   ChartConfigV2,
   ColumnV2,
   NodeV2,
+  NoteCardV2,
   RollupMode,
   TopicCardV2,
   findNodeAndParent,
@@ -637,6 +639,26 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
           @if (refNameError(); as message) {
             <p class="text-xs text-rose-600" role="alert">{{ message }}</p>
           }
+        } @else if (cardContext(); as card) {
+          @switch (card.kind) {
+            @case ('note') {
+              <p class="section-label">Note</p>
+              <p class="text-sm text-slate-600">A free-text card.</p>
+              <button type="button" class="danger-button" (click)="store.removeCard(card.id)">
+                Delete note
+              </button>
+            }
+            @case ('chartcard') {
+              <p class="section-label">Charts card</p>
+              <p class="text-sm text-slate-600">
+                Source: {{ chartCardSource(card)?.displayName ?? 'missing (deleted)' }}
+              </p>
+              <p class="text-xs text-slate-400">Click a chart in the card to edit it here.</p>
+              <button type="button" class="danger-button" (click)="store.removeCard(card.id)">
+                Delete charts card
+              </button>
+            }
+          }
         } @else {
           <p class="text-sm text-slate-400">
             Select a topic, node, column or cell to edit its details here.
@@ -830,6 +852,24 @@ export class DetailsPanelComponent {
     const selection = this.store.selection();
     return selection ? (this.store.topicById(selection.topicId) ?? null) : null;
   });
+
+  /**
+   * Card selection of a non-topic card (note / charts card). Keeping a
+   * section for every selectable thing preserves the invariant that a card
+   * showing its focus bar always has something to edit in this panel.
+   */
+  protected readonly cardContext = computed<NoteCardV2 | ChartCardV2 | null>(() => {
+    const selection = this.store.selection();
+    if (selection?.kind !== 'card') {
+      return null;
+    }
+    const card = this.store.cardById(selection.topicId);
+    return card && card.kind !== 'topic' ? card : null;
+  });
+
+  protected chartCardSource(card: ChartCardV2): TopicCardV2 | null {
+    return this.store.topicById(card.sourceTopicId) ?? null;
+  }
 
   protected readonly node = computed<NodeV2 | null>(() => {
     const selection = this.store.selection();
