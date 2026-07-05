@@ -53,3 +53,17 @@ You are an expert in TypeScript, Angular, and scalable web application developme
 - Design services around a single responsibility
 - Use the `providedIn: 'root'` option for singleton services
 - Use the `inject()` function instead of constructor injection
+
+## Agent skills
+
+### Issue tracker
+
+Local markdown — issues and PRDs live as files under `.scratch/<feature>/` in this repo. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary — the five canonical role names are used verbatim. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
