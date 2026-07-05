@@ -1,11 +1,12 @@
 import {
-  CdkDrag,
-  CdkDragDrop,
-  CdkDragHandle,
-  CdkDropList,
-  CdkDropListGroup,
-} from '@angular/cdk/drag-drop';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { DocumentStoreService } from '../../core/store/document-store.service';
 import { TopicEvaluation } from '../../core/engine/formula-evaluator';
 import { CardV2 } from '../../core/model/document.model';
@@ -39,6 +40,23 @@ interface PendingDeletePage {
 
 type PendingDelete = PendingDeleteTopic | PendingDeleteNode | PendingDeletePage;
 
+/** One live card-drag gesture; pointer capture stays on the grip throughout. */
+interface CardDragSession {
+  cardId: string;
+  grip: HTMLElement;
+  rail: HTMLElement | null;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  /** True once the pointer travels past the click threshold. */
+  started: boolean;
+  zones: { key: string; rect: DOMRect }[];
+  preview: HTMLElement | null;
+  onMove: (event: PointerEvent) => void;
+  onUp: () => void;
+  onCancel: () => void;
+}
+
 interface Toast {
   ok: boolean;
   text: string;
@@ -52,10 +70,6 @@ interface Toast {
 @Component({
   selector: 'app-document-page',
   imports: [
-    CdkDrag,
-    CdkDragHandle,
-    CdkDropList,
-    CdkDropListGroup,
     ChartCardComponent,
     ConfirmDialogComponent,
     DetailsPanelComponent,
@@ -136,34 +150,38 @@ interface Toast {
               </button>
             </section>
           } @else {
-            <!-- One drop-list group: each stack is a vertical list (drop under a
-                 card to stack them); the gaps are lists too — dropping there
-                 puts the card into its own new column. -->
-            <div cdkDropListGroup class="flex h-full min-h-full items-stretch p-3">
-              <div
-                cdkDropList
-                [cdkDropListData]="'new:0'"
-                class="rail-gap w-6 shrink-0"
-                (cdkDropListDropped)="onRailDrop($event)"
-              ></div>
+            <!-- Stacks side by side. Dragging a card is a custom pointer
+                 session: the origin card becomes a grey box (releasing there —
+                 or anywhere outside a drop zone — cancels), a small solid
+                 snapshot of the card rides under the pointer, and the gaps
+                 reveal themselves as drop zones only while hovered, nudging
+                 the neighbours slightly apart to preview the landing spot. -->
+            <div #rail class="flex h-full min-h-full items-stretch p-3">
               @for (stack of store.activeStacks(); track stack.id; let stackIndex = $index) {
                 <div
-                  cdkDropList
-                  [cdkDropListData]="stack.id"
-                  class="flex shrink-0 flex-col gap-3"
-                  (cdkDropListDropped)="onRailDrop($event)"
-                >
-                  @for (card of stack.cards; track card.id) {
+                  aria-hidden="true"
+                  class="drop-zone zone-rail"
+                  [class.zone-on]="hoverZone() === 'rail:' + stackIndex"
+                  [attr.data-zone]="'rail:' + stackIndex"
+                ></div>
+                <div class="flex shrink-0 flex-col">
+                  @for (card of stack.cards; track card.id; let cardIndex = $index) {
                     <div
-                      cdkDrag
-                      [cdkDragData]="card.id"
+                      aria-hidden="true"
+                      class="drop-zone zone-row"
+                      [class.zone-row-gap]="cardIndex > 0"
+                      [class.zone-on]="hoverZone() === 'stack:' + stack.id + ':' + cardIndex"
+                      [attr.data-zone]="'stack:' + stack.id + ':' + cardIndex"
+                    ></div>
+                    <div
                       class="group/card relative flex min-h-0 flex-1"
+                      [attr.data-card-id]="card.id"
                     >
                       <button
-                        cdkDragHandle
                         type="button"
-                        class="absolute left-1 top-1 z-30 flex h-6 w-6 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 hover:text-slate-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/card:opacity-100"
+                        class="absolute left-1 top-1 z-30 flex h-6 w-6 cursor-grab touch-none items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 hover:text-slate-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/card:opacity-100"
                         [attr.aria-label]="'Drag card ' + cardLabel(card)"
+                        (pointerdown)="startCardDrag($event, card.id)"
                       >
                         <span aria-hidden="true">⠿</span>
                       </button>
@@ -187,16 +205,28 @@ interface Toast {
                           />
                         }
                       }
+                      @if (cardDragId() === card.id) {
+                        <div
+                          aria-hidden="true"
+                          class="absolute inset-0 z-40 rounded-lg border border-slate-300 bg-slate-200"
+                        ></div>
+                      }
                     </div>
                   }
+                  <div
+                    aria-hidden="true"
+                    class="drop-zone zone-row"
+                    [class.zone-on]="hoverZone() === 'stack:' + stack.id + ':' + stack.cards.length"
+                    [attr.data-zone]="'stack:' + stack.id + ':' + stack.cards.length"
+                  ></div>
                 </div>
-                <div
-                  cdkDropList
-                  [cdkDropListData]="'new:' + (stackIndex + 1)"
-                  class="rail-gap w-6 shrink-0"
-                  (cdkDropListDropped)="onRailDrop($event)"
-                ></div>
               }
+              <div
+                aria-hidden="true"
+                class="drop-zone zone-rail"
+                [class.zone-on]="hoverZone() === 'rail:' + store.activeStacks().length"
+                [attr.data-zone]="'rail:' + store.activeStacks().length"
+              ></div>
             </div>
           }
         </div>
@@ -263,14 +293,32 @@ interface Toast {
       outline: 2px solid var(--color-sky-600);
       outline-offset: 1px;
     }
-    .rail-gap {
+    .drop-zone {
+      flex-shrink: 0;
       border-radius: 0.5rem;
-      transition: background-color 0.15s ease;
+      transition:
+        width 0.16s ease,
+        height 0.16s ease,
+        background-color 0.16s ease;
     }
-    .rail-gap.cdk-drop-list-receiving,
-    .rail-gap.cdk-drop-list-dragging {
+    .zone-rail {
+      width: 1.5rem;
+    }
+    .zone-rail.zone-on {
+      width: 3.5rem;
+    }
+    .zone-row {
+      height: 0;
+    }
+    .zone-row-gap {
+      height: 0.75rem;
+    }
+    .zone-row.zone-on {
+      height: 2.75rem;
+    }
+    .zone-on {
       background: var(--color-sky-100);
-      outline: 2px dashed var(--color-sky-300);
+      outline: 2px dashed var(--color-sky-400);
       outline-offset: -2px;
     }
   `,
@@ -283,6 +331,13 @@ export class DocumentPageComponent {
   protected readonly detailsOpen = signal(true);
   protected readonly toast = signal<Toast | null>(null);
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private readonly railRef = viewChild<ElementRef<HTMLElement>>('rail');
+  private cardDragSession: CardDragSession | null = null;
+  /** Card currently greyed out at its origin while being dragged. */
+  protected readonly cardDragId = signal<string | null>(null);
+  /** Zone key under the pointer; only this zone expands and lights up. */
+  protected readonly hoverZone = signal<string | null>(null);
 
   private readonly emptyEvaluation: TopicEvaluation = { computedCells: new Map() };
   protected readonly evaluations = computed(() => this.store.evaluations());
@@ -302,21 +357,209 @@ export class DocumentPageComponent {
     }
   }
 
-  /** Routes rail drops: into a stack (reorder/stack) or a gap (new column). */
-  protected onRailDrop(event: CdkDragDrop<string>): void {
-    const cardId = event.item.data;
-    const target = event.container.data;
-    if (typeof cardId !== 'string' || typeof target !== 'string') {
+  // ---------------------------------------------------------------------------
+  // Card dragging
+  // ---------------------------------------------------------------------------
+
+  protected startCardDrag(event: PointerEvent, cardId: string): void {
+    if (event.button !== 0 || this.cardDragSession !== null) {
       return;
     }
-    if (target.startsWith('new:')) {
-      this.store.moveCardToNewStack(cardId, this.store.activePage().id, Number(target.slice(4)));
+    event.preventDefault();
+    const grip = event.currentTarget as HTMLElement;
+    const session: CardDragSession = {
+      cardId,
+      grip,
+      rail: null,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      started: false,
+      zones: [],
+      preview: null,
+      onMove: (moveEvent) => this.onCardDragMove(moveEvent),
+      onUp: () => this.finishCardDrag(true),
+      onCancel: () => this.finishCardDrag(false),
+    };
+    this.cardDragSession = session;
+    try {
+      grip.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer already gone (synthetic events in tests).
+    }
+    grip.addEventListener('pointermove', session.onMove);
+    grip.addEventListener('pointerup', session.onUp);
+    grip.addEventListener('pointercancel', session.onCancel);
+  }
+
+  private onCardDragMove(event: PointerEvent): void {
+    const session = this.cardDragSession;
+    if (!session) {
       return;
     }
-    if (event.previousContainer === event.container && event.previousIndex === event.currentIndex) {
+    if (!session.started) {
+      if (Math.hypot(event.clientX - session.startX, event.clientY - session.startY) < 5) {
+        return;
+      }
+      this.activateCardDrag(session, event);
+      if (!session.started) {
+        return;
+      }
+    }
+    session.preview?.style.setProperty(
+      'transform',
+      `translate(${event.clientX + 14}px, ${event.clientY + 10}px)`,
+    );
+    this.hoverZone.set(this.zoneAt(session, event.clientX, event.clientY));
+  }
+
+  /** Past the click threshold: snapshot geometry, grey the origin, spawn the preview. */
+  private activateCardDrag(session: CardDragSession, event: PointerEvent): void {
+    const cardElement = session.grip.closest<HTMLElement>('[data-card-id]');
+    const rail = this.railRef()?.nativeElement ?? null;
+    if (!cardElement || !rail) {
       return;
     }
-    this.store.moveCardToStack(cardId, target, event.currentIndex);
+    session.started = true;
+    session.rail = rail;
+    // Zone rects are measured once, before any zone expands: hover-expansion
+    // shifts the layout by ~2rem — far less than a card — so the static rects
+    // stay aim-true, and hit-testing cannot feed back into its own layout.
+    const disabled = this.noopZones(session.cardId);
+    session.zones = Array.from(rail.querySelectorAll<HTMLElement>('[data-zone]'))
+      .map((zone) => ({ key: zone.dataset['zone'] ?? '', rect: zone.getBoundingClientRect() }))
+      .filter((zone) => zone.key !== '' && !disabled.has(zone.key));
+    session.preview = this.buildDragPreview(cardElement, event);
+    document.body.classList.add('tt-card-dragging');
+    this.cardDragId.set(session.cardId);
+  }
+
+  private finishCardDrag(commit: boolean): void {
+    const session = this.cardDragSession;
+    if (!session) {
+      return;
+    }
+    this.cardDragSession = null;
+    session.grip.removeEventListener('pointermove', session.onMove);
+    session.grip.removeEventListener('pointerup', session.onUp);
+    session.grip.removeEventListener('pointercancel', session.onCancel);
+    try {
+      session.grip.releasePointerCapture(session.pointerId);
+    } catch {
+      // Capture already released.
+    }
+    session.preview?.remove();
+    document.body.classList.remove('tt-card-dragging');
+    const target = this.hoverZone();
+    this.hoverZone.set(null);
+    this.cardDragId.set(null);
+    if (commit && session.started && target !== null) {
+      this.dropCard(session.cardId, target);
+    }
+  }
+
+  /** Maps a zone key onto the store's move APIs (both no-op on same position). */
+  private dropCard(cardId: string, zoneKey: string): void {
+    if (zoneKey.startsWith('rail:')) {
+      this.store.moveCardToNewStack(cardId, this.store.activePage().id, Number(zoneKey.slice(5)));
+      return;
+    }
+    const rest = zoneKey.slice('stack:'.length);
+    const separator = rest.lastIndexOf(':');
+    const stackId = rest.slice(0, separator);
+    let index = Number(rest.slice(separator + 1));
+    const origin = this.store
+      .activeStacks()
+      .find((stack) => stack.cards.some((card) => card.id === cardId));
+    if (origin && origin.id === stackId) {
+      const from = origin.cards.findIndex((card) => card.id === cardId);
+      if (index > from) {
+        index -= 1; // moveCardToStack expects the post-removal index.
+      }
+    }
+    this.store.moveCardToStack(cardId, stackId, index);
+  }
+
+  /** Zones where dropping would change nothing; they never light up. */
+  private noopZones(cardId: string): Set<string> {
+    const zones = new Set<string>();
+    const stacks = this.store.activeStacks();
+    const stackIndex = stacks.findIndex((stack) => stack.cards.some((card) => card.id === cardId));
+    const stack = stacks[stackIndex];
+    if (!stack) {
+      return zones;
+    }
+    const cardIndex = stack.cards.findIndex((card) => card.id === cardId);
+    zones.add(`stack:${stack.id}:${cardIndex}`);
+    zones.add(`stack:${stack.id}:${cardIndex + 1}`);
+    if (stack.cards.length === 1) {
+      zones.add(`rail:${stackIndex}`);
+      zones.add(`rail:${stackIndex + 1}`);
+    }
+    return zones;
+  }
+
+  private zoneAt(session: CardDragSession, x: number, y: number): string | null {
+    // Hysteresis: the hovered zone is re-measured live (it is expanded), so
+    // the pointer must actually leave it before another zone can win.
+    const current = this.hoverZone();
+    if (current !== null && session.rail) {
+      const element = session.rail.querySelector(`[data-zone="${current}"]`);
+      if (element && this.zoneHit(current, element.getBoundingClientRect(), x, y)) {
+        return current;
+      }
+    }
+    let bestKey: string | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const zone of session.zones) {
+      if (!this.zoneHit(zone.key, zone.rect, x, y)) {
+        continue;
+      }
+      const centerX = (zone.rect.left + zone.rect.right) / 2;
+      const centerY = (zone.rect.top + zone.rect.bottom) / 2;
+      // Rail zones span the full rail height; only horizontal aim matters.
+      const distance = zone.key.startsWith('rail:')
+        ? Math.abs(x - centerX)
+        : Math.hypot(x - centerX, y - centerY);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestKey = zone.key;
+      }
+    }
+    return bestKey;
+  }
+
+  /** Zones accept the pointer well beyond their painted bounds. */
+  private zoneHit(key: string, rect: DOMRect, x: number, y: number): boolean {
+    const isRail = key.startsWith('rail:');
+    const marginX = isRail ? 20 : 8;
+    const marginY = isRail ? 0 : 18;
+    return (
+      x >= rect.left - marginX &&
+      x <= rect.right + marginX &&
+      y >= rect.top - marginY &&
+      y <= rect.bottom + marginY
+    );
+  }
+
+  /** A solid mini snapshot of the card that rides along under the pointer. */
+  private buildDragPreview(cardElement: HTMLElement, event: PointerEvent): HTMLElement {
+    const rect = cardElement.getBoundingClientRect();
+    const scale = Math.min(0.4, 260 / Math.max(rect.width, 1));
+    const clone = cardElement.cloneNode(true) as HTMLElement;
+    clone.style.width = `${rect.width}px`;
+    clone.style.height = `${rect.height}px`;
+    clone.style.transform = `scale(${scale})`;
+    clone.style.transformOrigin = 'top left';
+    const shell = document.createElement('div');
+    shell.setAttribute('aria-hidden', 'true');
+    shell.className = 'tt-card-drag-preview';
+    shell.style.width = `${Math.round(rect.width * scale)}px`;
+    shell.style.height = `${Math.round(Math.min(rect.height * scale, 320))}px`;
+    shell.style.transform = `translate(${event.clientX + 14}px, ${event.clientY + 10}px)`;
+    shell.append(clone);
+    document.body.append(shell);
+    return shell;
   }
 
   /** Clicking the empty background clears the selection. */
@@ -354,6 +597,11 @@ export class DocumentPageComponent {
   // ---------------------------------------------------------------------------
 
   protected onKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape' && this.cardDragSession !== null) {
+      event.preventDefault();
+      this.finishCardDrag(false);
+      return;
+    }
     const target = event.target as HTMLElement | null;
     if (
       target &&
