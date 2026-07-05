@@ -83,16 +83,17 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
           </label>
           <label class="field">
             <span>Source table</span>
-            <select
-              class="field-input"
-              [value]="ctx.sourceTopic?.id ?? ''"
-              (change)="commitChartCardSource(ctx, $event)"
-            >
+            <select class="field-input" (change)="commitChartCardSource(ctx, $event)">
               @if (!ctx.sourceTopic) {
-                <option value="" disabled>missing (deleted)</option>
+                <option value="" disabled selected>missing (deleted)</option>
               }
               @for (topicOption of allTopics(); track topicOption.id) {
-                <option [value]="topicOption.id">{{ topicOption.displayName }}</option>
+                <option
+                  [value]="topicOption.id"
+                  [selected]="topicOption.id === ctx.sourceTopic?.id"
+                >
+                  {{ topicOption.displayName }}
+                </option>
               }
             </select>
           </label>
@@ -152,14 +153,15 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
           @if ((ctx.chart.categoryAxis ?? 'rows') === 'rows') {
             <label class="field">
               <span>{{ ctx.chart.type === 'pie' ? 'Slice labels' : 'X axis labels' }}</span>
-              <select
-                class="field-input"
-                [value]="ctx.chart.labelColumn ?? ''"
-                (change)="commitChartLabelColumn(ctx, $event)"
-              >
-                <option value="">Row name</option>
+              <select class="field-input" (change)="commitChartLabelColumn(ctx, $event)">
+                <option value="" [selected]="!ctx.chart.labelColumn">Row name</option>
                 @for (option of labelColumnOptions(ctx); track option.id) {
-                  <option [value]="option.refName">{{ option.displayName }}</option>
+                  <option
+                    [value]="option.refName"
+                    [selected]="option.refName === ctx.chart.labelColumn"
+                  >
+                    {{ option.displayName }}
+                  </option>
                 }
               </select>
               <span class="mt-1 block text-[11px] font-normal text-slate-400">
@@ -211,17 +213,15 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
               >
                 Group by
               </span>
-              <select
-                class="field-input"
-                [value]="rowGroupingValue(ctx)"
-                (change)="commitRowGrouping(ctx, $event)"
-              >
-                <option value="">Every leaf row</option>
+              <select class="field-input" (change)="commitRowGrouping(ctx, $event)">
+                <option value="" [selected]="rowGroupingValue(ctx) === ''">Every leaf row</option>
                 @for (level of groupLevels(ctx); track level) {
-                  <option [value]="level">Level {{ level }} groups</option>
+                  <option [value]="level" [selected]="rowGroupingValue(ctx) === level.toString()">
+                    Level {{ level }} groups
+                  </option>
                 }
                 @if (rowGroupingValue(ctx) === 'custom') {
-                  <option value="custom" disabled>Custom selection (below)</option>
+                  <option value="custom" disabled selected>Custom selection (below)</option>
                 }
               </select>
               <span class="mt-1 block text-[11px] font-normal text-slate-400">
@@ -617,13 +617,20 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                   @case ('chart') {
                     <label class="field">
                       <span>Bar chart of</span>
+                      <!-- [selected] per option, not [value] on the select: the
+                           select's value would be assigned before the @for
+                           options exist, silently showing the first option. -->
                       <select
                         class="field-input"
-                        [value]="column.chartSource ?? ''"
                         (change)="commitChartSource(topic, column, $event)"
                       >
                         @for (option of chartSourceOptions(topic, column); track option.id) {
-                          <option [value]="option.refName">{{ option.displayName }}</option>
+                          <option
+                            [value]="option.refName"
+                            [selected]="option.refName === column.chartSource"
+                          >
+                            {{ option.displayName }}
+                          </option>
                         }
                       </select>
                     </label>
