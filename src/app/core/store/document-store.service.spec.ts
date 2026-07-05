@@ -531,6 +531,22 @@ describe('DocumentStoreService', () => {
       store.removeChart(wealth().id, chartId);
       expect(wealth().charts).toEqual([]);
     });
+
+    it('re-syncs chart source order when table columns are reordered', () => {
+      store.addChart(wealth().id, 'bar');
+      const chartId = wealth().charts![0]!.id;
+      store.toggleChartColumn(wealth().id, chartId, '$Rate');
+      expect(wealth().charts![0]!.columns).toEqual(['$Amount', '$Rate']);
+
+      const rate = wealth().columns.find((column) => column.refName === '$Rate')!;
+      store.moveColumn(wealth().id, rate.id, 0);
+      expect(wealth().columns.map((column) => column.refName)).toEqual([
+        '$Rate',
+        '$Amount',
+        '$Yield',
+      ]);
+      expect(wealth().charts![0]!.columns).toEqual(['$Rate', '$Amount']);
+    });
   });
 
   describe('setRefName', () => {

@@ -1712,7 +1712,37 @@ export class DocumentStoreService {
       if (column) {
         draftTopic.columns.splice(toIndex, 0, column);
       }
+      this.syncChartColumnOrder(document, topicId);
     });
+  }
+
+  /**
+   * Reordering table columns carries over to every chart fed by the Topic
+   * (its own Chart Panel and any Chart Cards): bars/rings follow the table.
+   * A manual reorder in a chart's Sources list survives until the next
+   * table reorder re-syncs it.
+   */
+  private syncChartColumnOrder(document: DocumentV2, topicId: string): void {
+    const topic = this.findTopic(document, topicId);
+    if (!topic) {
+      return;
+    }
+    const orderOf = new Map(topic.columns.map((column, index) => [column.refName, index]));
+    const resort = (charts: ChartConfigV2[] | undefined): void => {
+      for (const chart of charts ?? []) {
+        chart.columns = [...chart.columns].sort(
+          (a, b) =>
+            (orderOf.get(a) ?? Number.MAX_SAFE_INTEGER) -
+            (orderOf.get(b) ?? Number.MAX_SAFE_INTEGER),
+        );
+      }
+    };
+    resort(topic.charts);
+    for (const card of document.cards) {
+      if (card.kind === 'chartcard' && card.sourceTopicId === topicId) {
+        resort(card.charts);
+      }
+    }
   }
 
   /**
