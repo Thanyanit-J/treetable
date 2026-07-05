@@ -99,13 +99,17 @@ export type PillAlignment = 'center' | 'top';
 export type ConnectorStyle = 'elbow' | 'straight' | 'curved';
 
 /**
- * Explicit card size (dragging a card border sets it): a fixed dimension
- * stops following content and overflow scrolls inside. Absent dimensions —
- * and an absent sizing altogether — keep hugging the content.
+ * Explicit card size, set by dragging a card border or typing exact numbers.
+ * By default the dimensions are MINIMUMS: the table auto-expands past them
+ * as content grows (clipped columns push the width, wrapped ones the
+ * height) but never shrinks below what the user set. With `fixed`, the size
+ * is exact and overflow scrolls inside. Absent dimensions follow content.
  */
 export interface CardSizingV2 {
   width?: number;
   height?: number;
+  /** True = exact size (auto-expand off); absent = grow past the minimums. */
+  fixed?: true;
 }
 
 export const CARD_MIN_WIDTH = 256;

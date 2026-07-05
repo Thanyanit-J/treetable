@@ -35,8 +35,10 @@ const MAX_ZOOM = 2;
     <article
       #cardRoot
       class="relative flex h-full min-w-64 shrink-0 flex-col"
-      [style.width.px]="cardWidth()"
-      [style.height.px]="cardHeight()"
+      [style.width.px]="fixedSize() ? cardWidth() : null"
+      [style.height.px]="fixedSize() ? cardHeight() : null"
+      [style.min-width.px]="fixedSize() ? null : cardWidth()"
+      [style.min-height.px]="fixedSize() ? null : cardHeight()"
       (click)="onCardClick($event)"
       (wheel)="onWheel($event)"
     >
@@ -215,6 +217,8 @@ export class TopicCardComponent {
   protected readonly cardHeight = computed(
     () => this.dragHeight() ?? this.topic().sizing?.height ?? null,
   );
+  /** Auto-expand off: the size is exact and overflow scrolls inside. */
+  protected readonly fixedSize = computed(() => this.topic().sizing?.fixed === true);
   protected readonly editingTitle = signal(false);
   protected readonly cardTitle = computed(() => this.topic().cardTitle ?? this.topic().displayName);
   protected readonly cardSelected = computed(() => {

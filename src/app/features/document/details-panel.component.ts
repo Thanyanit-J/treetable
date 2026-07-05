@@ -378,6 +378,54 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                 Show row numbers
               </label>
               <fieldset class="field">
+                <legend>Table size</legend>
+                <div class="flex gap-2">
+                  <label class="min-w-0 flex-1">
+                    <span class="mb-1 block text-[11px] font-medium text-slate-400">
+                      Width (px)
+                    </span>
+                    <input
+                      class="field-input"
+                      type="number"
+                      min="256"
+                      max="1600"
+                      placeholder="auto"
+                      [value]="topic.sizing?.width ?? ''"
+                      (change)="commitCardDimension(topic, 'width', $event)"
+                      (keydown.enter)="blurTarget($event)"
+                    />
+                  </label>
+                  <label class="min-w-0 flex-1">
+                    <span class="mb-1 block text-[11px] font-medium text-slate-400">
+                      Height (px)
+                    </span>
+                    <input
+                      class="field-input"
+                      type="number"
+                      min="160"
+                      max="1600"
+                      placeholder="auto"
+                      [value]="topic.sizing?.height ?? ''"
+                      (change)="commitCardDimension(topic, 'height', $event)"
+                      (keydown.enter)="blurTarget($event)"
+                    />
+                  </label>
+                </div>
+                <label class="mt-2 flex items-center gap-2 text-xs text-slate-500">
+                  <input
+                    type="checkbox"
+                    [checked]="topic.sizing?.fixed !== true"
+                    (change)="toggleCardAutoExpand(topic, $event)"
+                  />
+                  Auto-expand beyond this size
+                </label>
+                <p class="mt-1 text-xs text-slate-400">
+                  On: the table grows past these sizes as content grows (clipped columns push the
+                  width, wrapped ones the height) but never below them. Off: exact size, overflow
+                  scrolls inside. Blank follows content.
+                </p>
+              </fieldset>
+              <fieldset class="field">
                 <legend>Columns</legend>
                 <app-visibility-list
                   [visible]="columnItems(visibleColumns(topic))"
@@ -1314,6 +1362,21 @@ export class DetailsPanelComponent {
 
   protected toggleShowRowNumbers(topic: TopicCardV2, event: Event): void {
     this.store.setShowRowNumbers(topic.id, (event.target as HTMLInputElement).checked);
+  }
+
+  protected commitCardDimension(
+    topic: TopicCardV2,
+    dimension: 'width' | 'height',
+    event: Event,
+  ): void {
+    const raw = (event.target as HTMLInputElement).value.trim();
+    const parsed = raw.length > 0 ? Number(raw) : null;
+    const value = parsed !== null && Number.isFinite(parsed) ? parsed : null;
+    this.store.setCardSize(topic.id, { [dimension]: value });
+  }
+
+  protected toggleCardAutoExpand(topic: TopicCardV2, event: Event): void {
+    this.store.setCardAutoExpand(topic.id, (event.target as HTMLInputElement).checked);
   }
 
   protected visibleColumns(topic: TopicCardV2): ColumnV2[] {

@@ -825,6 +825,21 @@ describe('DocumentStoreService', () => {
       expect(steps).toBe(true);
       expect(wealth().sizing).toBeUndefined();
     });
+
+    it('auto-expand is the default; off marks the size fixed and survives releases', () => {
+      store.setCardSize(wealth().id, { width: 480 });
+      expect(wealth().sizing?.fixed).toBeUndefined();
+
+      store.setCardAutoExpand(wealth().id, false);
+      expect(wealth().sizing).toEqual({ width: 480, fixed: true });
+
+      // Releasing the only dimension keeps the choice for the next drag.
+      store.setCardSize(wealth().id, { width: null });
+      expect(wealth().sizing).toEqual({ fixed: true });
+
+      store.setCardAutoExpand(wealth().id, true);
+      expect(wealth().sizing).toBeUndefined();
+    });
   });
 
   describe('column sizing', () => {

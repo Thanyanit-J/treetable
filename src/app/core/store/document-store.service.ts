@@ -2319,9 +2319,33 @@ export class DocumentStoreService {
     });
   }
 
+  /** Auto-expand on (default): set sizes are minimums; off: exact, scroll inside. */
+  setCardAutoExpand(topicId: string, autoExpand: boolean): void {
+    const current = this.topicById(topicId);
+    if (!current || (current.sizing?.fixed !== true) === autoExpand) {
+      return;
+    }
+    this.mutate((document) => {
+      const topic = this.findTopic(document, topicId);
+      if (!topic) {
+        return;
+      }
+      if (autoExpand) {
+        if (topic.sizing) {
+          delete topic.sizing.fixed;
+          if (topic.sizing.width === undefined && topic.sizing.height === undefined) {
+            delete topic.sizing;
+          }
+        }
+      } else {
+        topic.sizing = { ...topic.sizing, fixed: true };
+      }
+    });
+  }
+
   /**
-   * Persists a card border-drag or nudge. `null` releases a dimension back
-   * to following content; a fixed dimension scrolls its overflow inside.
+   * Persists a card border-drag, nudge or typed size. `null` releases a
+   * dimension back to following content.
    */
   setCardSize(topicId: string, size: { width?: number | null; height?: number | null }): void {
     const current = this.topicById(topicId);
@@ -2762,7 +2786,8 @@ function nextCardSizing(
       sizing.height = clampCardHeight(size.height);
     }
   }
-  if (sizing.width === undefined && sizing.height === undefined) {
+  // The fixed flag alone keeps the auto-expand choice for the next drag.
+  if (sizing.width === undefined && sizing.height === undefined && sizing.fixed !== true) {
     return undefined;
   }
   return sizing;

@@ -482,7 +482,7 @@ export class PersistenceService {
     const sizing = (candidate as { sizing?: unknown }).sizing;
     if (sizing && typeof sizing === 'object') {
       // Earlier documents carried a sizing.mode; only the dimensions remain.
-      const { width, height } = sizing as Record<string, unknown>;
+      const { width, height, fixed } = sizing as Record<string, unknown>;
       const next: CardSizingV2 = {};
       if (typeof width === 'number' && Number.isFinite(width)) {
         next.width = clampCardWidth(width);
@@ -490,7 +490,10 @@ export class PersistenceService {
       if (typeof height === 'number' && Number.isFinite(height)) {
         next.height = clampCardHeight(height);
       }
-      if (next.width !== undefined || next.height !== undefined) {
+      if (fixed === true) {
+        next.fixed = true;
+      }
+      if (next.width !== undefined || next.height !== undefined || next.fixed === true) {
         card.sizing = next;
       }
     }
