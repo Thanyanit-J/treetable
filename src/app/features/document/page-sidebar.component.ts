@@ -103,6 +103,8 @@ import { DocumentStoreService } from '../../core/store/document-store.service';
             type="button"
             class="flex h-7 w-full items-center justify-center rounded bg-sky-600 px-2.5 text-xs font-semibold text-white hover:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-600"
             [cdkMenuTriggerFor]="addMenu"
+            (cdkMenuOpened)="onMenuOpened()"
+            (cdkMenuClosed)="onMenuClosed()"
           >
             + Add new
           </button>
@@ -158,6 +160,8 @@ import { DocumentStoreService } from '../../core/store/document-store.service';
                   type="button"
                   class="absolute right-1 top-1/2 z-10 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-200 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/page:opacity-100"
                   [cdkMenuTriggerFor]="pageMenu"
+                  (cdkMenuOpened)="onMenuOpened()"
+                  (cdkMenuClosed)="onMenuClosed()"
                   (click)="menuPage.set(page)"
                   [attr.aria-label]="'Actions for page ' + page.name"
                 >
@@ -451,9 +455,26 @@ export class PageSidebarComponent {
     return first === '' ? '?' : first.toUpperCase();
   }
 
+  private readonly hoveringAside = signal(false);
+  /** Open menus triggered from the peek — it must outlive them (their triggers live in it). */
+  private readonly openMenuCount = signal(0);
+
   protected onAsideEnter(): void {
+    this.hoveringAside.set(true);
     if (this.collapsed()) {
       this.peek.set(true);
+    }
+  }
+
+  protected onMenuOpened(): void {
+    this.openMenuCount.update((count) => count + 1);
+  }
+
+  protected onMenuClosed(): void {
+    this.openMenuCount.update((count) => Math.max(0, count - 1));
+    // The pointer usually left the aside while the menu was up; catch up now.
+    if (this.openMenuCount() === 0 && !this.hoveringAside() && this.renamingPageId() === null) {
+      this.peek.set(false);
     }
   }
 
@@ -492,9 +513,10 @@ export class PageSidebarComponent {
     return Math.min(400, Math.max(140, Math.round(width)));
   }
 
-  /** A rename in the peek overlay keeps it open until committed/cancelled. */
+  /** A rename or open menu in the peek overlay keeps it open. */
   protected onAsideLeave(): void {
-    if (this.renamingPageId() === null) {
+    this.hoveringAside.set(false);
+    if (this.renamingPageId() === null && this.openMenuCount() === 0) {
       this.peek.set(false);
     }
   }
