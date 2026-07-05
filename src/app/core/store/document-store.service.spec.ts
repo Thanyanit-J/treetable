@@ -532,6 +532,26 @@ describe('DocumentStoreService', () => {
       expect(wealth().charts).toEqual([]);
     });
 
+    it('batches source include/exclude as one undo step, appending in table order', () => {
+      store.addChart(wealth().id, 'bar');
+      const chartId = wealth().charts![0]!.id;
+
+      store.setChartColumnsIncluded(wealth().id, chartId, ['$Yield', '$Rate'], true);
+      expect(wealth().charts![0]!.columns).toEqual(['$Amount', '$Rate', '$Yield']);
+
+      store.undo();
+      expect(wealth().charts![0]!.columns).toEqual(['$Amount']);
+      store.redo();
+
+      // Excluding everything is refused; excluding a real subset is one step.
+      store.setChartColumnsIncluded(wealth().id, chartId, ['$Amount', '$Rate', '$Yield'], false);
+      expect(wealth().charts![0]!.columns).toEqual(['$Amount', '$Rate', '$Yield']);
+      store.setChartColumnsIncluded(wealth().id, chartId, ['$Amount', '$Yield'], false);
+      expect(wealth().charts![0]!.columns).toEqual(['$Rate']);
+      store.undo();
+      expect(wealth().charts![0]!.columns).toEqual(['$Amount', '$Rate', '$Yield']);
+    });
+
     it('re-syncs chart source order when table columns are reordered', () => {
       store.addChart(wealth().id, 'bar');
       const chartId = wealth().charts![0]!.id;

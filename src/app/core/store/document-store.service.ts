@@ -518,37 +518,6 @@ export class DocumentStoreService {
     });
   }
 
-  toggleChartCardColumn(cardId: string, chartId: string, columnRefName: string): void {
-    const card = this.cardById(cardId);
-    if (card?.kind !== 'chartcard') {
-      return;
-    }
-    const source = this.topicById(card.sourceTopicId);
-    this.mutate((document) => {
-      const draft = document.cards.find((candidate) => candidate.id === cardId);
-      if (draft?.kind !== 'chartcard') {
-        return;
-      }
-      const chart = draft.charts.find((candidate) => candidate.id === chartId);
-      if (!chart) {
-        return;
-      }
-      if (chart.columns.includes(columnRefName)) {
-        if (chart.columns.length > 1) {
-          chart.columns = chart.columns.filter((ref) => ref !== columnRefName);
-        }
-        return;
-      }
-      if (
-        source?.columns.some(
-          (column) => column.refName === columnRefName && column.kind !== 'chart',
-        )
-      ) {
-        chart.columns = [...chart.columns, columnRefName];
-      }
-    });
-  }
-
   /** Places a freshly created card as its own stack on the active Page. */
   private placeOnActivePage(document: DocumentV2, cardId: string): void {
     const page =
@@ -758,6 +727,63 @@ export class DocumentStoreService {
     });
   }
 
+  /**
+   * Includes or excludes a batch of source columns as ONE undo step.
+   * Additions append in the source table's order; a chart keeps at least
+   * one source.
+   */
+  setChartColumnsIncluded(
+    ownerCardId: string,
+    chartId: string,
+    refNames: readonly string[],
+    included: boolean,
+  ): void {
+    const owner = this.cardById(ownerCardId);
+    const chart = owner ? this.chartsOf(owner)?.find((c) => c.id === chartId) : undefined;
+    if (!owner || !chart) {
+      return;
+    }
+    const source =
+      owner.kind === 'topic'
+        ? owner
+        : owner.kind === 'chartcard'
+          ? this.topicById(owner.sourceTopicId)
+          : undefined;
+    const targets = new Set(refNames);
+    let next: string[];
+    if (included) {
+      const order = new Map(
+        (source?.columns ?? []).map((column, index) => [column.refName, index]),
+      );
+      const valid = new Set(
+        (source?.columns ?? [])
+          .filter((column) => column.kind !== 'chart')
+          .map((column) => column.refName),
+      );
+      const additions = [...targets]
+        .filter((ref) => valid.has(ref) && !chart.columns.includes(ref))
+        .sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
+      if (additions.length === 0) {
+        return;
+      }
+      next = [...chart.columns, ...additions];
+    } else {
+      next = chart.columns.filter((ref) => !targets.has(ref));
+      if (next.length === chart.columns.length || next.length === 0) {
+        return;
+      }
+    }
+    this.mutate((document) => {
+      const draftOwner = document.cards.find((candidate) => candidate.id === ownerCardId);
+      const draftChart = draftOwner
+        ? this.chartsOf(draftOwner)?.find((candidate) => candidate.id === chartId)
+        : undefined;
+      if (draftChart) {
+        draftChart.columns = next;
+      }
+    });
+  }
+
   renameChart(ownerCardId: string, chartId: string, name: string): void {
     const owner = this.cardById(ownerCardId);
     const chart = owner ? this.chartsOf(owner)?.find((c) => c.id === chartId) : undefined;
@@ -790,16 +816,6 @@ export class DocumentStoreService {
         draftOwner.charts = draftOwner.charts.filter((chart) => chart.id !== chartId);
       }
     });
-  }
-
-  /** Adds/removes a source column on a chart, whichever card owns it. */
-  toggleOwnedChartColumn(ownerCardId: string, chartId: string, columnRefName: string): void {
-    const owner = this.cardById(ownerCardId);
-    if (owner?.kind === 'topic') {
-      this.toggleChartColumn(ownerCardId, chartId, columnRefName);
-    } else if (owner?.kind === 'chartcard') {
-      this.toggleChartCardColumn(ownerCardId, chartId, columnRefName);
-    }
   }
 
   /** Reorders a chart's visible source columns (drag in the Details panel). */
@@ -1795,27 +1811,41 @@ export class DocumentStoreService {
     }
   }
 
-  /** Hides a column from the table (data and formulas keep working). */
-  setColumnHidden(topicId: string, columnId: string, hidden: boolean): void {
+  /**
+   * Hides columns from the table (data and formulas keep working) or shows
+   * them again — a whole batch is ONE undo step. Refused if no visible
+   * column would remain.
+   */
+  setColumnsHidden(topicId: string, columnIds: readonly string[], hidden: boolean): void {
     const topic = this.topicById(topicId);
-    const column = topic?.columns.find((candidate) => candidate.id === columnId);
-    if (!topic || !column || (column.hidden ?? false) === hidden) {
+    if (!topic) {
       return;
     }
-    if (hidden && topic.columns.filter((candidate) => candidate.hidden !== true).length <= 1) {
-      return; // The table keeps at least one visible column.
+    const targets = new Set(columnIds);
+    const changing = new Set(
+      topic.columns
+        .filter((column) => targets.has(column.id) && (column.hidden ?? false) !== hidden)
+        .map((column) => column.id),
+    );
+    if (changing.size === 0) {
+      return;
+    }
+    if (hidden) {
+      const visibleCount = topic.columns.filter((column) => column.hidden !== true).length;
+      if (visibleCount - changing.size < 1) {
+        return; // The table keeps at least one visible column.
+      }
     }
     this.mutate((document) => {
-      const draftColumn = this.findTopic(document, topicId)?.columns.find(
-        (candidate) => candidate.id === columnId,
-      );
-      if (!draftColumn) {
-        return;
-      }
-      if (hidden) {
-        draftColumn.hidden = true;
-      } else {
-        delete draftColumn.hidden;
+      for (const column of this.findTopic(document, topicId)?.columns ?? []) {
+        if (!changing.has(column.id)) {
+          continue;
+        }
+        if (hidden) {
+          column.hidden = true;
+        } else {
+          delete column.hidden;
+        }
       }
     });
   }

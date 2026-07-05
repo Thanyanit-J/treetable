@@ -1,4 +1,3 @@
-import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList } from '@angular/cdk/drag-drop';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -27,6 +26,7 @@ import {
 import { insertReferenceIntoInput } from './formula-ref-insert';
 import { FormulaSuggestService } from './formula-suggest.service';
 import { ConfirmDialogComponent } from './ui/confirm-dialog.component';
+import { VisibilityItem, VisibilityListComponent } from './ui/visibility-list.component';
 
 const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
   sky: 'bg-sky-400',
@@ -45,7 +45,7 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
  */
 @Component({
   selector: 'app-details-panel',
-  imports: [CdkDrag, CdkDragHandle, CdkDropList, ConfirmDialogComponent],
+  imports: [ConfirmDialogComponent, VisibilityListComponent],
   template: `
     <aside
       class="relative flex h-full shrink-0 flex-col border-l border-slate-200 bg-white"
@@ -101,46 +101,16 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
           </fieldset>
           <fieldset class="field">
             <legend>Sources</legend>
-            <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
-              Visible
-            </p>
-            <div cdkDropList (cdkDropListDropped)="onSourceDrop(ctx, $event)">
-              @for (ref of ctx.chart.columns; track ref) {
-                <div cdkDrag [cdkDragData]="ref" class="group/source relative flex items-center">
-                  <button
-                    cdkDragHandle
-                    type="button"
-                    class="flex h-5 w-4 shrink-0 cursor-grab items-center justify-center rounded text-slate-300 hover:bg-slate-100 hover:text-slate-500 focus-visible:outline-2 focus-visible:outline-sky-600"
-                    [attr.aria-label]="'Reorder source ' + sourceLabel(ctx, ref)"
-                  >
-                    <span aria-hidden="true" class="text-[10px] leading-none">⠿</span>
-                  </button>
-                  <label class="flex min-w-0 flex-1 items-center gap-2 py-1 text-sm text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked
-                      [disabled]="ctx.chart.columns.length <= 1"
-                      (change)="store.toggleOwnedChartColumn(ctx.ownerId, ctx.chart.id, ref)"
-                    />
-                    <span class="truncate">{{ sourceLabel(ctx, ref) }}</span>
-                  </label>
-                </div>
-              }
-            </div>
-            <p class="mb-1 mt-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
-              Hidden
-            </p>
-            @for (option of hiddenSources(ctx); track option.refName) {
-              <label class="flex min-w-0 items-center gap-2 py-1 pl-4 text-sm text-slate-500">
-                <input
-                  type="checkbox"
-                  (change)="store.toggleOwnedChartColumn(ctx.ownerId, ctx.chart.id, option.refName)"
-                />
-                <span class="truncate">{{ option.displayName }}</span>
-              </label>
-            } @empty {
-              <p class="pl-4 text-xs text-slate-400">None</p>
-            }
+            <app-visibility-list
+              [visible]="sourceItems(ctx)"
+              [hidden]="hiddenSourceItems(ctx)"
+              [reorderable]="true"
+              (reordered)="
+                store.moveChartColumn(ctx.ownerId, ctx.chart.id, $event.fromIndex, $event.toIndex)
+              "
+              (hideItems)="store.setChartColumnsIncluded(ctx.ownerId, ctx.chart.id, $event, false)"
+              (showItems)="store.setChartColumnsIncluded(ctx.ownerId, ctx.chart.id, $event, true)"
+            />
           </fieldset>
           <button
             type="button"
@@ -255,48 +225,14 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
               </label>
               <fieldset class="field">
                 <legend>Columns</legend>
-                <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
-                  Visible
-                </p>
-                <div cdkDropList (cdkDropListDropped)="onColumnListDrop(topic, $event)">
-                  @for (column of visibleColumns(topic); track column.id) {
-                    <div cdkDrag [cdkDragData]="column.id" class="flex items-center">
-                      <button
-                        cdkDragHandle
-                        type="button"
-                        class="flex h-5 w-4 shrink-0 cursor-grab items-center justify-center rounded text-slate-300 hover:bg-slate-100 hover:text-slate-500 focus-visible:outline-2 focus-visible:outline-sky-600"
-                        [attr.aria-label]="'Reorder column ' + column.displayName"
-                      >
-                        <span aria-hidden="true" class="text-[10px] leading-none">⠿</span>
-                      </button>
-                      <label
-                        class="flex min-w-0 flex-1 items-center gap-2 py-1 text-sm text-slate-700"
-                      >
-                        <input
-                          type="checkbox"
-                          checked
-                          [disabled]="visibleColumns(topic).length <= 1"
-                          (change)="store.setColumnHidden(topic.id, column.id, true)"
-                        />
-                        <span class="truncate">{{ column.displayName }}</span>
-                      </label>
-                    </div>
-                  }
-                </div>
-                <p class="mb-1 mt-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
-                  Hidden
-                </p>
-                @for (column of hiddenColumns(topic); track column.id) {
-                  <label class="flex min-w-0 items-center gap-2 py-1 pl-4 text-sm text-slate-500">
-                    <input
-                      type="checkbox"
-                      (change)="store.setColumnHidden(topic.id, column.id, false)"
-                    />
-                    <span class="truncate">{{ column.displayName }}</span>
-                  </label>
-                } @empty {
-                  <p class="pl-4 text-xs text-slate-400">None</p>
-                }
+                <app-visibility-list
+                  [visible]="columnItems(visibleColumns(topic))"
+                  [hidden]="columnItems(hiddenColumns(topic))"
+                  [reorderable]="true"
+                  (reordered)="store.moveVisibleColumn(topic.id, $event.id, $event.toIndex)"
+                  (hideItems)="store.setColumnsHidden(topic.id, $event, true)"
+                  (showItems)="store.setColumnsHidden(topic.id, $event, false)"
+                />
               </fieldset>
               <button
                 type="button"
@@ -936,18 +872,25 @@ export class DetailsPanelComponent {
     );
   }
 
-  protected onSourceDrop(
-    context: { ownerId: string; chart: ChartConfigV2 },
-    event: CdkDragDrop<unknown>,
-  ): void {
-    if (event.previousIndex !== event.currentIndex) {
-      this.store.moveChartColumn(
-        context.ownerId,
-        context.chart.id,
-        event.previousIndex,
-        event.currentIndex,
-      );
-    }
+  protected sourceItems(context: {
+    chart: ChartConfigV2;
+    sourceTopic: TopicCardV2 | null;
+  }): VisibilityItem[] {
+    return context.chart.columns.map((ref) => ({ id: ref, label: this.sourceLabel(context, ref) }));
+  }
+
+  protected hiddenSourceItems(context: {
+    chart: ChartConfigV2;
+    sourceTopic: TopicCardV2 | null;
+  }): VisibilityItem[] {
+    return this.hiddenSources(context).map((option) => ({
+      id: option.refName,
+      label: option.displayName,
+    }));
+  }
+
+  protected columnItems(columns: ColumnV2[]): VisibilityItem[] {
+    return columns.map((column) => ({ id: column.id, label: column.displayName }));
   }
 
   protected readonly topic = computed<TopicCardV2 | null>(() => {
@@ -1060,13 +1003,6 @@ export class DetailsPanelComponent {
 
   protected hiddenColumns(topic: TopicCardV2): ColumnV2[] {
     return topic.columns.filter((column) => column.hidden === true);
-  }
-
-  protected onColumnListDrop(topic: TopicCardV2, event: CdkDragDrop<unknown>): void {
-    const columnId = event.item.data;
-    if (typeof columnId === 'string' && event.previousIndex !== event.currentIndex) {
-      this.store.moveVisibleColumn(topic.id, columnId, event.currentIndex);
-    }
   }
 
   /** Re-syncing derives the Reference Name from the display name in one step. */
