@@ -65,10 +65,17 @@ interface ChartText {
   label: string;
 }
 
+interface LineSeries {
+  points: string;
+  color: string;
+  markers: { x: number; y: number; label: string }[];
+}
+
 interface RenderedChart {
   config: ChartConfigV2;
   series: { refName: string; displayName: string; color: string }[];
   bars: BarDatum[];
+  lines: LineSeries[];
   gridLines: ChartLine[];
   tickLabels: ChartText[];
   categoryLabels: ChartText[];
@@ -161,6 +168,28 @@ interface RenderedChart {
                   >
                     <title>{{ bar.label }}</title>
                   </rect>
+                }
+                @for (line of chart.lines; track $index) {
+                  <polyline
+                    [attr.points]="line.points"
+                    fill="none"
+                    [attr.stroke]="line.color"
+                    stroke-width="2"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                  />
+                  @for (marker of line.markers; track $index) {
+                    <circle
+                      [attr.cx]="marker.x"
+                      [attr.cy]="marker.y"
+                      r="3"
+                      [attr.fill]="line.color"
+                      (pointermove)="showTip(chart.config.id, marker.label, $event)"
+                      (pointerleave)="hideTip()"
+                    >
+                      <title>{{ marker.label }}</title>
+                    </circle>
+                  }
                 }
                 @for (tick of chart.tickLabels; track $index) {
                   <text
@@ -335,21 +364,36 @@ export class ChartPanelComponent {
         rows.map((node) => this.rowValue(entry.column, node, evaluation, rollup)),
       );
 
+      const categories = rows.map((node) => node.displayName);
       if (config.type === 'pie') {
         return {
           config,
           series,
           missing,
           bars: [],
+          lines: [],
           gridLines: [],
           tickLabels: [],
           categoryLabels: [],
           zeroLine: null,
           ...this.renderPie(
-            rows.map((node) => node.displayName),
+            categories,
             values,
             series.map((entry) => entry.displayName),
           ),
+        };
+      }
+
+      const legend = series.map((entry) => ({ color: entry.color, label: entry.displayName }));
+      if (config.type === 'line') {
+        return {
+          config,
+          series,
+          missing,
+          slices: [],
+          bars: [],
+          legend,
+          ...this.renderLine(categories, values, series),
         };
       }
 
@@ -358,12 +402,9 @@ export class ChartPanelComponent {
         series,
         missing,
         slices: [],
-        legend: series.map((entry) => ({ color: entry.color, label: entry.displayName })),
-        ...this.renderBars(
-          rows.map((node) => node.displayName),
-          values,
-          series,
-        ),
+        lines: [],
+        legend,
+        ...this.renderBars(categories, values, series),
       };
     });
   });
@@ -421,7 +462,8 @@ export class ChartPanelComponent {
     if (chart.config.name !== undefined) {
       return chart.config.name;
     }
-    return `${chart.config.type === 'pie' ? 'Pie' : 'Bar'} · ${this.chartTitle(chart)}`;
+    const kind = { bar: 'Bar', line: 'Line', pie: 'Pie' }[chart.config.type];
+    return `${kind} · ${this.chartTitle(chart)}`;
   }
 
   private renderBars(
@@ -476,6 +518,55 @@ export class ChartPanelComponent {
       },
       categoryLabels: categories.map((label, index) => ({
         x: BAR_MARGIN.left + index * groupWidth + groupWidth / 2,
+        y: BAR_HEIGHT - 8,
+        anchor: 'middle' as const,
+        label: label.length > 8 ? `${label.slice(0, 7)}…` : label,
+      })),
+    };
+  }
+
+  /** One polyline per series over shared category positions. */
+  private renderLine(
+    categories: string[],
+    values: number[][],
+    series: { color: string; displayName: string }[],
+  ): Pick<RenderedChart, 'lines' | 'gridLines' | 'tickLabels' | 'categoryLabels' | 'zeroLine'> {
+    const plotWidth = BAR_WIDTH - BAR_MARGIN.left - BAR_MARGIN.right;
+    const plotHeight = BAR_HEIGHT - BAR_MARGIN.top - BAR_MARGIN.bottom;
+    if (categories.length === 0 || series.length === 0) {
+      return { lines: [], gridLines: [], tickLabels: [], categoryLabels: [], zeroLine: null };
+    }
+
+    const all = values.flat();
+    const min = Math.min(0, ...all);
+    const max = Math.max(0, ...all);
+    const range = max - min || 1;
+    const yOf = (value: number): number => BAR_MARGIN.top + ((max - value) / range) * plotHeight;
+    const axis = this.valueAxis(min, max, yOf);
+    const groupWidth = plotWidth / categories.length;
+    const xOf = (index: number): number => BAR_MARGIN.left + index * groupWidth + groupWidth / 2;
+
+    const lines: LineSeries[] = values.map((seriesValues, seriesIndex) => ({
+      color: series[seriesIndex]?.color ?? SERIES_COLORS[0]!,
+      points: seriesValues.map((value, index) => `${xOf(index)},${yOf(value)}`).join(' '),
+      markers: seriesValues.map((value, index) => ({
+        x: xOf(index),
+        y: yOf(value),
+        label: `${categories[index]} — ${series[seriesIndex]?.displayName}: ${formatNumericValue(value)}`,
+      })),
+    }));
+
+    return {
+      lines,
+      ...axis,
+      zeroLine: {
+        x1: BAR_MARGIN.left,
+        y1: yOf(0),
+        x2: BAR_MARGIN.left + plotWidth,
+        y2: yOf(0),
+      },
+      categoryLabels: categories.map((label, index) => ({
+        x: xOf(index),
         y: BAR_HEIGHT - 8,
         anchor: 'middle' as const,
         label: label.length > 8 ? `${label.slice(0, 7)}…` : label,

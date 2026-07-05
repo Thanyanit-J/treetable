@@ -94,6 +94,14 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
               <button
                 type="button"
                 class="choice"
+                [class.choice-active]="ctx.chart.type === 'line'"
+                (click)="store.setChartType(ctx.ownerId, ctx.chart.id, 'line')"
+              >
+                Line
+              </button>
+              <button
+                type="button"
+                class="choice"
                 [class.choice-active]="ctx.chart.type === 'pie'"
                 (click)="store.setChartType(ctx.ownerId, ctx.chart.id, 'pie')"
               >

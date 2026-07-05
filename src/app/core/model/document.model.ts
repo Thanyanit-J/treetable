@@ -51,7 +51,7 @@ export interface NodeV2 {
   values: Record<string, string>;
 }
 
-export type ChartType = 'bar' | 'pie';
+export type ChartType = 'bar' | 'line' | 'pie';
 
 export interface ChartConfigV2 {
   id: string;

@@ -280,7 +280,7 @@ export class PersistenceService {
     }
     const chart: ChartConfigV2 = {
       id: typeof config.id === 'string' && config.id.length > 0 ? config.id : makeId('chart'),
-      type: config.type === 'pie' ? 'pie' : 'bar',
+      type: config.type === 'pie' || config.type === 'line' ? config.type : 'bar',
       columns,
     };
     if (typeof config.name === 'string' && config.name.trim().length > 0) {
