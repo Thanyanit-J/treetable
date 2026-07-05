@@ -19,6 +19,7 @@ import {
   DocumentViewState,
   ImportResult,
   NodeV2,
+  NoteFormat,
   PageV2,
   PillAlignment,
   RollupMode,
@@ -467,6 +468,19 @@ export class DocumentStoreService {
       const draft = document.cards.find((candidate) => candidate.id === cardId);
       if (draft?.kind === 'note') {
         draft.text = text;
+      }
+    });
+  }
+
+  setNoteFormat(cardId: string, format: NoteFormat): void {
+    const card = this.cardById(cardId);
+    if (card?.kind !== 'note' || (card.format ?? 'text') === format) {
+      return;
+    }
+    this.mutate((document) => {
+      const draft = document.cards.find((candidate) => candidate.id === cardId);
+      if (draft?.kind === 'note') {
+        draft.format = format;
       }
     });
   }

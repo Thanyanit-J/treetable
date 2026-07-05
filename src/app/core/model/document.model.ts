@@ -86,11 +86,15 @@ export interface TopicCardV2 {
   connectorStyle?: ConnectorStyle;
 }
 
+export type NoteFormat = 'text' | 'markdown';
+
 /** Free-text card — no data, no references. */
 export interface NoteCardV2 {
   kind: 'note';
   id: string;
   text: string;
+  /** Plain text (default) or rendered markdown. */
+  format?: NoteFormat;
 }
 
 /** Charts over another card's Leaves, living anywhere in the Document. */

@@ -212,12 +212,16 @@ export class PersistenceService {
       return null;
     }
     const candidate = input as Partial<NoteCardV2>;
-    return {
+    const note: NoteCardV2 = {
       kind: 'note',
       id:
         typeof candidate.id === 'string' && candidate.id.length > 0 ? candidate.id : makeId('note'),
       text: typeof candidate.text === 'string' ? candidate.text : '',
     };
+    if (candidate.format === 'markdown') {
+      note.format = 'markdown';
+    }
+    return note;
   }
 
   private normalizeChartCard(

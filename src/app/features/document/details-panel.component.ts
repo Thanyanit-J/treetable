@@ -653,7 +653,32 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
           @switch (card.kind) {
             @case ('note') {
               <p class="section-label">Note</p>
-              <p class="text-sm text-slate-600">A free-text card.</p>
+              <fieldset class="field">
+                <legend>Format</legend>
+                <div class="flex gap-1">
+                  <button
+                    type="button"
+                    class="choice"
+                    [class.choice-active]="(card.format ?? 'text') === 'text'"
+                    (click)="store.setNoteFormat(card.id, 'text')"
+                  >
+                    Text
+                  </button>
+                  <button
+                    type="button"
+                    class="choice"
+                    [class.choice-active]="card.format === 'markdown'"
+                    (click)="store.setNoteFormat(card.id, 'markdown')"
+                  >
+                    Markdown
+                  </button>
+                </div>
+              </fieldset>
+              @if (card.format === 'markdown') {
+                <p class="text-xs text-slate-400">
+                  Supports # headings, **bold**, *italic*, \`code\`, - lists and links.
+                </p>
+              }
               <button type="button" class="danger-button" (click)="store.removeCard(card.id)">
                 Delete note
               </button>
