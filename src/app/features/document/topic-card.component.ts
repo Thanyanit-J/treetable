@@ -367,14 +367,18 @@ export class TopicCardComponent {
     this.cardHeight.set(Math.min(MAX_CARD_HEIGHT, Math.max(MIN_CARD_HEIGHT, current + delta)));
   }
 
-  /** Shrinks (never enlarges) the lattice to the card's available width. */
+  /** Zooms the lattice (shrink or enlarge) to fill the card's visible width. */
   protected fitToCard(): void {
-    const lattice = this.zoomSurfaceRef().nativeElement.firstElementChild as HTMLElement | null;
-    const card = this.cardRootRef().nativeElement;
-    if (!lattice || lattice.offsetWidth === 0) {
+    const surface = this.zoomSurfaceRef().nativeElement;
+    const viewport = surface.parentElement;
+    // app-lattice is an inline host (offsetWidth 0); measure its block root.
+    const content = surface.querySelector<HTMLElement>('app-lattice > div');
+    if (!viewport || !content || content.offsetWidth === 0) {
       return;
     }
-    const fit = Math.min(1, card.clientWidth / lattice.offsetWidth);
-    this.zoom.set(Math.max(MIN_ZOOM, Math.round(fit * 100) / 100));
+    // offsetWidth is in layout units (unaffected by the surface's CSS zoom),
+    // clientWidth is outside the zoom — their ratio IS the fitting zoom.
+    const fit = viewport.clientWidth / content.offsetWidth;
+    this.zoom.set(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.floor(fit * 100) / 100)));
   }
 }
