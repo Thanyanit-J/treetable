@@ -30,6 +30,7 @@ import {
   ConnectorStyle,
   NodeV2,
   TopicCardV2,
+  clampColumnWidth,
   collectLeaves,
   findNodeAndParent,
   moveNodeInTopic,
@@ -59,12 +60,10 @@ interface ConnectorPath {
   selector: 'app-lattice',
   imports: [CdkContextMenuTrigger, CdkMenu, CdkMenuItem, CdkMenuTrigger, NodePillComponent],
   template: `
-    <div #latticeRoot class="relative" [class.w-max]="!wrapCells()">
+    <div #latticeRoot class="relative w-max">
       <div
         role="treegrid"
-        class="grid"
-        [class.w-max]="!wrapCells()"
-        [class.w-full]="wrapCells()"
+        class="grid w-max"
         [style.grid-template-columns]="gridTemplateColumns()"
         [attr.aria-label]="topic().displayName + ' tree-table'"
         [attr.aria-colcount]="columnCount()"
@@ -147,6 +146,21 @@ interface ConnectorPath {
                   <span aria-hidden="true" class="text-xs leading-none">⋯</span>
                 </button>
               </div>
+              <!-- Column width handle on the header's right edge. -->
+              <button
+                type="button"
+                class="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none hover:bg-sky-300/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+                [attr.aria-label]="
+                  'Resize column ' +
+                  column.displayName +
+                  ' (drag, or arrow keys; double-click fits content)'
+                "
+                (pointerdown)="startColumnResize(column, $event)"
+                (dblclick)="store.setColumnWidth(topic().id, column.id, null)"
+                (keydown.arrowleft)="nudgeColumnWidth(column, $event, -16)"
+                (keydown.arrowright)="nudgeColumnWidth(column, $event, 16)"
+                (click)="$event.stopPropagation()"
+              ></button>
             </div>
           }
         </div>
@@ -204,7 +218,7 @@ interface ConnectorPath {
                 <div
                   role="gridcell"
                   class="border-b border-r border-slate-200 p-0"
-                  [class.overflow-hidden]="wrapCells()"
+                  [class.overflow-hidden]="column.width !== undefined"
                   [class.border-l]="columnIndex === 0"
                   [class.bg-sky-50]="
                     (selectedNodeId() === row.nodeId || isColumnSelected(column)) &&
@@ -278,9 +292,9 @@ interface ConnectorPath {
                     <div
                       tabindex="0"
                       class="h-full min-h-9 w-full min-w-24 cursor-default px-2 py-1.5 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
-                      [class.truncate]="!wrapCells()"
-                      [class.max-w-72]="!wrapCells()"
-                      [class.break-words]="wrapCells()"
+                      [class.truncate]="column.wrap !== true"
+                      [class.max-w-72]="!column.width"
+                      [class.break-words]="column.wrap === true"
                       [class.text-right]="
                         column.kind === 'computed' || column.valueType === 'number'
                       "
@@ -638,17 +652,81 @@ export class LatticeComponent {
   // Grid geometry (integers only)
   // -------------------------------------------------------------------------
 
-  /** 'wrap' sizing: the table fills the card's width and cell text wraps. */
-  protected readonly wrapCells = computed(() => this.topic().sizing?.mode === 'wrap');
+  /** Live width override while a header-edge drag is in flight. */
+  protected readonly resizingColumn = signal<{ id: string; width: number } | null>(null);
 
   protected readonly gridTemplateColumns = computed(() => {
     const tree = `repeat(${this.lattice().depthCount}, max-content)`;
-    // Wrapping shares the available width between data columns instead of
-    // letting them grow to their content.
-    const dataSize = this.wrapCells() ? 'minmax(6rem, 1fr)' : 'minmax(6rem, max-content)';
-    const data = `repeat(${Math.max(1, this.renderColumns().length)}, ${dataSize})`;
-    return `${tree} ${data}`;
+    const resizing = this.resizingColumn();
+    const data = this.renderColumns()
+      .map((column) => {
+        const width = resizing?.id === column.id ? resizing.width : column.width;
+        return width !== undefined ? `${width}px` : 'minmax(6rem, max-content)';
+      })
+      .join(' ');
+    return `${tree} ${data || 'minmax(6rem, max-content)'}`;
   });
+
+  /**
+   * Header-edge drag: live preview via resizingColumn, one undo step on
+   * release. Pointer deltas are screen px — divide by the rendered/layout
+   * ratio so widths stay in layout units under card zoom.
+   */
+  protected startColumnResize(column: ColumnV2, event: PointerEvent): void {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const handle = event.currentTarget as HTMLElement;
+    try {
+      handle.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer already released.
+    }
+    const header = handle.closest<HTMLElement>('[data-header-col]');
+    const startWidth = column.width ?? header?.offsetWidth ?? 96;
+    const scale =
+      header && header.offsetWidth > 0
+        ? header.getBoundingClientRect().width / header.offsetWidth
+        : 1;
+    const startX = event.clientX;
+
+    const onMove = (moveEvent: PointerEvent): void => {
+      const width = clampColumnWidth(startWidth + (moveEvent.clientX - startX) / scale);
+      this.resizingColumn.set({ id: column.id, width });
+    };
+    const cleanup = (): void => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onCancel);
+    };
+    const onUp = (): void => {
+      cleanup();
+      const result = this.resizingColumn();
+      if (result) {
+        this.store.setColumnWidth(this.topic().id, column.id, result.width);
+      }
+      this.resizingColumn.set(null);
+    };
+    const onCancel = (): void => {
+      cleanup();
+      this.resizingColumn.set(null);
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onCancel);
+  }
+
+  protected nudgeColumnWidth(column: ColumnV2, event: Event, delta: number): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const header = this.latticeRootRef().nativeElement.querySelector<HTMLElement>(
+      `[data-header-col="${column.id}"]`,
+    );
+    const current = column.width ?? header?.offsetWidth ?? 96;
+    this.store.setColumnWidth(this.topic().id, column.id, current + delta);
+  }
 
   protected readonly columnCount = computed(
     () => this.lattice().depthCount + this.renderColumns().length,

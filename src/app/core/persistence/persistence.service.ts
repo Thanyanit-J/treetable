@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import {
   ACCENT_COLORS,
   AccentColor,
+  CardSizingV2,
   CardStackV2,
   CardV2,
   ChartCardV2,
@@ -17,6 +18,7 @@ import {
   TopicCardV2,
   clampCardHeight,
   clampCardWidth,
+  clampColumnWidth,
   makeId,
   normalizeDocumentLayout,
   walkNodes,
@@ -470,15 +472,17 @@ export class PersistenceService {
     }
     const sizing = (candidate as { sizing?: unknown }).sizing;
     if (sizing && typeof sizing === 'object') {
-      const { mode, width, height } = sizing as Record<string, unknown>;
-      if (mode === 'wrap' || mode === 'fixed') {
-        card.sizing = { mode };
-        if (typeof width === 'number' && Number.isFinite(width)) {
-          card.sizing.width = clampCardWidth(width);
-        }
-        if (typeof height === 'number' && Number.isFinite(height)) {
-          card.sizing.height = clampCardHeight(height);
-        }
+      // Earlier documents carried a sizing.mode; only the dimensions remain.
+      const { width, height } = sizing as Record<string, unknown>;
+      const next: CardSizingV2 = {};
+      if (typeof width === 'number' && Number.isFinite(width)) {
+        next.width = clampCardWidth(width);
+      }
+      if (typeof height === 'number' && Number.isFinite(height)) {
+        next.height = clampCardHeight(height);
+      }
+      if (next.width !== undefined || next.height !== undefined) {
+        card.sizing = next;
       }
     }
     return card;
@@ -541,6 +545,12 @@ export class PersistenceService {
     }
     if (candidate.hidden === true) {
       column.hidden = true;
+    }
+    if (typeof candidate.width === 'number' && Number.isFinite(candidate.width)) {
+      column.width = clampColumnWidth(candidate.width);
+    }
+    if (candidate.wrap === true) {
+      column.wrap = true;
     }
     return column;
   }

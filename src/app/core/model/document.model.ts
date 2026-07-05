@@ -36,6 +36,17 @@ export interface ColumnV2 {
   chartSource?: string | null;
   /** Hidden from the table presentation; data and formulas keep working. */
   hidden?: boolean;
+  /** Explicit column width in layout px (drag the header edge); absent = size to content. */
+  width?: number;
+  /** Cell text wraps (rows grow) instead of clipping when the column is narrow. */
+  wrap?: true;
+}
+
+export const COLUMN_MIN_WIDTH = 48;
+export const COLUMN_MAX_WIDTH = 960;
+
+export function clampColumnWidth(width: number): number {
+  return Math.min(COLUMN_MAX_WIDTH, Math.max(COLUMN_MIN_WIDTH, Math.round(width)));
 }
 
 export interface NodeV2 {
@@ -83,17 +94,11 @@ export type PillAlignment = 'center' | 'top';
 export type ConnectorStyle = 'elbow' | 'straight' | 'curved';
 
 /**
- * How the card tracks its table's size:
- * - 'grow'  (default, stored as absent) — the card hugs the table and widens
- *   as content grows.
- * - 'wrap'  — the width is fixed; cell text wraps and the table grows down.
- * - 'fixed' — width and height are fixed; overflowing content scrolls inside.
+ * Explicit card size (dragging a card border sets it): a fixed dimension
+ * stops following content and overflow scrolls inside. Absent dimensions —
+ * and an absent sizing altogether — keep hugging the content.
  */
-export type CardSizingMode = 'grow' | 'wrap' | 'fixed';
-
 export interface CardSizingV2 {
-  mode: Exclude<CardSizingMode, 'grow'>;
-  /** Explicit size in CSS px; a missing dimension keeps following content. */
   width?: number;
   height?: number;
 }

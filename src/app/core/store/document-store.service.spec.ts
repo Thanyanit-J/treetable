@@ -780,45 +780,19 @@ describe('DocumentStoreService', () => {
   });
 
   describe('card sizing', () => {
-    it('stores a sizing mode and clears it on grow', () => {
-      store.setCardSizingMode(wealth().id, 'wrap');
-      expect(wealth().sizing).toEqual({ mode: 'wrap' });
-
-      store.setCardSizingMode(wealth().id, 'grow');
-      expect(wealth().sizing).toBeUndefined();
-    });
-
-    it('ignores a repeat of the current mode (no history step)', () => {
-      store.setCardSizingMode(wealth().id, 'grow');
-      expect(store.canUndo()).toBe(false);
-    });
-
-    it('fixes a grow card when a dimension is dragged, clamped to bounds', () => {
+    it('fixes a dragged dimension, clamped to bounds', () => {
       store.setCardSize(wealth().id, { width: 5000 });
-      expect(wealth().sizing).toEqual({ mode: 'fixed', width: 1600 });
+      expect(wealth().sizing).toEqual({ width: 1600 });
 
       store.setCardSize(wealth().id, { height: 12 });
-      expect(wealth().sizing).toEqual({ mode: 'fixed', width: 1600, height: 160 });
+      expect(wealth().sizing).toEqual({ width: 1600, height: 160 });
 
       store.undo();
       store.undo();
       expect(wealth().sizing).toBeUndefined();
     });
 
-    it('keeps dimensions across mode switches', () => {
-      store.setCardSize(wealth().id, { width: 480 });
-      store.setCardSizingMode(wealth().id, 'wrap');
-      expect(wealth().sizing).toEqual({ mode: 'wrap', width: 480 });
-    });
-
-    it('releasing the width of a wrap card ends wrapping', () => {
-      store.setCardSizingMode(wealth().id, 'wrap');
-      store.setCardSize(wealth().id, { width: 480, height: 400 });
-      store.setCardSize(wealth().id, { width: null });
-      expect(wealth().sizing).toEqual({ mode: 'fixed', height: 400 });
-    });
-
-    it('releasing every dimension of a fixed card returns it to grow', () => {
+    it('releasing every dimension returns the card to grow-with-content', () => {
       store.setCardSize(wealth().id, { width: 480, height: 400 });
       store.setCardSize(wealth().id, { width: null, height: null });
       expect(wealth().sizing).toBeUndefined();
@@ -831,6 +805,32 @@ describe('DocumentStoreService', () => {
       store.undo();
       expect(steps).toBe(true);
       expect(wealth().sizing).toBeUndefined();
+    });
+  });
+
+  describe('column sizing', () => {
+    it('stores a dragged width (clamped) and releases back to auto', () => {
+      const column = amountColumn();
+      store.setColumnWidth(wealth().id, column.id, 20);
+      expect(amountColumn().width).toBe(48);
+
+      store.setColumnWidth(wealth().id, column.id, 240);
+      expect(amountColumn().width).toBe(240);
+
+      store.setColumnWidth(wealth().id, column.id, null);
+      expect(amountColumn().width).toBeUndefined();
+    });
+
+    it('toggles wrap sparsely with no-op guards', () => {
+      const column = amountColumn();
+      store.setColumnWrap(wealth().id, column.id, false); // already clipping
+      expect(store.canUndo()).toBe(false);
+
+      store.setColumnWrap(wealth().id, column.id, true);
+      expect(amountColumn().wrap).toBe(true);
+
+      store.setColumnWrap(wealth().id, column.id, false);
+      expect(amountColumn().wrap).toBeUndefined();
     });
   });
 

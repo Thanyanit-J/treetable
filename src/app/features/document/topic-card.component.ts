@@ -205,27 +205,16 @@ export class TopicCardComponent {
   protected readonly zoom = signal(1);
   protected readonly zoomPercent = computed(() => `${Math.round(this.zoom() * 100)}%`);
 
-  private readonly sizing = computed(() => this.topic().sizing ?? null);
   /** Live override while a border drag is in flight; persisted on release. */
   private readonly dragWidth = signal<number | null>(null);
   private readonly dragHeight = signal<number | null>(null);
-  /**
-   * Entering a sizing mode fixes dimensions the user may not have dragged
-   * yet; those freeze at the card's rendered size, captured after render.
-   */
-  private readonly frozenWidth = signal<number | null>(null);
-  private readonly frozenHeight = signal<number | null>(null);
 
-  protected readonly cardWidth = computed(() => {
-    const sizing = this.sizing();
-    return this.dragWidth() ?? sizing?.width ?? (sizing ? this.frozenWidth() : null);
-  });
-  protected readonly cardHeight = computed(() => {
-    const sizing = this.sizing();
-    return (
-      this.dragHeight() ?? sizing?.height ?? (sizing?.mode === 'fixed' ? this.frozenHeight() : null)
-    );
-  });
+  protected readonly cardWidth = computed(
+    () => this.dragWidth() ?? this.topic().sizing?.width ?? null,
+  );
+  protected readonly cardHeight = computed(
+    () => this.dragHeight() ?? this.topic().sizing?.height ?? null,
+  );
   protected readonly editingTitle = signal(false);
   protected readonly cardTitle = computed(() => this.topic().cardTitle ?? this.topic().displayName);
   protected readonly cardSelected = computed(() => {
@@ -247,22 +236,6 @@ export class TopicCardComponent {
         const input = this.titleInputRef()?.nativeElement;
         input?.focus();
         input?.select();
-      }
-    });
-    // Freeze un-dragged dimensions of a sizing mode at the rendered size —
-    // once per mode entry, so 'Fixed width' really stops following content.
-    afterRenderEffect(() => {
-      const sizing = this.sizing();
-      const root = this.cardRootRef().nativeElement;
-      if (!sizing || sizing.width !== undefined) {
-        this.frozenWidth.set(null);
-      } else if (this.frozenWidth() === null) {
-        this.frozenWidth.set(root.offsetWidth);
-      }
-      if (sizing?.mode !== 'fixed' || sizing.height !== undefined) {
-        this.frozenHeight.set(null);
-      } else if (this.frozenHeight() === null) {
-        this.frozenHeight.set(root.offsetHeight);
       }
     });
   }

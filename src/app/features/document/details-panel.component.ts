@@ -9,7 +9,6 @@ import {
 import {
   ACCENT_COLORS,
   AccentColor,
-  CardSizingMode,
   ChartCardV2,
   ChartConfigV2,
   ChartRowRollup,
@@ -327,19 +326,6 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                 />
                 Show root node
               </label>
-              <label class="field">
-                <span>Table sizing</span>
-                <select
-                  class="field-input"
-                  [value]="topic.sizing?.mode ?? 'grow'"
-                  (change)="commitCardSizingMode(topic, $event)"
-                >
-                  <option value="grow">Grow with content</option>
-                  <option value="wrap">Fixed width — wrap text</option>
-                  <option value="fixed">Fixed size — scroll inside</option>
-                </select>
-              </label>
-              <p class="text-xs text-slate-400">{{ sizingHint(topic) }}</p>
               <fieldset class="field">
                 <legend>Columns</legend>
                 <app-visibility-list
@@ -611,6 +597,33 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                       <option value="count">Count</option>
                     </select>
                   </label>
+                  <fieldset class="field">
+                    <legend>When text overflows</legend>
+                    <div class="flex gap-1">
+                      <button
+                        type="button"
+                        class="choice"
+                        [class.choice-active]="column.wrap !== true"
+                        (click)="store.setColumnWrap(topic.id, column.id, false)"
+                      >
+                        Clip
+                      </button>
+                      <button
+                        type="button"
+                        class="choice"
+                        [class.choice-active]="column.wrap === true"
+                        (click)="store.setColumnWrap(topic.id, column.id, true)"
+                      >
+                        Wrap
+                      </button>
+                    </div>
+                    <p class="mt-1 text-xs text-slate-400">
+                      Drag a column header's right edge to set its width; double-click the edge to
+                      fit content again{{
+                        column.width ? ' (currently ' + column.width + 'px)' : ''
+                      }}.
+                    </p>
+                  </fieldset>
                 }
                 <button type="button" class="danger-button" (click)="deleteColumn(topic, column)">
                   Delete column
@@ -1172,22 +1185,6 @@ export class DetailsPanelComponent {
 
   protected toggleShowRoot(topic: TopicCardV2, event: Event): void {
     this.store.setShowRoot(topic.id, (event.target as HTMLInputElement).checked);
-  }
-
-  protected commitCardSizingMode(topic: TopicCardV2, event: Event): void {
-    const mode = (event.target as HTMLSelectElement).value as CardSizingMode;
-    this.store.setCardSizingMode(topic.id, mode);
-  }
-
-  protected sizingHint(topic: TopicCardV2): string {
-    switch (topic.sizing?.mode ?? 'grow') {
-      case 'wrap':
-        return 'Cell text wraps at the card width; the table grows downward.';
-      case 'fixed':
-        return 'Overflowing content scrolls inside the card.';
-      default:
-        return 'The card widens as the table grows. Dragging a card border fixes its size.';
-    }
   }
 
   protected visibleColumns(topic: TopicCardV2): ColumnV2[] {

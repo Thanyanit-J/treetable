@@ -9,7 +9,6 @@ import {
 import { computeTopicLattice, hiddenLeavesOf } from '../lattice/lattice-layout';
 import {
   AccentColor,
-  CardSizingMode,
   CardSizingV2,
   CardV2,
   ChartCardV2,
@@ -29,6 +28,7 @@ import {
   TopicCardV2,
   clampCardHeight,
   clampCardWidth,
+  clampColumnWidth,
   cloneDocument,
   collectLeaves,
   createInputColumn,
@@ -1473,6 +1473,49 @@ export class DocumentStoreService {
     this.setColumnsRollup(topicId, [columnId], rollup);
   }
 
+  /** Persists a header-edge drag; `null` releases the column back to auto width. */
+  setColumnWidth(topicId: string, columnId: string, width: number | null): void {
+    const column = this.topicById(topicId)?.columns.find((entry) => entry.id === columnId);
+    const next = width === null ? undefined : clampColumnWidth(width);
+    if (!column || column.width === next) {
+      return;
+    }
+    this.mutate((document) => {
+      const draft = this.findTopic(document, topicId)?.columns.find(
+        (entry) => entry.id === columnId,
+      );
+      if (!draft) {
+        return;
+      }
+      if (next === undefined) {
+        delete draft.width;
+      } else {
+        draft.width = next;
+      }
+    });
+  }
+
+  /** Wrap cell text (rows grow) instead of clipping when the column is narrow. */
+  setColumnWrap(topicId: string, columnId: string, wrap: boolean): void {
+    const column = this.topicById(topicId)?.columns.find((entry) => entry.id === columnId);
+    if (!column || (column.wrap ?? false) === wrap) {
+      return;
+    }
+    this.mutate((document) => {
+      const draft = this.findTopic(document, topicId)?.columns.find(
+        (entry) => entry.id === columnId,
+      );
+      if (!draft) {
+        return;
+      }
+      if (wrap) {
+        draft.wrap = true;
+      } else {
+        delete draft.wrap;
+      }
+    });
+  }
+
   /** Sets the Summary of several columns at once — ONE undo step. */
   setColumnsRollup(topicId: string, columnIds: readonly string[], rollup: RollupMode): void {
     const topic = this.topicById(topicId);
@@ -2155,30 +2198,9 @@ export class DocumentStoreService {
     });
   }
 
-  setCardSizingMode(topicId: string, mode: CardSizingMode): void {
-    const current = this.topicById(topicId);
-    if (!current || (current.sizing?.mode ?? 'grow') === mode) {
-      return;
-    }
-    this.mutate((document) => {
-      const topic = this.findTopic(document, topicId);
-      if (!topic) {
-        return;
-      }
-      if (mode === 'grow') {
-        delete topic.sizing;
-      } else {
-        // Dimensions survive mode switches; the card fills in a missing
-        // width/height from its rendered size.
-        topic.sizing = { ...topic.sizing, mode };
-      }
-    });
-  }
-
   /**
-   * Persists a border-drag or nudge. `null` releases a dimension. Setting a
-   * dimension on a grow card makes it 'fixed' (size stops following content);
-   * releasing the width of a 'wrap' card ends wrapping too.
+   * Persists a card border-drag or nudge. `null` releases a dimension back
+   * to following content; a fixed dimension scrolls its overflow inside.
    */
   setCardSize(topicId: string, size: { width?: number | null; height?: number | null }): void {
     const current = this.topicById(topicId);
@@ -2597,21 +2619,17 @@ export class DocumentStoreService {
 
 /**
  * Applies a size change to a card's sizing state. Width and height are
- * clamped; `null` releases the dimension. A released width ends 'wrap' mode
- * (nothing left to wrap against); a sizing with no fixed dimension left in
- * 'fixed' mode collapses back to grow-with-content (undefined).
+ * clamped; `null` releases the dimension; with no fixed dimension left the
+ * sizing collapses back to grow-with-content (undefined).
  */
 function nextCardSizing(
   current: CardSizingV2 | undefined,
   size: { width?: number | null; height?: number | null },
 ): CardSizingV2 | undefined {
-  const sizing: CardSizingV2 = { mode: 'fixed', ...current };
+  const sizing: CardSizingV2 = { ...current };
   if (size.width !== undefined) {
     if (size.width === null) {
       delete sizing.width;
-      if (sizing.mode === 'wrap') {
-        sizing.mode = 'fixed';
-      }
     } else {
       sizing.width = clampCardWidth(size.width);
     }
@@ -2623,7 +2641,7 @@ function nextCardSizing(
       sizing.height = clampCardHeight(size.height);
     }
   }
-  if (sizing.mode === 'fixed' && sizing.width === undefined && sizing.height === undefined) {
+  if (sizing.width === undefined && sizing.height === undefined) {
     return undefined;
   }
   return sizing;
