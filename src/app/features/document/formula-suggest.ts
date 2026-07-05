@@ -29,8 +29,9 @@ export interface FormulaSuggestion {
 }
 
 const TOKEN_CHAR = /[\w$.]/;
-const DOT_METHODS = ['sum', 'avg', 'min', 'max', 'count', 'counta', 'countblank'];
-const MAX_SUGGESTIONS = 8;
+const DOT_METHODS = [...AGGREGATE_FUNCTIONS, ...COUNT_FUNCTIONS].map((name) => name.toLowerCase());
+// The overlay scrolls (max-h with overflow), so the cap only guards absurdity.
+const MAX_SUGGESTIONS = 40;
 
 /** The dotted token ending at `caret`, or null when the value is no formula. */
 export function formulaTokenAt(
@@ -68,7 +69,7 @@ export function suggestForToken(
 
   const candidates =
     segments.length === 0
-      ? rootCandidates(document, topic, last.length > 0)
+      ? rootCandidates(document, topic)
       : scopedCandidates(document, topic, segments);
 
   const prefix = last.toLowerCase();
@@ -81,20 +82,10 @@ export function suggestForToken(
   return matches;
 }
 
-/** On an empty token only these show — the cap would otherwise fill with functions. */
-const EMPTY_TOKEN_FUNCTIONS = ['SUM', 'AVG', 'MIN', 'MAX', 'COUNT', 'COUNTA', 'COUNTBLANK'];
-
 /** Unqualified position: functions first, then columns, nodes, other topics. */
-function rootCandidates(
-  document: DocumentV2,
-  topic: TopicCardV2,
-  allFunctions: boolean,
-): FormulaSuggestion[] {
+function rootCandidates(document: DocumentV2, topic: TopicCardV2): FormulaSuggestion[] {
   const out: FormulaSuggestion[] = [];
-  const names = allFunctions
-    ? [...AGGREGATE_FUNCTIONS, ...COUNT_FUNCTIONS, ...SCALAR_FUNCTIONS.keys()]
-    : EMPTY_TOKEN_FUNCTIONS;
-  for (const name of names) {
+  for (const name of [...AGGREGATE_FUNCTIONS, ...COUNT_FUNCTIONS, ...SCALAR_FUNCTIONS.keys()]) {
     out.push({ label: `${name}(…)`, detail: 'function', insert: `${name}()`, caretShift: -1 });
   }
   for (const column of topic.columns) {

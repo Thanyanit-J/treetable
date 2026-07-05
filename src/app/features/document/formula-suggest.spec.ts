@@ -74,13 +74,15 @@ describe('suggestForToken', () => {
     expect(labels('topic_wealth', 'me')).toEqual(['MEDIAN(…)']);
   });
 
-  it('lists functions before references on an empty token (Ctrl+I)', () => {
-    // Only the core set shows unprefixed — the full catalog would fill the
-    // cap and push every reference out of the list.
+  it('lists every function, then references, on an empty token (Ctrl+I)', () => {
+    // The overlay scrolls, so the whole catalog is browsable unprefixed.
     const all = labels('topic_wealth', '');
     expect(all[0]).toBe('SUM(…)');
-    expect(all).toHaveLength(8);
+    expect(all).toContain('MEDIAN(…)');
+    expect(all).toContain('SQRT(…)');
+    expect(all).toContain('CLAMP(…)');
     expect(all).toContain('$Amount');
+    expect(all.indexOf('CLAMP(…)')).toBeLessThan(all.indexOf('$Amount'));
   });
 
   it('never suggests chart columns', () => {
@@ -107,6 +109,8 @@ describe('suggestForToken', () => {
       '.avg()',
       '.min()',
       '.max()',
+      '.median()',
+      '.product()',
       '.count()',
       '.counta()',
       '.countblank()',
