@@ -628,6 +628,44 @@ describe('DocumentStoreService', () => {
     });
   });
 
+  describe('chart cards', () => {
+    const chartCard = () => {
+      const card = store.cards().find((candidate) => candidate.kind === 'chartcard');
+      if (card?.kind !== 'chartcard') {
+        throw new Error('chart card missing');
+      }
+      return card;
+    };
+    const business = () => topics().find((card) => card.refName === 'Business')!;
+
+    it('re-points a Charts card at another Topic, resetting stale rows', () => {
+      store.addChartCard(wealth().id);
+      const chartId = chartCard().charts[0]!.id;
+      store.setChartRowsIncluded(chartCard().id, chartId, [bankA().id], false);
+      expect(chartCard().charts[0]!.rows).toBeDefined();
+
+      store.setChartCardSource(chartCard().id, business().id);
+      expect(chartCard().sourceTopicId).toBe(business().id);
+      const businessRefs = new Set(business().columns.map((column) => column.refName));
+      const columns = chartCard().charts[0]!.columns;
+      expect(columns.length).toBeGreaterThan(0);
+      for (const ref of columns) {
+        expect(businessRefs.has(ref)).toBe(true);
+      }
+      // Old node ids mean nothing in the new tree — back to every Leaf.
+      expect(chartCard().charts[0]!.rows).toBeUndefined();
+    });
+
+    it('deleting the only chart of a Charts card deletes the card', () => {
+      store.addChartCard(wealth().id);
+      store.removeOwnedChart(chartCard().id, chartCard().charts[0]!.id);
+      expect(store.cards().some((candidate) => candidate.kind === 'chartcard')).toBe(false);
+
+      store.undo();
+      expect(chartCard().charts).toHaveLength(1);
+    });
+  });
+
   describe('chart axis options', () => {
     it('stores the swapped category axis and horizontal direction sparsely', () => {
       store.addChart(wealth().id, 'bar');

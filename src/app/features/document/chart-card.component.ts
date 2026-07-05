@@ -36,12 +36,13 @@ import { ChartPanelComponent } from './chart-panel.component';
           ></div>
         }
         @if (sourceTopic(); as topic) {
-          <div class="px-2 pb-2">
+          <div class="p-2">
             <app-chart-panel
               [topic]="topic"
               [evaluation]="evaluation()"
               [charts]="card().charts"
               [owner]="{ kind: 'chartcard', id: card().id }"
+              [frameless]="true"
             />
           </div>
         } @else {
@@ -102,9 +103,16 @@ export class ChartCardComponent {
     () => this.store.selection()?.topicId === this.card().id,
   );
 
+  /** The card IS its chart: clicking anywhere selects the chart for editing. */
   protected onCardClick(event: MouseEvent): void {
     const target = event.target as HTMLElement | null;
-    if (target && !target.closest('button, input, select, textarea, a, [tabindex]')) {
+    if (!target || target.closest('button, input, select, textarea, a, [tabindex]')) {
+      return;
+    }
+    const chart = this.card().charts[0];
+    if (chart) {
+      this.store.select({ kind: 'chart', topicId: this.card().id, chartId: chart.id });
+    } else {
       this.store.select({ kind: 'card', topicId: this.card().id });
     }
   }

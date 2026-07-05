@@ -967,6 +967,40 @@ export class DocumentStoreService {
         draftOwner.charts = (draftOwner.charts ?? []).filter((chart) => chart.id !== chartId);
       } else if (draftOwner?.kind === 'chartcard') {
         draftOwner.charts = draftOwner.charts.filter((chart) => chart.id !== chartId);
+        if (draftOwner.charts.length === 0) {
+          // The chart IS the card — deleting its only chart deletes the card.
+          document.cards = document.cards.filter((card) => card.id !== draftOwner.id);
+          removeCardFromLayout(document, draftOwner.id);
+        }
+      }
+    });
+  }
+
+  /** Re-points a Charts card at another Topic, keeping matching source columns. */
+  setChartCardSource(cardId: string, sourceTopicId: string): void {
+    const card = this.cardById(cardId);
+    const topic = this.topicById(sourceTopicId);
+    if (card?.kind !== 'chartcard' || !topic || card.sourceTopicId === sourceTopicId) {
+      return;
+    }
+    const validRefs = topic.columns
+      .filter((column) => column.kind !== 'chart')
+      .map((column) => column.refName);
+    if (validRefs.length === 0) {
+      return; // Nothing chartable in the target Topic.
+    }
+    this.mutate((document) => {
+      const draft = document.cards.find((candidate) => candidate.id === cardId);
+      if (draft?.kind !== 'chartcard') {
+        return;
+      }
+      draft.sourceTopicId = sourceTopicId;
+      const valid = new Set(validRefs);
+      for (const chart of draft.charts) {
+        // Columns carry over by Reference Name where the new Topic has them.
+        const kept = chart.columns.filter((ref) => valid.has(ref));
+        chart.columns = kept.length > 0 ? kept : [validRefs[0]!];
+        delete chart.rows; // Node ids belong to the old tree — back to every Leaf.
       }
     });
   }

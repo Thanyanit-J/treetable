@@ -100,13 +100,24 @@ interface RenderedChart {
 @Component({
   selector: 'app-chart-panel',
   template: `
-    <section class="mt-3 border-t border-slate-200 pt-3" aria-label="Charts">
+    <section
+      class="border-slate-200"
+      [class.mt-3]="!frameless()"
+      [class.border-t]="!frameless()"
+      [class.pt-3]="!frameless()"
+      aria-label="Charts"
+    >
       <div class="flex flex-wrap items-start gap-4">
         @for (chart of renderedCharts(); track chart.config.id) {
           <figure
-            class="relative rounded-xl border border-slate-200 bg-white p-3"
-            [class.ring-2]="isChartSelected(chart.config.id)"
-            [class.ring-sky-400]="isChartSelected(chart.config.id)"
+            class="relative bg-white"
+            [class.rounded-xl]="!frameless()"
+            [class.border]="!frameless()"
+            [class.border-slate-200]="!frameless()"
+            [class.p-3]="!frameless()"
+            [class.w-full]="frameless()"
+            [class.ring-2]="isChartSelected(chart.config.id) && !frameless()"
+            [class.ring-sky-400]="isChartSelected(chart.config.id) && !frameless()"
             (click)="selectChart(chart.config.id, $event)"
           >
             <!-- Instant tooltip; the SVG <title> children remain for AT. -->
@@ -136,6 +147,9 @@ interface RenderedChart {
 
             @if (chart.config.type !== 'pie') {
               <svg
+                class="block"
+                [class.w-full]="frameless()"
+                [class.h-auto]="frameless()"
                 [attr.width]="barWidth"
                 [attr.height]="barHeight"
                 [attr.viewBox]="'0 0 ' + barWidth + ' ' + barHeight"
@@ -236,8 +250,11 @@ interface RenderedChart {
                 </ul>
               }
             } @else {
-              <div class="flex items-center gap-4">
+              <div class="flex items-center gap-4" [class.flex-col]="frameless()">
                 <svg
+                  [class.w-full]="frameless()"
+                  [class.max-w-80]="frameless()"
+                  [class.h-auto]="frameless()"
                   [attr.width]="pieSize"
                   [attr.height]="pieSize"
                   [attr.viewBox]="'0 0 ' + pieSize + ' ' + pieSize"
@@ -287,6 +304,8 @@ export class ChartPanelComponent {
   readonly charts = input<ChartConfigV2[] | null>(null);
   /** Where add/remove/toggle route; defaults to the Topic itself. */
   readonly owner = input<{ kind: 'topic' | 'chartcard'; id: string } | null>(null);
+  /** Chart Cards render bare: no figure chrome, the chart scales to the card. */
+  readonly frameless = input(false);
 
   protected readonly barWidth = BAR_WIDTH;
   protected readonly barHeight = BAR_HEIGHT;

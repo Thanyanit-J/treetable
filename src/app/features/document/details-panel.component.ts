@@ -19,6 +19,7 @@ import {
   RollupMode,
   TopicCardV2,
   findNodeAndParent,
+  isTopicCard,
 } from '../../core/model/document.model';
 import {
   DocumentStoreService,
@@ -80,6 +81,23 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
               (keydown.enter)="blurTarget($event)"
             />
           </label>
+          @if (ctx.ownerKind === 'chartcard') {
+            <label class="field">
+              <span>Source table</span>
+              <select
+                class="field-input"
+                [value]="ctx.sourceTopic?.id ?? ''"
+                (change)="commitChartCardSource(ctx, $event)"
+              >
+                @if (!ctx.sourceTopic) {
+                  <option value="" disabled>missing (deleted)</option>
+                }
+                @for (topicOption of allTopics(); track topicOption.id) {
+                  <option [value]="topicOption.id">{{ topicOption.displayName }}</option>
+                }
+              </select>
+            </label>
+          }
           <fieldset class="field">
             <legend>Type</legend>
             <div class="flex gap-1">
@@ -933,6 +951,7 @@ export class DetailsPanelComponent {
   /** Selected chart with its owning card and the Topic feeding it. */
   protected readonly chartContext = computed<{
     ownerId: string;
+    ownerKind: 'topic' | 'chartcard';
     chart: ChartConfigV2;
     sourceTopic: TopicCardV2 | null;
   } | null>(() => {
@@ -944,17 +963,20 @@ export class DetailsPanelComponent {
     const chart = owner
       ? this.store.chartsOf(owner)?.find((candidate) => candidate.id === selection.chartId)
       : undefined;
-    if (!owner || !chart) {
+    if (!owner || !chart || owner.kind === 'note') {
       return null;
     }
     const sourceTopic =
-      owner.kind === 'topic'
-        ? owner
-        : owner.kind === 'chartcard'
-          ? (this.store.topicById(owner.sourceTopicId) ?? null)
-          : null;
-    return { ownerId: selection.topicId, chart, sourceTopic };
+      owner.kind === 'topic' ? owner : (this.store.topicById(owner.sourceTopicId) ?? null);
+    return { ownerId: selection.topicId, ownerKind: owner.kind, chart, sourceTopic };
   });
+
+  /** Every Topic in the Document — Charts cards can re-point at any of them. */
+  protected readonly allTopics = computed(() => this.store.cards().filter(isTopicCard));
+
+  protected commitChartCardSource(context: { ownerId: string }, event: Event): void {
+    this.store.setChartCardSource(context.ownerId, (event.target as HTMLSelectElement).value);
+  }
 
   /** Source columns not currently on the chart. */
   protected hiddenSources(context: {
