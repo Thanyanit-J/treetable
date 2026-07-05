@@ -93,9 +93,10 @@ interface RenderedChart {
 }
 
 /**
- * Chart Panel: charts over this Topic's Leaves, rendered as plain SVG from
- * evaluated values — no chart library, no second data structure. Values come
- * from ALL Leaves (collapse never changes a chart, per CONTEXT.md).
+ * Chart Panel: a Charts card's charts over its source Topic's Leaves,
+ * rendered as plain SVG from evaluated values — no chart library, no second
+ * data structure. Values come from ALL Leaves (collapse never changes a
+ * chart, per CONTEXT.md).
  */
 @Component({
   selector: 'app-chart-panel',
@@ -298,11 +299,11 @@ interface RenderedChart {
 export class ChartPanelComponent {
   protected readonly store = inject(DocumentStoreService);
 
+  /** The source Topic whose Leaves feed the charts. */
   readonly topic = input.required<TopicCardV2>();
   readonly evaluation = input.required<TopicEvaluation>();
-  /** Overrides the Topic's own charts (Chart Cards pass theirs in). */
   readonly charts = input<ChartConfigV2[] | null>(null);
-  /** Where add/remove/toggle route; defaults to the Topic itself. */
+  /** The Charts card owning these charts (selection routes to it). */
   readonly owner = input<{ kind: 'topic' | 'chartcard'; id: string } | null>(null);
   /** Chart Cards render bare: no figure chrome, the chart scales to the card. */
   readonly frameless = input(false);
@@ -366,7 +367,7 @@ export class ChartPanelComponent {
     const evaluation = this.evaluation();
     const columnsByRef = new Map(topic.columns.map((column) => [column.refName, column]));
 
-    return (this.charts() ?? topic.charts ?? []).map((config) => {
+    return (this.charts() ?? []).map((config) => {
       const series: { refName: string; displayName: string; color: string; column: ColumnV2 }[] =
         [];
       const missing: string[] = [];

@@ -16,6 +16,13 @@ describe('DocumentStoreService', () => {
   const savings = () => wealth().children.find((node) => node.refName === 'Savings')!;
   const bankA = () => savings().children.find((node) => node.refName === 'BankA')!;
   const amountColumn = () => wealth().columns.find((column) => column.refName === '$Amount')!;
+  const chartCard = () => {
+    const card = store.cards().find((candidate) => candidate.kind === 'chartcard');
+    if (card?.kind !== 'chartcard') {
+      throw new Error('chart card missing');
+    }
+    return card;
+  };
 
   beforeEach(() => {
     localStorage.clear();
@@ -511,74 +518,76 @@ describe('DocumentStoreService', () => {
       expect(wealth().columns.find((column) => column.id === rate.id)!.chartSource).toBe('$Cash');
     });
 
-    it('manages Chart Panel configs and keeps them in sync with renames', () => {
-      store.addChart(wealth().id, 'bar');
-      const chartId = wealth().charts![0]!.id;
-      expect(wealth().charts![0]!.columns).toEqual(['$Amount']);
+    it('keeps Charts card configs in sync with column renames', () => {
+      store.addChartCard(wealth().id);
+      const chartId = chartCard().charts[0]!.id;
+      expect(chartCard().charts[0]!.columns).toEqual(['$Amount']);
 
-      store.toggleChartColumn(wealth().id, chartId, '$Rate');
-      expect(wealth().charts![0]!.columns).toEqual(['$Amount', '$Rate']);
-
-      // A chart always keeps at least one column.
-      store.toggleChartColumn(wealth().id, chartId, '$Rate');
-      store.toggleChartColumn(wealth().id, chartId, '$Amount');
-      expect(wealth().charts![0]!.columns).toEqual(['$Amount']);
+      store.setChartColumnsIncluded(chartCard().id, chartId, ['$Rate'], true);
+      expect(chartCard().charts[0]!.columns).toEqual(['$Amount', '$Rate']);
 
       const amount = amountColumn();
       store.setRefName({ kind: 'column', topicId: wealth().id, entityId: amount.id }, '$Cash');
-      expect(wealth().charts![0]!.columns).toEqual(['$Cash']);
-
-      store.removeChart(wealth().id, chartId);
-      expect(wealth().charts).toEqual([]);
+      expect(chartCard().charts[0]!.columns).toEqual(['$Cash', '$Rate']);
     });
 
     it('batches source include/exclude as one undo step, appending in table order', () => {
-      store.addChart(wealth().id, 'bar');
-      const chartId = wealth().charts![0]!.id;
+      store.addChartCard(wealth().id);
+      const chartId = chartCard().charts[0]!.id;
 
-      store.setChartColumnsIncluded(wealth().id, chartId, ['$Yield', '$Rate'], true);
-      expect(wealth().charts![0]!.columns).toEqual(['$Amount', '$Rate', '$Yield']);
+      store.setChartColumnsIncluded(chartCard().id, chartId, ['$Yield', '$Rate'], true);
+      expect(chartCard().charts[0]!.columns).toEqual(['$Amount', '$Rate', '$Yield']);
 
       store.undo();
-      expect(wealth().charts![0]!.columns).toEqual(['$Amount']);
+      expect(chartCard().charts[0]!.columns).toEqual(['$Amount']);
       store.redo();
 
       // Excluding everything is refused; excluding a real subset is one step.
-      store.setChartColumnsIncluded(wealth().id, chartId, ['$Amount', '$Rate', '$Yield'], false);
-      expect(wealth().charts![0]!.columns).toEqual(['$Amount', '$Rate', '$Yield']);
-      store.setChartColumnsIncluded(wealth().id, chartId, ['$Amount', '$Yield'], false);
-      expect(wealth().charts![0]!.columns).toEqual(['$Rate']);
+      store.setChartColumnsIncluded(chartCard().id, chartId, ['$Amount', '$Rate', '$Yield'], false);
+      expect(chartCard().charts[0]!.columns).toEqual(['$Amount', '$Rate', '$Yield']);
+      store.setChartColumnsIncluded(chartCard().id, chartId, ['$Amount', '$Yield'], false);
+      expect(chartCard().charts[0]!.columns).toEqual(['$Rate']);
       store.undo();
-      expect(wealth().charts![0]!.columns).toEqual(['$Amount', '$Rate', '$Yield']);
+      expect(chartCard().charts[0]!.columns).toEqual(['$Amount', '$Rate', '$Yield']);
     });
 
     it('manages chart rows: all Leaves by default, branches includable, tree-ordered', () => {
       const bankB = () => savings().children.find((node) => node.refName === 'BankB')!;
       const cash = () => wealth().children.find((node) => node.refName === 'Cash')!;
-      store.addChart(wealth().id, 'bar');
-      const chartId = wealth().charts![0]!.id;
-      expect(wealth().charts![0]!.rows).toBeUndefined();
+      store.addChartCard(wealth().id);
+      const chartId = chartCard().charts[0]!.id;
+      expect(chartCard().charts[0]!.rows).toBeUndefined();
 
-      store.setChartRowsIncluded(wealth().id, chartId, [bankA().id], false);
-      expect(wealth().charts![0]!.rows).toEqual([bankB().id, cash().id]);
+      store.setChartRowsIncluded(chartCard().id, chartId, [bankA().id], false);
+      expect(chartCard().charts[0]!.rows).toEqual([bankB().id, cash().id]);
 
-      store.setChartRowsIncluded(wealth().id, chartId, [savings().id, bankA().id], true);
-      expect(wealth().charts![0]!.rows).toEqual([savings().id, bankA().id, bankB().id, cash().id]);
+      store.setChartRowsIncluded(chartCard().id, chartId, [savings().id, bankA().id], true);
+      expect(chartCard().charts[0]!.rows).toEqual([
+        savings().id,
+        bankA().id,
+        bankB().id,
+        cash().id,
+      ]);
 
       // Back to exactly "every Leaf" collapses to the default.
-      store.setChartRowsIncluded(wealth().id, chartId, [savings().id], false);
-      expect(wealth().charts![0]!.rows).toBeUndefined();
+      store.setChartRowsIncluded(chartCard().id, chartId, [savings().id], false);
+      expect(chartCard().charts[0]!.rows).toBeUndefined();
 
       // Excluding every row is refused.
-      store.setChartRowsIncluded(wealth().id, chartId, [bankA().id, bankB().id, cash().id], false);
-      expect(wealth().charts![0]!.rows).toBeUndefined();
+      store.setChartRowsIncluded(
+        chartCard().id,
+        chartId,
+        [bankA().id, bankB().id, cash().id],
+        false,
+      );
+      expect(chartCard().charts[0]!.rows).toBeUndefined();
     });
 
     it('re-syncs chart source order when table columns are reordered', () => {
-      store.addChart(wealth().id, 'bar');
-      const chartId = wealth().charts![0]!.id;
-      store.toggleChartColumn(wealth().id, chartId, '$Rate');
-      expect(wealth().charts![0]!.columns).toEqual(['$Amount', '$Rate']);
+      store.addChartCard(wealth().id);
+      const chartId = chartCard().charts[0]!.id;
+      store.setChartColumnsIncluded(chartCard().id, chartId, ['$Rate'], true);
+      expect(chartCard().charts[0]!.columns).toEqual(['$Amount', '$Rate']);
 
       const rate = wealth().columns.find((column) => column.refName === '$Rate')!;
       store.moveColumn(wealth().id, rate.id, 0);
@@ -587,7 +596,7 @@ describe('DocumentStoreService', () => {
         '$Amount',
         '$Yield',
       ]);
-      expect(wealth().charts![0]!.columns).toEqual(['$Rate', '$Amount']);
+      expect(chartCard().charts[0]!.columns).toEqual(['$Rate', '$Amount']);
     });
   });
 
@@ -629,14 +638,93 @@ describe('DocumentStoreService', () => {
   });
 
   describe('chart cards', () => {
-    const chartCard = () => {
-      const card = store.cards().find((candidate) => candidate.kind === 'chartcard');
-      if (card?.kind !== 'chartcard') {
-        throw new Error('chart card missing');
-      }
-      return card;
-    };
     const business = () => topics().find((card) => card.refName === 'Business')!;
+
+    it('lands as its own stack immediately right of the source card, selected', () => {
+      store.addChartCard(wealth().id);
+
+      const stacks = store.pages()[0]!.stacks;
+      const wealthIndex = stacks.findIndex((stack) => stack.cardIds.includes(wealth().id));
+      const chartIndex = stacks.findIndex((stack) => stack.cardIds.includes(chartCard().id));
+      expect(wealthIndex).toBeGreaterThanOrEqual(0);
+      expect(chartIndex).toBe(wealthIndex + 1);
+      expect(stacks[chartIndex]!.cardIds).toEqual([chartCard().id]);
+
+      // Opens straight into chart configuration.
+      expect(store.selection()).toEqual({
+        kind: 'chart',
+        topicId: chartCard().id,
+        chartId: chartCard().charts[0]!.id,
+      });
+    });
+
+    it('migrates embedded topic charts into a Charts card beside the table', () => {
+      localStorage.clear();
+      localStorage.setItem(
+        'treetable.v2.document',
+        JSON.stringify({
+          version: 2,
+          title: 'Legacy',
+          cards: [
+            {
+              kind: 'topic',
+              id: 't1',
+              refName: 'T1',
+              displayName: 'T1',
+              columns: [
+                {
+                  id: 'c1',
+                  refName: '$A',
+                  displayName: 'A',
+                  kind: 'input',
+                  valueType: 'number',
+                  expression: null,
+                  rollup: 'none',
+                },
+              ],
+              children: [],
+              charts: [{ id: 'ch1', type: 'pie', columns: ['$A'] }],
+            },
+            {
+              kind: 'topic',
+              id: 't2',
+              refName: 'T2',
+              displayName: 'T2',
+              columns: [],
+              children: [],
+            },
+          ],
+          pages: [
+            {
+              id: 'p1',
+              name: 'Page 1',
+              stacks: [
+                { id: 's1', cardIds: ['t1'] },
+                { id: 's2', cardIds: ['t2'] },
+              ],
+            },
+          ],
+        }),
+      );
+
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({});
+      const migrated = TestBed.inject(DocumentStoreService);
+
+      const card = migrated.cards().find((candidate) => candidate.kind === 'chartcard');
+      if (card?.kind !== 'chartcard') {
+        throw new Error('migrated chart card missing');
+      }
+      expect(card.sourceTopicId).toBe('t1');
+      expect(card.charts).toEqual([{ id: 'ch1', type: 'pie', columns: ['$A'] }]);
+
+      const t1 = migrated.cards().find((candidate) => candidate.id === 't1')!;
+      expect('charts' in t1).toBe(false);
+
+      // Laid out between its source table and the next stack.
+      const stackCards = migrated.pages()[0]!.stacks.map((stack) => stack.cardIds[0]);
+      expect(stackCards).toEqual(['t1', card.id, 't2']);
+    });
 
     it('re-points a Charts card at another Topic, resetting stale rows', () => {
       store.addChartCard(wealth().id);
@@ -668,26 +756,26 @@ describe('DocumentStoreService', () => {
 
   describe('chart axis options', () => {
     it('stores the swapped category axis and horizontal direction sparsely', () => {
-      store.addChart(wealth().id, 'bar');
-      const chartId = wealth().charts![0]!.id;
+      store.addChartCard(wealth().id);
+      const chartId = chartCard().charts[0]!.id;
 
-      store.setChartCategoryAxis(wealth().id, chartId, 'columns');
-      store.setChartHorizontal(wealth().id, chartId, true);
-      expect(wealth().charts![0]).toMatchObject({ categoryAxis: 'columns', horizontal: true });
+      store.setChartCategoryAxis(chartCard().id, chartId, 'columns');
+      store.setChartHorizontal(chartCard().id, chartId, true);
+      expect(chartCard().charts[0]).toMatchObject({ categoryAxis: 'columns', horizontal: true });
 
-      store.setChartCategoryAxis(wealth().id, chartId, 'rows');
-      store.setChartHorizontal(wealth().id, chartId, false);
-      expect(wealth().charts![0]!.categoryAxis).toBeUndefined();
-      expect(wealth().charts![0]!.horizontal).toBeUndefined();
+      store.setChartCategoryAxis(chartCard().id, chartId, 'rows');
+      store.setChartHorizontal(chartCard().id, chartId, false);
+      expect(chartCard().charts[0]!.categoryAxis).toBeUndefined();
+      expect(chartCard().charts[0]!.horizontal).toBeUndefined();
     });
 
     it('ignores a repeat of the current axis (no history step)', () => {
-      store.addChart(wealth().id, 'bar');
-      const chartId = wealth().charts![0]!.id;
-      store.setChartCategoryAxis(wealth().id, chartId, 'rows'); // already the default
+      store.addChartCard(wealth().id);
+      const chartId = chartCard().charts[0]!.id;
+      store.setChartCategoryAxis(chartCard().id, chartId, 'rows'); // already the default
 
-      store.undo(); // must undo addChart, not an axis no-op
-      expect(wealth().charts ?? []).toHaveLength(0);
+      store.undo(); // must undo addChartCard, not an axis no-op
+      expect(store.cards().some((candidate) => candidate.kind === 'chartcard')).toBe(false);
     });
   });
 

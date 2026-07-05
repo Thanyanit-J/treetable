@@ -134,6 +134,7 @@ export class PersistenceService {
     }
 
     const takenCardRefs = new Set<string>();
+    const legacyEmbeddedCharts = new Map<string, ChartConfigV2[]>();
     type Slot = { card: CardV2 } | { chartRaw: unknown };
     const slots: Slot[] = [];
     for (const [index, rawCard] of candidate.cards.entries()) {
@@ -149,7 +150,7 @@ export class PersistenceService {
         slots.push({ chartRaw: rawCard });
         continue;
       }
-      const card = this.normalizeTopicCard(rawCard, index, takenCardRefs);
+      const card = this.normalizeTopicCard(rawCard, index, takenCardRefs, legacyEmbeddedCharts);
       if (card) {
         slots.push({ card });
       }
@@ -188,6 +189,9 @@ export class PersistenceService {
         )
       : [];
 
+    const pages = this.normalizePages((candidate as { pages?: unknown }).pages);
+    this.migrateEmbeddedCharts(cards, pages, legacyEmbeddedCharts);
+
     const document: DocumentFileV2 = {
       version: 2,
       title:
@@ -195,7 +199,7 @@ export class PersistenceService {
           ? candidate.title
           : 'Untitled',
       cards,
-      pages: this.normalizePages((candidate as { pages?: unknown }).pages),
+      pages,
       view: { collapsedNodeIds },
     };
     normalizeDocumentLayout(document);
@@ -207,6 +211,35 @@ export class PersistenceService {
       document.view!.activePageId = rawView.activePageId;
     }
     return document;
+  }
+
+  /**
+   * Topic cards used to embed a Chart Panel under the table. Those charts
+   * now live in Charts cards: each affected Topic gets one, carrying its
+   * chart configs, laid out immediately right of the Topic's stack.
+   */
+  private migrateEmbeddedCharts(
+    cards: CardV2[],
+    pages: PageV2[],
+    legacy: ReadonlyMap<string, ChartConfigV2[]>,
+  ): void {
+    for (const [topicId, charts] of legacy) {
+      const chartCard: ChartCardV2 = {
+        kind: 'chartcard',
+        id: makeId('chartcard'),
+        sourceTopicId: topicId,
+        charts,
+      };
+      cards.push(chartCard);
+      const page = pages.find((candidate) =>
+        candidate.stacks.some((stack) => stack.cardIds.includes(topicId)),
+      );
+      const stackIndex = page?.stacks.findIndex((stack) => stack.cardIds.includes(topicId)) ?? -1;
+      if (page && stackIndex !== -1) {
+        page.stacks.splice(stackIndex + 1, 0, { id: makeId('stack'), cardIds: [chartCard.id] });
+      }
+      // Otherwise normalizeDocumentLayout appends the card to the first Page.
+    }
   }
 
   private normalizeNoteCard(input: unknown): NoteCardV2 | null {
@@ -356,6 +389,7 @@ export class PersistenceService {
     input: unknown,
     index: number,
     takenCardRefs: Set<string>,
+    legacyEmbeddedCharts: Map<string, ChartConfigV2[]>,
   ): CardV2 | null {
     if (!input || typeof input !== 'object') {
       return null;
@@ -389,14 +423,6 @@ export class PersistenceService {
       .map((node, nodeIndex) => this.normalizeNode(node, nodeIndex, columnIds, takenNodeRefs))
       .filter((node): node is NodeV2 => node !== null);
 
-    const columnRefs = new Set(columns.map((column) => column.refName));
-    const rawCharts = Array.isArray((candidate as { charts?: unknown }).charts)
-      ? ((candidate as { charts?: unknown[] }).charts as unknown[])
-      : [];
-    const charts: ChartConfigV2[] = rawCharts
-      .map((chart) => this.normalizeChartConfig(chart, columnRefs))
-      .filter((chart): chart is ChartConfigV2 => chart !== null);
-
     const card: CardV2 = {
       kind: 'topic',
       id:
@@ -407,8 +433,20 @@ export class PersistenceService {
       displayName,
       columns,
       children,
-      charts,
     };
+
+    // Topic cards used to embed charts; those migrate to a Charts card
+    // placed beside the table (see migrateEmbeddedCharts).
+    const columnRefs = new Set(columns.map((column) => column.refName));
+    const rawCharts = Array.isArray((candidate as { charts?: unknown }).charts)
+      ? ((candidate as { charts?: unknown[] }).charts as unknown[])
+      : [];
+    const embeddedCharts: ChartConfigV2[] = rawCharts
+      .map((chart) => this.normalizeChartConfig(chart, columnRefs))
+      .filter((chart): chart is ChartConfigV2 => chart !== null);
+    if (embeddedCharts.length > 0) {
+      legacyEmbeddedCharts.set(card.id, embeddedCharts);
+    }
     const pillAlignment = (candidate as { pillAlignment?: unknown }).pillAlignment;
     if (pillAlignment === 'top' || pillAlignment === 'center') {
       card.pillAlignment = pillAlignment;

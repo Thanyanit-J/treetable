@@ -490,7 +490,11 @@ export class DocumentStoreService {
     });
   }
 
-  /** A Charts card visualizes another Topic's Leaves from anywhere. */
+  /**
+   * A Charts card visualizes another Topic's Leaves. It lands as its own
+   * stack immediately right of the source card, and opens selected so the
+   * Details panel shows the chart's configuration.
+   */
   addChartCard(sourceTopicId: string): void {
     const source = this.topicById(sourceTopicId);
     const defaultColumn = source?.columns.find((column) => column.kind !== 'chart');
@@ -498,6 +502,7 @@ export class DocumentStoreService {
       return;
     }
     let newCardId: string | null = null;
+    let newChartId: string | null = null;
     this.mutate((document) => {
       const card: ChartCardV2 = {
         kind: 'chartcard',
@@ -506,21 +511,13 @@ export class DocumentStoreService {
         charts: [{ id: makeId('chart'), type: 'bar', columns: [defaultColumn.refName] }],
       };
       newCardId = card.id;
+      newChartId = card.charts[0]!.id;
       document.cards.push(card);
-      this.placeOnActivePage(document, card.id);
+      this.placeBesideCard(document, sourceTopicId, card.id);
     });
-    if (newCardId) {
-      this.selectionSignal.set({ kind: 'card', topicId: newCardId });
+    if (newCardId && newChartId) {
+      this.selectionSignal.set({ kind: 'chart', topicId: newCardId, chartId: newChartId });
     }
-  }
-
-  removeChartFromCard(cardId: string, chartId: string): void {
-    this.mutate((document) => {
-      const draft = document.cards.find((candidate) => candidate.id === cardId);
-      if (draft?.kind === 'chartcard') {
-        draft.charts = draft.charts.filter((chart) => chart.id !== chartId);
-      }
-    });
   }
 
   /** Places a freshly created card as its own stack on the active Page. */
@@ -529,6 +526,22 @@ export class DocumentStoreService {
       document.pages.find((candidate) => candidate.id === this.activePageIdSignal()) ??
       document.pages[0];
     page?.stacks.push({ id: makeId('stack'), cardIds: [cardId] });
+  }
+
+  /**
+   * Places a freshly created card as its own stack immediately right of the
+   * stack holding `anchorCardId`, on that card's Page; falls back to the
+   * active Page's end when the anchor is not laid out anywhere.
+   */
+  private placeBesideCard(document: DocumentV2, anchorCardId: string, cardId: string): void {
+    for (const page of document.pages) {
+      const stackIndex = page.stacks.findIndex((stack) => stack.cardIds.includes(anchorCardId));
+      if (stackIndex !== -1) {
+        page.stacks.splice(stackIndex + 1, 0, { id: makeId('stack'), cardIds: [cardId] });
+        return;
+      }
+    }
+    this.placeOnActivePage(document, cardId);
   }
 
   // -------------------------------------------------------------------------
@@ -706,13 +719,7 @@ export class DocumentStoreService {
 
   /** Charts live on Topic cards and Chart Cards alike. */
   chartsOf(card: CardV2): ChartConfigV2[] | undefined {
-    if (card.kind === 'topic') {
-      return card.charts;
-    }
-    if (card.kind === 'chartcard') {
-      return card.charts;
-    }
-    return undefined;
+    return card.kind === 'chartcard' ? card.charts : undefined;
   }
 
   setChartType(ownerCardId: string, chartId: string, type: ChartType): void {
@@ -963,15 +970,14 @@ export class DocumentStoreService {
   removeOwnedChart(ownerCardId: string, chartId: string): void {
     this.mutate((document) => {
       const draftOwner = document.cards.find((candidate) => candidate.id === ownerCardId);
-      if (draftOwner?.kind === 'topic') {
-        draftOwner.charts = (draftOwner.charts ?? []).filter((chart) => chart.id !== chartId);
-      } else if (draftOwner?.kind === 'chartcard') {
-        draftOwner.charts = draftOwner.charts.filter((chart) => chart.id !== chartId);
-        if (draftOwner.charts.length === 0) {
-          // The chart IS the card — deleting its only chart deletes the card.
-          document.cards = document.cards.filter((card) => card.id !== draftOwner.id);
-          removeCardFromLayout(document, draftOwner.id);
-        }
+      if (draftOwner?.kind !== 'chartcard') {
+        return;
+      }
+      draftOwner.charts = draftOwner.charts.filter((chart) => chart.id !== chartId);
+      if (draftOwner.charts.length === 0) {
+        // The chart IS the card — deleting its only chart deletes the card.
+        document.cards = document.cards.filter((card) => card.id !== draftOwner.id);
+        removeCardFromLayout(document, draftOwner.id);
       }
     });
   }
@@ -1988,7 +1994,6 @@ export class DocumentStoreService {
         );
       }
     };
-    resort(topic.charts);
     for (const card of document.cards) {
       if (card.kind === 'chartcard' && card.sourceTopicId === topicId) {
         resort(card.charts);
@@ -2198,59 +2203,6 @@ export class DocumentStoreService {
   }
 
   // -------------------------------------------------------------------------
-  // Chart Panel
-  // -------------------------------------------------------------------------
-
-  addChart(topicId: string, type: ChartType): void {
-    const topic = this.findTopic(this.documentSignal(), topicId);
-    const defaultColumn = topic?.columns.find((column) => column.kind !== 'chart');
-    if (!topic || !defaultColumn) {
-      return;
-    }
-    this.mutate((document) => {
-      const draftTopic = this.findTopic(document, topicId);
-      if (!draftTopic) {
-        return;
-      }
-      draftTopic.charts = [
-        ...(draftTopic.charts ?? []),
-        { id: makeId('chart'), type, columns: [defaultColumn.refName] },
-      ];
-    });
-  }
-
-  removeChart(topicId: string, chartId: string): void {
-    this.mutate((document) => {
-      const topic = this.findTopic(document, topicId);
-      if (topic) {
-        topic.charts = (topic.charts ?? []).filter((chart) => chart.id !== chartId);
-      }
-    });
-  }
-
-  /** Adds or removes a series column; a chart always keeps at least one. */
-  toggleChartColumn(topicId: string, chartId: string, columnRefName: string): void {
-    this.mutate((document) => {
-      const topic = this.findTopic(document, topicId);
-      const chart = topic?.charts?.find((candidate) => candidate.id === chartId);
-      if (!topic || !chart) {
-        return;
-      }
-      if (chart.columns.includes(columnRefName)) {
-        if (chart.columns.length > 1) {
-          chart.columns = chart.columns.filter((ref) => ref !== columnRefName);
-        }
-        return;
-      }
-      if (
-        topic.columns.some((column) => column.refName === columnRefName && column.kind !== 'chart')
-      ) {
-        chart.columns = [...chart.columns, columnRefName];
-      }
-    });
-  }
-
-  // -------------------------------------------------------------------------
   // Reference Names (ADR-0003)
   // -------------------------------------------------------------------------
 
@@ -2452,11 +2404,6 @@ export class DocumentStoreService {
         if (column.kind === 'chart' && column.chartSource === plan.currentRefName) {
           column.chartSource = plan.nextRefName;
         }
-      }
-      for (const chart of draftTopic.charts ?? []) {
-        chart.columns = chart.columns.map((ref) =>
-          ref === plan.currentRefName ? plan.nextRefName : ref,
-        );
       }
       for (const card of draft.cards) {
         if (card.kind === 'chartcard' && card.sourceTopicId === target.topicId) {

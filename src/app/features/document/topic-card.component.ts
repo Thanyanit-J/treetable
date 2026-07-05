@@ -5,7 +5,6 @@ import {
   ElementRef,
   afterRenderEffect,
   computed,
-  effect,
   inject,
   input,
   output,
@@ -15,7 +14,6 @@ import {
 import { TopicEvaluation } from '../../core/engine/formula-evaluator';
 import { TopicCardV2, clampCardHeight, clampCardWidth } from '../../core/model/document.model';
 import { DocumentStoreService } from '../../core/store/document-store.service';
-import { ChartPanelComponent } from './chart-panel.component';
 import { LatticeComponent } from './lattice/lattice.component';
 
 const MIN_ZOOM = 0.25;
@@ -32,7 +30,7 @@ const MAX_ZOOM = 2;
  */
 @Component({
   selector: 'app-topic-card',
-  imports: [CdkMenu, CdkMenuItem, CdkMenuTrigger, ChartPanelComponent, LatticeComponent],
+  imports: [CdkMenu, CdkMenuItem, CdkMenuTrigger, LatticeComponent],
   template: `
     <article
       #cardRoot
@@ -99,12 +97,6 @@ const MAX_ZOOM = 2;
           </div>
         </div>
 
-        @if (showCharts()) {
-          <div class="px-2 pb-2">
-            <app-chart-panel [topic]="topic()" [evaluation]="evaluation()" />
-          </div>
-        }
-
         <!-- Resize handles: dragging a border fixes that dimension (persisted
              on the card); double-click releases it back to following content. -->
         <button
@@ -159,9 +151,13 @@ const MAX_ZOOM = 2;
         >
           Add node
         </button>
-        <button cdkMenuItem type="button" class="menu-item" (cdkMenuItemTriggered)="toggleCharts()">
-          {{ showCharts() ? 'Hide charts' : 'Show charts'
-          }}{{ chartCount() > 0 ? ' (' + chartCount() + ')' : '' }}
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          (cdkMenuItemTriggered)="store.addChartCard(topic().id)"
+        >
+          Create chart of this table
         </button>
         <button cdkMenuItem type="button" class="menu-item" (cdkMenuItemTriggered)="fitToCard()">
           Fit to width
@@ -236,8 +232,6 @@ export class TopicCardComponent {
     const selection = this.store.selection();
     return selection?.kind === 'card' && selection.topicId === this.topic().id;
   });
-  protected readonly showCharts = signal(false);
-  protected readonly chartCount = computed(() => this.topic().charts?.length ?? 0);
   /** Focused = the current selection (of any kind) lives in this card. */
   protected readonly isCardFocused = computed(
     () => this.store.selection()?.topicId === this.topic().id,
@@ -271,20 +265,6 @@ export class TopicCardComponent {
         this.frozenHeight.set(root.offsetHeight);
       }
     });
-    // Deleting the last chart (via the Details panel) folds the section away.
-    effect(() => {
-      if (this.chartCount() === 0) {
-        this.showCharts.set(false);
-      }
-    });
-  }
-
-  /** Charts are born here: showing an empty panel creates its single chart. */
-  protected toggleCharts(): void {
-    if (!this.showCharts() && this.chartCount() === 0) {
-      this.store.addChart(this.topic().id, 'bar');
-    }
-    this.showCharts.set(!this.showCharts());
   }
 
   /** Selection-first for the title: click selects the card, click again renames. */
