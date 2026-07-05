@@ -17,9 +17,22 @@ import { DocumentStoreService } from '../../core/store/document-store.service';
 
 const SERIES_COLORS = ['#0ea5e9', '#f59e0b', '#10b981', '#f43f5e', '#8b5cf6', '#64748b'];
 
+/** Rounded tick values covering [min, max] in 1/2/5 × 10ᵏ steps. */
+function niceTicks(min: number, max: number, count = 4): number[] {
+  const span = max - min || 1;
+  const rawStep = span / count;
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+  const step = [1, 2, 5, 10].map((m) => m * magnitude).find((s) => s >= rawStep) ?? magnitude * 10;
+  const ticks: number[] = [];
+  for (let value = Math.ceil(min / step) * step; value <= max + step * 1e-9; value += step) {
+    ticks.push(Number(value.toFixed(10)));
+  }
+  return ticks;
+}
+
 const BAR_WIDTH = 360;
 const BAR_HEIGHT = 200;
-const BAR_MARGIN = { top: 10, right: 10, bottom: 30, left: 10 };
+const BAR_MARGIN = { top: 10, right: 12, bottom: 30, left: 48 };
 
 const PIE_SIZE = 180;
 
@@ -38,12 +51,28 @@ interface PieSlice {
   label: string;
 }
 
+interface ChartLine {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+interface ChartText {
+  x: number;
+  y: number;
+  anchor: 'start' | 'middle' | 'end';
+  label: string;
+}
+
 interface RenderedChart {
   config: ChartConfigV2;
   series: { refName: string; displayName: string; color: string }[];
   bars: BarDatum[];
-  zeroLineY: number | null;
-  categories: { x: number; label: string }[];
+  gridLines: ChartLine[];
+  tickLabels: ChartText[];
+  categoryLabels: ChartText[];
+  zeroLine: ChartLine | null;
   slices: PieSlice[];
   legend: { color: string; label: string }[];
   missing: string[];
@@ -91,20 +120,30 @@ interface RenderedChart {
               </p>
             }
 
-            @if (chart.config.type === 'bar') {
+            @if (chart.config.type !== 'pie') {
               <svg
                 [attr.width]="barWidth"
                 [attr.height]="barHeight"
                 [attr.viewBox]="'0 0 ' + barWidth + ' ' + barHeight"
                 role="img"
-                [attr.aria-label]="'Bar chart of ' + chartTitle(chart)"
+                [attr.aria-label]="chart.config.type + ' chart of ' + chartTitle(chart)"
               >
-                @if (chart.zeroLineY !== null) {
+                @for (grid of chart.gridLines; track $index) {
                   <line
-                    [attr.x1]="0"
-                    [attr.x2]="barWidth"
-                    [attr.y1]="chart.zeroLineY"
-                    [attr.y2]="chart.zeroLineY"
+                    [attr.x1]="grid.x1"
+                    [attr.y1]="grid.y1"
+                    [attr.x2]="grid.x2"
+                    [attr.y2]="grid.y2"
+                    stroke="#f1f5f9"
+                    stroke-width="1"
+                  />
+                }
+                @if (chart.zeroLine; as zero) {
+                  <line
+                    [attr.x1]="zero.x1"
+                    [attr.y1]="zero.y1"
+                    [attr.x2]="zero.x2"
+                    [attr.y2]="zero.y2"
                     stroke="#cbd5e1"
                     stroke-width="1"
                   />
@@ -123,11 +162,22 @@ interface RenderedChart {
                     <title>{{ bar.label }}</title>
                   </rect>
                 }
-                @for (category of chart.categories; track $index) {
+                @for (tick of chart.tickLabels; track $index) {
+                  <text
+                    [attr.x]="tick.x"
+                    [attr.y]="tick.y"
+                    [attr.text-anchor]="tick.anchor"
+                    class="fill-slate-400"
+                    font-size="9"
+                  >
+                    {{ tick.label }}
+                  </text>
+                }
+                @for (category of chart.categoryLabels; track $index) {
                   <text
                     [attr.x]="category.x"
-                    [attr.y]="barHeight - 8"
-                    text-anchor="middle"
+                    [attr.y]="category.y"
+                    [attr.text-anchor]="category.anchor"
                     class="fill-slate-500"
                     font-size="10"
                   >
@@ -135,6 +185,20 @@ interface RenderedChart {
                   </text>
                 }
               </svg>
+              @if (chart.legend.length > 1) {
+                <ul class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-600">
+                  @for (item of chart.legend; track $index) {
+                    <li class="flex items-center gap-1.5">
+                      <span
+                        aria-hidden="true"
+                        class="inline-block h-2.5 w-2.5 rounded-sm"
+                        [style.background]="item.color"
+                      ></span>
+                      {{ item.label }}
+                    </li>
+                  }
+                </ul>
+              }
             } @else {
               <div class="flex items-center gap-4">
                 <svg
@@ -277,8 +341,10 @@ export class ChartPanelComponent {
           series,
           missing,
           bars: [],
-          zeroLineY: null,
-          categories: [],
+          gridLines: [],
+          tickLabels: [],
+          categoryLabels: [],
+          zeroLine: null,
           ...this.renderPie(
             rows.map((node) => node.displayName),
             values,
@@ -362,11 +428,11 @@ export class ChartPanelComponent {
     categories: string[],
     values: number[][],
     series: { color: string; displayName: string }[],
-  ): { bars: BarDatum[]; zeroLineY: number | null; categories: { x: number; label: string }[] } {
+  ): Pick<RenderedChart, 'bars' | 'gridLines' | 'tickLabels' | 'categoryLabels' | 'zeroLine'> {
     const plotWidth = BAR_WIDTH - BAR_MARGIN.left - BAR_MARGIN.right;
     const plotHeight = BAR_HEIGHT - BAR_MARGIN.top - BAR_MARGIN.bottom;
     if (categories.length === 0 || series.length === 0) {
-      return { bars: [], zeroLineY: null, categories: [] };
+      return { bars: [], gridLines: [], tickLabels: [], categoryLabels: [], zeroLine: null };
     }
 
     const all = values.flat();
@@ -375,6 +441,7 @@ export class ChartPanelComponent {
     const range = max - min || 1;
     const yOf = (value: number): number => BAR_MARGIN.top + ((max - value) / range) * plotHeight;
     const zeroY = yOf(0);
+    const axis = this.valueAxis(min, max, yOf);
 
     const groupWidth = plotWidth / categories.length;
     const barWidth = Math.min(22, (groupWidth * 0.8) / series.length);
@@ -400,12 +467,46 @@ export class ChartPanelComponent {
 
     return {
       bars,
-      zeroLineY: zeroY,
-      categories: categories.map((label, index) => ({
+      ...axis,
+      zeroLine: {
+        x1: BAR_MARGIN.left,
+        y1: zeroY,
+        x2: BAR_MARGIN.left + plotWidth,
+        y2: zeroY,
+      },
+      categoryLabels: categories.map((label, index) => ({
         x: BAR_MARGIN.left + index * groupWidth + groupWidth / 2,
+        y: BAR_HEIGHT - 8,
+        anchor: 'middle' as const,
         label: label.length > 8 ? `${label.slice(0, 7)}…` : label,
       })),
     };
+  }
+
+  /** Horizontal gridlines with value labels on the left, at nice steps. */
+  private valueAxis(
+    min: number,
+    max: number,
+    yOf: (value: number) => number,
+  ): { gridLines: ChartLine[]; tickLabels: ChartText[] } {
+    const gridLines: ChartLine[] = [];
+    const tickLabels: ChartText[] = [];
+    for (const tick of niceTicks(min, max)) {
+      const y = yOf(tick);
+      gridLines.push({
+        x1: BAR_MARGIN.left,
+        y1: y,
+        x2: BAR_WIDTH - BAR_MARGIN.right,
+        y2: y,
+      });
+      tickLabels.push({
+        x: BAR_MARGIN.left - 6,
+        y: y + 3,
+        anchor: 'end',
+        label: formatNumericValue(tick),
+      });
+    }
+    return { gridLines, tickLabels };
   }
 
   /**
