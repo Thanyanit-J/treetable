@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import {
   TopicEvaluation,
   formatNumericValue,
@@ -58,11 +58,24 @@ interface RenderedChart {
       <div class="flex flex-wrap items-start gap-4">
         @for (chart of renderedCharts(); track chart.config.id) {
           <figure
-            class="rounded-xl border border-slate-200 bg-white p-3"
+            class="relative rounded-xl border border-slate-200 bg-white p-3"
             [class.ring-2]="isChartSelected(chart.config.id)"
             [class.ring-sky-400]="isChartSelected(chart.config.id)"
             (click)="selectChart(chart.config.id, $event)"
           >
+            <!-- Instant tooltip; the SVG <title> children remain for AT. -->
+            @if (tooltip(); as tip) {
+              @if (tip.chartId === chart.config.id) {
+                <div
+                  class="pointer-events-none absolute z-20 max-w-56 rounded bg-slate-800 px-1.5 py-0.5 text-[11px] leading-snug text-white shadow"
+                  [style.left.px]="tip.x"
+                  [style.top.px]="tip.y"
+                  role="status"
+                >
+                  {{ tip.label }}
+                </div>
+              }
+            }
             <figcaption class="mb-1 flex items-center justify-between gap-3">
               <span class="text-xs font-medium text-slate-600">
                 {{ chartCaption(chart) }}
@@ -101,6 +114,8 @@ interface RenderedChart {
                     [attr.height]="bar.height"
                     [attr.fill]="bar.color"
                     rx="2"
+                    (pointermove)="showTip(chart.config.id, bar.label, $event)"
+                    (pointerleave)="hideTip()"
                   >
                     <title>{{ bar.label }}</title>
                   </rect>
@@ -132,6 +147,8 @@ interface RenderedChart {
                       [attr.fill]="slice.color"
                       stroke="white"
                       stroke-width="1"
+                      (pointermove)="showTip(chart.config.id, slice.label, $event)"
+                      (pointerleave)="hideTip()"
                     >
                       <title>{{ slice.label }}</title>
                     </path>
@@ -175,6 +192,32 @@ export class ChartPanelComponent {
   /** The card owning these charts (the Topic itself unless a Chart Card). */
   protected ownerId(): string {
     return this.owner()?.id ?? this.topic().id;
+  }
+
+  /** One tooltip per panel, following the pointer over bars and slices. */
+  protected readonly tooltip = signal<{
+    chartId: string;
+    label: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  protected showTip(chartId: string, label: string, event: PointerEvent): void {
+    const figure = (event.currentTarget as Element).closest('figure');
+    if (!figure) {
+      return;
+    }
+    const rect = figure.getBoundingClientRect();
+    this.tooltip.set({
+      chartId,
+      label,
+      x: event.clientX - rect.left + 12,
+      y: event.clientY - rect.top + 14,
+    });
+  }
+
+  protected hideTip(): void {
+    this.tooltip.set(null);
   }
 
   protected isChartSelected(chartId: string): boolean {
