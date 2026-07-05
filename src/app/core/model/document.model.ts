@@ -18,6 +18,25 @@ export type RollupMode = 'none' | 'sum' | 'avg' | 'min' | 'max' | 'count';
 export const ACCENT_COLORS = ['sky', 'amber', 'emerald', 'rose', 'violet', 'slate'] as const;
 export type AccentColor = (typeof ACCENT_COLORS)[number];
 
+/**
+ * Display formatting for a column's numeric values. Presentation only —
+ * raw cell values, copy/paste and formula results stay unformatted.
+ */
+export interface NumberFormatV2 {
+  /** Group integer digits with commas: 1,234,567. */
+  thousands?: true;
+  /** Fixed decimal places (0–10); absent = as many as the value needs. */
+  decimals?: number;
+  /** Negative values wrapped in parentheses: (1,234). Absent = minus sign. */
+  negativeParens?: true;
+}
+
+export const NUMBER_FORMAT_MAX_DECIMALS = 10;
+
+export function clampFormatDecimals(decimals: number): number {
+  return Math.min(NUMBER_FORMAT_MAX_DECIMALS, Math.max(0, Math.round(decimals)));
+}
+
 export interface ColumnV2 {
   /** Internal identity — stable, never user-visible. Cell values key off this. */
   id: string;
@@ -40,6 +59,8 @@ export interface ColumnV2 {
   width?: number;
   /** Cell text wraps (rows grow) instead of clipping when the column is narrow. */
   wrap?: true;
+  /** Display formatting for numeric values; absent = plain numbers as typed. */
+  format?: NumberFormatV2;
 }
 
 export const COLUMN_MIN_WIDTH = 48;

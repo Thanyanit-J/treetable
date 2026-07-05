@@ -14,7 +14,7 @@ import {
 } from '@angular/core';
 import {
   TopicEvaluation,
-  formatNumericValue,
+  formatCellNumber,
   leafNumericValue,
   rollupValue,
 } from '../../../core/engine/formula-evaluator';
@@ -1961,9 +1961,17 @@ export class LatticeComponent {
       if (cell.error !== null) {
         return '#ERR';
       }
-      return cell.value === null ? '' : formatNumericValue(cell.value);
+      return cell.value === null ? '' : formatCellNumber(cell.value, column.format);
     }
-    return this.inputCellRaw(nodeId, column);
+    const raw = this.inputCellRaw(nodeId, column);
+    // Formatted display of raw numbers only when asked — editing shows the raw text.
+    if (column.format && column.valueType === 'number') {
+      const parsed = Number(raw.trim());
+      if (raw.trim().length > 0 && Number.isFinite(parsed)) {
+        return formatCellNumber(parsed, column.format);
+      }
+    }
+    return raw;
   }
 
   protected cellTitle(nodeId: string, column: ColumnV2): string | null {
@@ -2024,7 +2032,7 @@ export class LatticeComponent {
 
   protected chartBarLabel(nodeId: string, column: ColumnV2): string {
     const value = this.chartValue(nodeId, column);
-    return value === null ? '—' : formatNumericValue(value);
+    return value === null ? '—' : formatCellNumber(value, this.chartSourceColumn(column)?.format);
   }
 
   protected chartBarAria(nodeId: string, column: ColumnV2): string {
@@ -2040,7 +2048,7 @@ export class LatticeComponent {
       return '';
     }
     const total = rollupValue(column, hiddenLeavesOf(node), this.evaluation());
-    return total === null ? '' : formatNumericValue(total);
+    return total === null ? '' : formatCellNumber(total, column.format);
   }
 
   protected rollupTitle(column: ColumnV2): string | null {
@@ -2054,7 +2062,7 @@ export class LatticeComponent {
 
   protected footerRollupDisplay(column: ColumnV2): string {
     const total = rollupValue(column, collectLeaves(this.topic().children), this.evaluation());
-    return total === null ? '' : formatNumericValue(total);
+    return total === null ? '' : formatCellNumber(total, column.format);
   }
 
   /** A summarized footer cell draws its own left edge when its neighbour is blank. */

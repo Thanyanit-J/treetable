@@ -2,6 +2,7 @@ import {
   ColumnV2,
   DocumentV2,
   NodeV2,
+  NumberFormatV2,
   TopicCardV2,
   collectLeaves,
   walkNodes,
@@ -838,4 +839,34 @@ function isBlankCell(column: ColumnV2, leaf: NodeV2, evaluation: TopicEvaluation
 export function formatNumericValue(value: number): string {
   const rounded = Number(value.toFixed(10));
   return String(rounded);
+}
+
+/**
+ * Formats a numeric value through a column's display format (CONTEXT.md:
+ * presentation only — raw values and copy stay unformatted). No format
+ * falls back to formatNumericValue.
+ */
+export function formatCellNumber(value: number, format?: NumberFormatV2): string {
+  if (!format) {
+    return formatNumericValue(value);
+  }
+  // Round at display precision first so e.g. -0.4 at 0 decimals is "0", not "-0".
+  const rounded =
+    format.decimals !== undefined
+      ? Number(value.toFixed(format.decimals))
+      : Number(value.toFixed(10));
+  const magnitude = Math.abs(rounded);
+  let text = format.decimals !== undefined ? magnitude.toFixed(format.decimals) : String(magnitude);
+  if (format.thousands === true) {
+    const [integer = '', fraction] = text.split('.');
+    // Very large magnitudes render exponentially ("1e+21") — nothing to group.
+    if (/^\d+$/.test(integer)) {
+      const grouped = integer.replace(/\B(?=(\d{3})+$)/g, ',');
+      text = fraction === undefined ? grouped : `${grouped}.${fraction}`;
+    }
+  }
+  if (rounded < 0) {
+    return format.negativeParens === true ? `(${text})` : `-${text}`;
+  }
+  return text;
 }

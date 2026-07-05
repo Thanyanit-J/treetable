@@ -878,6 +878,57 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
           </p>
         }
       }
+      @if (
+        column.kind === 'computed' || (column.kind === 'input' && column.valueType === 'number')
+      ) {
+        <fieldset class="field">
+          <legend>Number format</legend>
+          <label class="flex items-center gap-2 text-xs text-slate-500">
+            <input
+              type="checkbox"
+              [checked]="column.format?.thousands === true"
+              (change)="toggleFormatThousands(topic, column, $event)"
+            />
+            Thousands separator (1,234)
+          </label>
+          <label class="mt-2 block">
+            <span class="mb-1 block text-[11px] font-medium text-slate-400">Decimal places</span>
+            <input
+              class="field-input"
+              type="number"
+              min="0"
+              max="10"
+              placeholder="as typed"
+              [value]="column.format?.decimals ?? ''"
+              (change)="commitFormatDecimals(topic, column, $event)"
+              (keydown.enter)="blurTarget($event)"
+            />
+          </label>
+          <div class="mt-2">
+            <span class="mb-1 block text-[11px] font-medium text-slate-400">Negative values</span>
+            <div class="flex gap-1">
+              <button
+                type="button"
+                class="choice"
+                [class.choice-active]="column.format?.negativeParens !== true"
+                (click)="
+                  store.setColumnNumberFormat(topic.id, column.id, { negativeParens: false })
+                "
+              >
+                -1,234
+              </button>
+              <button
+                type="button"
+                class="choice"
+                [class.choice-active]="column.format?.negativeParens === true"
+                (click)="store.setColumnNumberFormat(topic.id, column.id, { negativeParens: true })"
+              >
+                (1,234)
+              </button>
+            </div>
+          </div>
+        </fieldset>
+      }
       @if (column.kind !== 'chart') {
         <label class="field">
           <span>Summary (footer + collapsed rows)</span>
@@ -1421,6 +1472,20 @@ export class DetailsPanelComponent {
       column.id,
       parsed !== null && Number.isFinite(parsed) ? parsed : null,
     );
+  }
+
+  protected toggleFormatThousands(topic: TopicCardV2, column: ColumnV2, event: Event): void {
+    this.store.setColumnNumberFormat(topic.id, column.id, {
+      thousands: (event.target as HTMLInputElement).checked,
+    });
+  }
+
+  protected commitFormatDecimals(topic: TopicCardV2, column: ColumnV2, event: Event): void {
+    const raw = (event.target as HTMLInputElement).value.trim();
+    const parsed = raw.length > 0 ? Number(raw) : null;
+    this.store.setColumnNumberFormat(topic.id, column.id, {
+      decimals: parsed !== null && Number.isFinite(parsed) ? parsed : null,
+    });
   }
 
   protected commitRowHeight(topic: TopicCardV2, node: NodeV2, event: Event): void {

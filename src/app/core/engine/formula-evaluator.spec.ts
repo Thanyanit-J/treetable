@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { ColumnV2, NodeV2, RollupMode, TopicCardV2 } from '../model/document.model';
-import { evaluateTopic, formatNumericValue, rollupValue } from './formula-evaluator';
+import {
+  evaluateTopic,
+  formatCellNumber,
+  formatNumericValue,
+  rollupValue,
+} from './formula-evaluator';
 
 let idCounter = 0;
 
@@ -253,6 +258,41 @@ describe('formula evaluator', () => {
   it('formats numbers without binary floating-point noise', () => {
     expect(formatNumericValue(0.1 + 0.2)).toBe('0.3');
     expect(formatNumericValue(3600)).toBe('3600');
+  });
+
+  describe('formatCellNumber', () => {
+    it('falls back to plain formatting without a format', () => {
+      expect(formatCellNumber(0.1 + 0.2)).toBe('0.3');
+      expect(formatCellNumber(-3600)).toBe('-3600');
+    });
+
+    it('groups integer digits with commas', () => {
+      expect(formatCellNumber(1234567.5, { thousands: true })).toBe('1,234,567.5');
+      expect(formatCellNumber(123, { thousands: true })).toBe('123');
+      expect(formatCellNumber(-1234, { thousands: true })).toBe('-1,234');
+    });
+
+    it('applies fixed decimal places', () => {
+      expect(formatCellNumber(1234.5, { decimals: 2 })).toBe('1234.50');
+      expect(formatCellNumber(1234.567, { decimals: 2 })).toBe('1234.57');
+      expect(formatCellNumber(1234.5, { decimals: 0 })).toBe('1235');
+    });
+
+    it('wraps negatives in parentheses when asked', () => {
+      expect(formatCellNumber(-1234.5, { negativeParens: true })).toBe('(1234.5)');
+      expect(
+        formatCellNumber(-1234567.891, { thousands: true, decimals: 2, negativeParens: true }),
+      ).toBe('(1,234,567.89)');
+    });
+
+    it('never shows a negative zero after display rounding', () => {
+      expect(formatCellNumber(-0.4, { decimals: 0 })).toBe('0');
+      expect(formatCellNumber(-0.4, { decimals: 0, negativeParens: true })).toBe('0');
+    });
+
+    it('leaves exponential magnitudes ungrouped', () => {
+      expect(formatCellNumber(1e21, { thousands: true })).toBe('1e+21');
+    });
   });
 
   describe('function library', () => {

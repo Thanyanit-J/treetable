@@ -22,6 +22,7 @@ import {
   ImportResult,
   NodeV2,
   NoteFormat,
+  NumberFormatV2,
   PageV2,
   PillAlignment,
   RollupMode,
@@ -29,6 +30,7 @@ import {
   clampCardHeight,
   clampCardWidth,
   clampColumnWidth,
+  clampFormatDecimals,
   clampRowHeight,
   cloneDocument,
   collectLeaves,
@@ -1620,6 +1622,56 @@ export class DocumentStoreService {
         draft.wrap = true;
       } else {
         delete draft.wrap;
+      }
+    });
+  }
+
+  /**
+   * Merges a partial number-format change (Details panel edits one field at
+   * a time); `decimals: null` releases the fixed precision, and a format
+   * with every option back at its default is dropped from the column.
+   */
+  setColumnNumberFormat(
+    topicId: string,
+    columnId: string,
+    patch: { thousands?: boolean; decimals?: number | null; negativeParens?: boolean },
+  ): void {
+    const column = this.topicById(topicId)?.columns.find((entry) => entry.id === columnId);
+    if (!column) {
+      return;
+    }
+    const current = column.format ?? {};
+    const next: NumberFormatV2 = {};
+    if (patch.thousands ?? current.thousands === true) {
+      next.thousands = true;
+    }
+    const decimals = patch.decimals === undefined ? current.decimals : patch.decimals;
+    if (decimals !== null && decimals !== undefined && Number.isFinite(decimals)) {
+      next.decimals = clampFormatDecimals(decimals);
+    }
+    if (patch.negativeParens ?? current.negativeParens === true) {
+      next.negativeParens = true;
+    }
+    const empty = Object.keys(next).length === 0;
+    if (
+      (empty && column.format === undefined) ||
+      (current.thousands === next.thousands &&
+        current.decimals === next.decimals &&
+        current.negativeParens === next.negativeParens)
+    ) {
+      return;
+    }
+    this.mutate((document) => {
+      const draft = this.findTopic(document, topicId)?.columns.find(
+        (entry) => entry.id === columnId,
+      );
+      if (!draft) {
+        return;
+      }
+      if (empty) {
+        delete draft.format;
+      } else {
+        draft.format = next;
       }
     });
   }
