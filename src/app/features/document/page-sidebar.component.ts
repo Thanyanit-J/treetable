@@ -37,13 +37,21 @@ import { DocumentStoreService } from '../../core/store/document-store.service';
   template: `
     <aside
       class="relative h-full shrink-0 border-r border-slate-200 bg-white"
-      [class.w-44]="!collapsed()"
-      [class.w-11]="collapsed()"
+      [style.width.px]="collapsed() ? 44 : panelWidth()"
       (pointerenter)="onAsideEnter()"
       (pointerleave)="onAsideLeave()"
     >
       @if (!collapsed()) {
         <ng-container [ngTemplateOutlet]="panelContent" />
+        <button
+          type="button"
+          class="absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+          aria-label="Resize pages panel (drag, or arrow keys; double-click resets)"
+          (pointerdown)="startPanelResize($event)"
+          (keydown.arrowleft)="nudgePanelWidth($event, -16)"
+          (keydown.arrowright)="nudgePanelWidth($event, 16)"
+          (dblclick)="panelWidth.set(defaultWidth)"
+        ></button>
       } @else {
         <!-- Mini rail: one icon per row, at the exact vertical positions the
              expanded rows occupy, so peeking/expanding never shifts them. -->
@@ -79,7 +87,8 @@ import { DocumentStoreService } from '../../core/store/document-store.service';
         @if (peek()) {
           <!-- Hover peek floats over the content area; nothing gets pushed. -->
           <div
-            class="absolute inset-y-0 left-0 z-40 w-44 border-r border-slate-200 bg-white shadow-xl"
+            class="absolute inset-y-0 left-0 z-40 border-r border-slate-200 bg-white shadow-xl"
+            [style.width.px]="panelWidth()"
           >
             <ng-container [ngTemplateOutlet]="panelContent" />
           </div>
@@ -351,6 +360,9 @@ export class PageSidebarComponent {
   readonly collapsed = input(false);
   readonly requestDeletePage = output<string>();
 
+  protected readonly defaultWidth = 176;
+  /** Ephemeral view state, adjustable by dragging the right border. */
+  protected readonly panelWidth = signal(this.defaultWidth);
   protected readonly peek = signal(false);
   protected readonly renamingPageId = signal<string | null>(null);
   protected readonly menuPage = signal<PageV2 | null>(null);
@@ -443,6 +455,41 @@ export class PageSidebarComponent {
     if (this.collapsed()) {
       this.peek.set(true);
     }
+  }
+
+  protected startPanelResize(event: PointerEvent): void {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    const handle = event.currentTarget as HTMLElement;
+    try {
+      handle.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer already released.
+    }
+    const startX = event.clientX;
+    const startWidth = this.panelWidth();
+    const onMove = (moveEvent: PointerEvent): void => {
+      this.panelWidth.set(this.clampWidth(startWidth + (moveEvent.clientX - startX)));
+    };
+    const cleanup = (): void => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', cleanup);
+      handle.removeEventListener('pointercancel', cleanup);
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', cleanup);
+    handle.addEventListener('pointercancel', cleanup);
+  }
+
+  protected nudgePanelWidth(event: Event, delta: number): void {
+    event.preventDefault();
+    this.panelWidth.set(this.clampWidth(this.panelWidth() + delta));
+  }
+
+  private clampWidth(width: number): number {
+    return Math.min(400, Math.max(140, Math.round(width)));
   }
 
   /** A rename in the peek overlay keeps it open until committed/cancelled. */

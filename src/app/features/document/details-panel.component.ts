@@ -48,14 +48,24 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
   imports: [CdkDrag, CdkDragHandle, CdkDropList, ConfirmDialogComponent],
   template: `
     <aside
-      class="flex h-full w-72 shrink-0 flex-col overflow-y-auto border-l border-slate-200 bg-white"
+      class="relative flex h-full shrink-0 flex-col border-l border-slate-200 bg-white"
+      [style.width.px]="panelWidth()"
       aria-label="Details"
     >
+      <button
+        type="button"
+        class="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+        aria-label="Resize details panel (drag, or arrow keys; double-click resets)"
+        (pointerdown)="startPanelResize($event)"
+        (keydown.arrowleft)="nudgePanelWidth($event, 16)"
+        (keydown.arrowright)="nudgePanelWidth($event, -16)"
+        (dblclick)="panelWidth.set(defaultWidth)"
+      ></button>
       <div class="border-b border-slate-200 px-3 py-1.5">
         <h2 class="text-xs font-semibold uppercase tracking-wide text-slate-400">Details</h2>
       </div>
 
-      <div class="flex-1 space-y-4 p-3">
+      <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
         @if (chartContext(); as ctx) {
           <p class="section-label">Chart</p>
           <fieldset class="field">
@@ -774,7 +784,46 @@ export class DetailsPanelComponent {
 
   protected readonly accentColors = ACCENT_COLORS;
   protected readonly refNameError = signal<string | null>(null);
+  protected readonly defaultWidth = 288;
+  /** Ephemeral view state, adjustable by dragging the left border. */
+  protected readonly panelWidth = signal(this.defaultWidth);
   private formulaSession: FormulaEditorSession | null = null;
+
+  protected startPanelResize(event: PointerEvent): void {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    const handle = event.currentTarget as HTMLElement;
+    try {
+      handle.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer already released.
+    }
+    const startX = event.clientX;
+    const startWidth = this.panelWidth();
+    const onMove = (moveEvent: PointerEvent): void => {
+      // Left-edge handle: dragging left grows the panel.
+      this.panelWidth.set(this.clampWidth(startWidth - (moveEvent.clientX - startX)));
+    };
+    const cleanup = (): void => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', cleanup);
+      handle.removeEventListener('pointercancel', cleanup);
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', cleanup);
+    handle.addEventListener('pointercancel', cleanup);
+  }
+
+  protected nudgePanelWidth(event: Event, delta: number): void {
+    event.preventDefault();
+    this.panelWidth.set(this.clampWidth(this.panelWidth() + delta));
+  }
+
+  private clampWidth(width: number): number {
+    return Math.min(560, Math.max(240, Math.round(width)));
+  }
 
   /** Formula column awaiting the destructive convert-to-values confirmation. */
   protected readonly pendingFormulaToValue = signal<{
