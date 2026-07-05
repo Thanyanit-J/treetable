@@ -69,11 +69,14 @@ describe('formulaTokenAt', () => {
 describe('suggestForToken', () => {
   it('suggests columns, functions, nodes and topics at the root', () => {
     expect(labels('topic_wealth', '$')).toEqual(['$Amount', '$Rate']);
-    expect(labels('topic_wealth', 'S')).toEqual(['SUM(…)', 'Savings']);
+    expect(labels('topic_wealth', 'S')).toEqual(['SUM(…)', 'SQRT(…)', 'SIGN(…)', 'Savings']);
     expect(labels('topic_wealth', 'Bus')).toEqual(['Business']);
+    expect(labels('topic_wealth', 'me')).toEqual(['MEDIAN(…)']);
   });
 
   it('lists functions before references on an empty token (Ctrl+I)', () => {
+    // Only the core set shows unprefixed — the full catalog would fill the
+    // cap and push every reference out of the list.
     const all = labels('topic_wealth', '');
     expect(all[0]).toBe('SUM(…)');
     expect(all).toHaveLength(8);

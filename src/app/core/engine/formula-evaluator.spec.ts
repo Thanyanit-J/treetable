@@ -178,12 +178,12 @@ describe('formula evaluator', () => {
   });
 
   it('rejects unknown references and functions', () => {
-    const columns = [computedColumn('$C', '= $Nope'), computedColumn('$D', '=MEDIAN(1, 2)')];
+    const columns = [computedColumn('$C', '= $Nope'), computedColumn('$D', '=QUARTILE(1, 2)')];
     const rows = [leaf('r1', {})];
     const topic = topicOf(columns, rows);
 
     expect(cellError(topic, rows[0]!.id, columns[0]!.id)).toBe('Unknown column: $Nope');
-    expect(cellError(topic, rows[0]!.id, columns[1]!.id)).toBe('Unknown function: MEDIAN');
+    expect(cellError(topic, rows[0]!.id, columns[1]!.id)).toBe('Unknown function: QUARTILE');
   });
 
   it('reports unknown dotted references by name', () => {
@@ -253,5 +253,73 @@ describe('formula evaluator', () => {
   it('formats numbers without binary floating-point noise', () => {
     expect(formatNumericValue(0.1 + 0.2)).toBe('0.3');
     expect(formatNumericValue(3600)).toBe('3600');
+  });
+
+  describe('function library', () => {
+    /** Evaluates one computed column over a single row with $A = raw. */
+    function evalOne(expression: string, raw = ''): { value: number | null; error: string | null } {
+      const columns = [inputColumn('$A'), computedColumn('$C', expression)];
+      const rows = [leaf('r1', valuesFor(columns, [raw]))];
+      const topic = topicOf(columns, rows);
+      return {
+        value: cellValue(topic, rows[0]!.id, columns[1]!.id),
+        error: cellError(topic, rows[0]!.id, columns[1]!.id),
+      };
+    }
+
+    it('evaluates row-scalar math per Row', () => {
+      expect(evalOne('=SQRT($A)', '9').value).toBe(3);
+      expect(evalOne('=ABS(-4)').value).toBe(4);
+      expect(evalOne('=SIGN(-4)').value).toBe(-1);
+      expect(evalOne('=FLOOR(2.7)').value).toBe(2);
+      expect(evalOne('=CEIL(2.2)').value).toBe(3);
+      expect(evalOne('=POW(2, 10)').value).toBe(1024);
+      expect(evalOne('=EXP(0)').value).toBe(1);
+      expect(evalOne('=CLAMP($A, 0, 10)', '42').value).toBe(10);
+    });
+
+    it('rounds with optional digits, Excel-style', () => {
+      expect(evalOne('=ROUND(2.345, 2)').value).toBeCloseTo(2.35, 10);
+      expect(evalOne('=ROUND(2.5)').value).toBe(3);
+      expect(evalOne('=ROUND(15, -1)').value).toBe(20);
+    });
+
+    it('takes logarithms with LN and LOG (default base 10)', () => {
+      expect(evalOne('=LOG(1000)').value).toBeCloseTo(3, 10);
+      expect(evalOne('=LOG(8, 2)').value).toBeCloseTo(3, 10);
+      expect(evalOne('=LN(EXP(2))').value).toBeCloseTo(2, 10);
+      expect(evalOne('=LN(0)').error).toContain('LN of a non-positive number');
+    });
+
+    it('MOD follows the divisor sign and rejects zero', () => {
+      expect(evalOne('=MOD(7, 3)').value).toBe(1);
+      expect(evalOne('=MOD(-3, 2)').value).toBe(1);
+      expect(evalOne('=MOD(3, 0)').error).toBe('Division by zero');
+    });
+
+    it('reports domain and arity errors instead of NaN', () => {
+      expect(evalOne('=SQRT(-1)').error).toBe('SQRT of a negative number');
+      expect(evalOne('=POW(0, -1)').error).toContain('not a finite number');
+      expect(evalOne('=CLAMP(1, 5, 2)').error).toBe('CLAMP minimum exceeds maximum');
+      expect(evalOne('=ROUND(1, 2, 3)').error).toBe('ROUND expects 1–2 arguments');
+      expect(evalOne('=SQRT($A, $A)').error).toBe('SQRT expects 1 argument');
+    });
+
+    it('aggregates with MEDIAN and PRODUCT over a column', () => {
+      const columns = [
+        inputColumn('$A'),
+        computedColumn('$M', '=MEDIAN($A)'),
+        computedColumn('$P', '=$A.product()'),
+      ];
+      const rows = [
+        leaf('r1', valuesFor(columns, ['4'])),
+        leaf('r2', valuesFor(columns, ['1'])),
+        leaf('r3', valuesFor(columns, ['3'])),
+        leaf('r4', valuesFor(columns, ['2'])),
+      ];
+      const topic = topicOf(columns, rows);
+      expect(cellValue(topic, rows[0]!.id, columns[1]!.id)).toBe(2.5);
+      expect(cellValue(topic, rows[0]!.id, columns[2]!.id)).toBe(24);
+    });
   });
 });

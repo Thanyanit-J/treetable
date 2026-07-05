@@ -6,7 +6,13 @@ import {
   collectLeaves,
   walkNodes,
 } from '../model/document.model';
-import { COUNT_FUNCTIONS, CallArg, Expr, parseExpressionSource } from './formula-ast';
+import {
+  COUNT_FUNCTIONS,
+  CallArg,
+  Expr,
+  SCALAR_FUNCTIONS,
+  parseExpressionSource,
+} from './formula-ast';
 
 /**
  * Document-scoped formula evaluation (ADR-0002, ADR-0003).
@@ -508,11 +514,26 @@ export function evaluateDocument(document: DocumentV2): DocumentEvaluation {
     }
 
     const numbers = args.map((arg) => arg.numericValue);
-    if (numbers.length === 0) {
-      return { value: 0, error: null };
-    }
     if (numbers.some((value) => !Number.isFinite(value))) {
       return { value: null, error: `Invalid numeric argument for ${expr.name}` };
+    }
+
+    const scalar = SCALAR_FUNCTIONS.get(expr.name);
+    if (scalar) {
+      // Series arguments expand to one value per Row, so arity lives here.
+      if (numbers.length < scalar.min || numbers.length > scalar.max) {
+        const expected =
+          scalar.min === scalar.max ? `${scalar.min}` : `${scalar.min}–${scalar.max}`;
+        return {
+          value: null,
+          error: `${expr.name} expects ${expected} argument${scalar.max === 1 ? '' : 's'}`,
+        };
+      }
+      return evaluateScalarFunction(expr.name, numbers);
+    }
+
+    if (numbers.length === 0) {
+      return { value: 0, error: null };
     }
 
     switch (expr.name) {
@@ -527,6 +548,17 @@ export function evaluateDocument(document: DocumentV2): DocumentEvaluation {
         return { value: Math.min(...numbers), error: null };
       case 'MAX':
         return { value: Math.max(...numbers), error: null };
+      case 'MEDIAN': {
+        const sorted = [...numbers].sort((a, b) => a - b);
+        const middle = Math.floor(sorted.length / 2);
+        return {
+          value:
+            sorted.length % 2 === 1 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2,
+          error: null,
+        };
+      }
+      case 'PRODUCT':
+        return { value: numbers.reduce((product, value) => product * value, 1), error: null };
       default:
         return { value: null, error: `Unknown function: ${expr.name}` };
     }
@@ -566,6 +598,71 @@ export function evaluateTopic(topic: TopicCardV2): TopicEvaluation {
       computedCells: new Map<string, ReadonlyMap<string, CellComputation>>(),
     }
   );
+}
+
+/** Row-scalar math (SCALAR_FUNCTIONS); arity is already checked. */
+function evaluateScalarFunction(name: string, args: number[]): CellComputation {
+  const [a = 0, b = 0, c = 0] = args;
+  switch (name) {
+    case 'SQRT':
+      if (a < 0) {
+        return { value: null, error: 'SQRT of a negative number' };
+      }
+      return finiteResult(name, Math.sqrt(a));
+    case 'ABS':
+      return finiteResult(name, Math.abs(a));
+    case 'SIGN':
+      return finiteResult(name, Math.sign(a));
+    case 'ROUND': {
+      // Optional digit count, Excel-style: negative rounds left of the point.
+      const digits = Math.max(-10, Math.min(10, Math.trunc(args.length > 1 ? b : 0)));
+      const factor = 10 ** digits;
+      return finiteResult(name, Math.round(a * factor) / factor);
+    }
+    case 'FLOOR':
+      return finiteResult(name, Math.floor(a));
+    case 'CEIL':
+      return finiteResult(name, Math.ceil(a));
+    case 'POW':
+      return finiteResult(name, a ** b);
+    case 'EXP':
+      return finiteResult(name, Math.exp(a));
+    case 'LN':
+      if (a <= 0) {
+        return { value: null, error: 'LN of a non-positive number' };
+      }
+      return finiteResult(name, Math.log(a));
+    case 'LOG': {
+      const base = args.length > 1 ? b : 10;
+      if (a <= 0) {
+        return { value: null, error: 'LOG of a non-positive number' };
+      }
+      if (base <= 0 || base === 1) {
+        return { value: null, error: 'Invalid LOG base' };
+      }
+      return finiteResult(name, Math.log(a) / Math.log(base));
+    }
+    case 'MOD':
+      if (b === 0) {
+        return { value: null, error: 'Division by zero' };
+      }
+      // Excel-style: the sign follows the divisor.
+      return finiteResult(name, a - b * Math.floor(a / b));
+    case 'CLAMP':
+      if (b > c) {
+        return { value: null, error: 'CLAMP minimum exceeds maximum' };
+      }
+      return finiteResult(name, Math.min(c, Math.max(b, a)));
+    default:
+      return { value: null, error: `Unknown function: ${name}` };
+  }
+}
+
+function finiteResult(name: string, value: number): CellComputation {
+  if (!Number.isFinite(value)) {
+    return { value: null, error: `Result of ${name} is not a finite number` };
+  }
+  return { value, error: null };
 }
 
 function collectColumnDeps(

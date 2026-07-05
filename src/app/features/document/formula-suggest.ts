@@ -4,7 +4,11 @@
  * Pure — the FormulaSuggestService feeds it the Document and the dotted
  * token at the caret.
  */
-import { AGGREGATE_FUNCTIONS, COUNT_FUNCTIONS } from '../../core/engine/formula-ast';
+import {
+  AGGREGATE_FUNCTIONS,
+  COUNT_FUNCTIONS,
+  SCALAR_FUNCTIONS,
+} from '../../core/engine/formula-ast';
 import {
   DocumentV2,
   NodeV2,
@@ -64,7 +68,7 @@ export function suggestForToken(
 
   const candidates =
     segments.length === 0
-      ? rootCandidates(document, topic)
+      ? rootCandidates(document, topic, last.length > 0)
       : scopedCandidates(document, topic, segments);
 
   const prefix = last.toLowerCase();
@@ -77,10 +81,20 @@ export function suggestForToken(
   return matches;
 }
 
+/** On an empty token only these show — the cap would otherwise fill with functions. */
+const EMPTY_TOKEN_FUNCTIONS = ['SUM', 'AVG', 'MIN', 'MAX', 'COUNT', 'COUNTA', 'COUNTBLANK'];
+
 /** Unqualified position: functions first, then columns, nodes, other topics. */
-function rootCandidates(document: DocumentV2, topic: TopicCardV2): FormulaSuggestion[] {
+function rootCandidates(
+  document: DocumentV2,
+  topic: TopicCardV2,
+  allFunctions: boolean,
+): FormulaSuggestion[] {
   const out: FormulaSuggestion[] = [];
-  for (const name of [...AGGREGATE_FUNCTIONS, ...COUNT_FUNCTIONS]) {
+  const names = allFunctions
+    ? [...AGGREGATE_FUNCTIONS, ...COUNT_FUNCTIONS, ...SCALAR_FUNCTIONS.keys()]
+    : EMPTY_TOKEN_FUNCTIONS;
+  for (const name of names) {
     out.push({ label: `${name}(…)`, detail: 'function', insert: `${name}()`, caretShift: -1 });
   }
   for (const column of topic.columns) {

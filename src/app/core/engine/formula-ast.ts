@@ -23,8 +23,35 @@ export type CallArg =
   | { kind: 'rowRaw'; path: string[] }
   | { kind: 'expr'; expr: Expr };
 
-export const AGGREGATE_FUNCTIONS: ReadonlySet<string> = new Set(['SUM', 'AVG', 'MIN', 'MAX']);
+export const AGGREGATE_FUNCTIONS: ReadonlySet<string> = new Set([
+  'SUM',
+  'AVG',
+  'MIN',
+  'MAX',
+  'MEDIAN',
+  'PRODUCT',
+]);
 export const COUNT_FUNCTIONS: ReadonlySet<string> = new Set(['COUNT', 'COUNTA', 'COUNTBLANK']);
+
+/**
+ * Row-scalar math: every argument is a single value, so a bare `$Column`
+ * argument means the current Row's cell (never the whole column). Arity is
+ * checked at evaluation, where series arguments have known lengths.
+ */
+export const SCALAR_FUNCTIONS: ReadonlyMap<string, { min: number; max: number }> = new Map([
+  ['SQRT', { min: 1, max: 1 }],
+  ['ABS', { min: 1, max: 1 }],
+  ['SIGN', { min: 1, max: 1 }],
+  ['ROUND', { min: 1, max: 2 }],
+  ['FLOOR', { min: 1, max: 1 }],
+  ['CEIL', { min: 1, max: 1 }],
+  ['POW', { min: 2, max: 2 }],
+  ['EXP', { min: 1, max: 1 }],
+  ['LN', { min: 1, max: 1 }],
+  ['LOG', { min: 1, max: 2 }],
+  ['MOD', { min: 2, max: 2 }],
+  ['CLAMP', { min: 3, max: 3 }],
+]);
 
 // ---------------------------------------------------------------------------
 // Tokenizer
@@ -341,12 +368,13 @@ function parseCall(state: ParserState, name: string): ParseOutcome {
   const upper = name.toUpperCase();
   const isAggregate = AGGREGATE_FUNCTIONS.has(upper);
   const isCount = COUNT_FUNCTIONS.has(upper);
-  if (!isAggregate && !isCount) {
+  const isScalar = SCALAR_FUNCTIONS.has(upper);
+  if (!isAggregate && !isCount && !isScalar) {
     return { error: `Unknown function: ${name}` };
   }
 
   if (match(state, 'rparen')) {
-    if (isCount) {
+    if (isCount || isScalar) {
       return { error: 'Expected function argument' };
     }
     return { expr: { kind: 'call', name: upper, args: [] } };
@@ -381,12 +409,15 @@ function parseCall(state: ParserState, name: string): ParseOutcome {
 /**
  * Argument semantics:
  * - A dotted path argument is always a series over the referenced scope.
- * - A single bare `$Column` argument means the whole column (v1 semantics).
+ * - In scalar functions, a bare `$Column` is always a same-row reference.
+ * - Otherwise a single bare `$Column` argument means the whole column
+ *   (v1 semantics).
  * - With multiple arguments, bare `$Column`s are same-row references —
  *   except in COUNT functions, where they test the current Row's raw.
  */
 function normalizeCallArgs(upperName: string, args: CallArg[]): CallArg[] {
   const isCount = COUNT_FUNCTIONS.has(upperName);
+  const isScalar = SCALAR_FUNCTIONS.has(upperName);
   return args.map((arg) => {
     if (arg.kind !== 'rowRaw') {
       return arg;
@@ -394,6 +425,9 @@ function normalizeCallArgs(upperName: string, args: CallArg[]): CallArg[] {
     const { path } = arg;
     if (path.length > 1) {
       return { kind: 'series', path };
+    }
+    if (isScalar) {
+      return { kind: 'expr', expr: { kind: 'ref', path } };
     }
     if (args.length === 1) {
       return { kind: 'series', path };

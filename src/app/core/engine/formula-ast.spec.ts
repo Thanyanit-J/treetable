@@ -105,9 +105,40 @@ describe('formula AST', () => {
   });
 
   it('rejects malformed dot aggregates with specific messages', () => {
-    expect(parseError('$A.median()')).toContain('Unknown function');
+    expect(parseError('$A.sqrt()')).toContain('Unknown function'); // scalars have no dot form
     expect(parseError('$A.sum(1)')).toContain('takes no arguments');
     expect(parseError('Savings.sum()')).toContain('Expected a column reference');
+  });
+
+  it('parses the extended aggregates in call and dot form', () => {
+    expect(roundTrip('MEDIAN($A)')).toBe('MEDIAN($A)');
+    expect(roundTrip('$A.product()')).toBe('$A.product()');
+  });
+
+  it('treats bare column arguments of scalar functions as same-row refs', () => {
+    const outcome = parseExpressionSource('SQRT($A)');
+    if ('error' in outcome) {
+      throw new Error(outcome.error);
+    }
+    expect(outcome.expr).toMatchObject({
+      kind: 'call',
+      name: 'SQRT',
+      args: [{ kind: 'expr', expr: { kind: 'ref', path: ['$A'] } }],
+    });
+    // A dotted path stays a series (a Leaf-scoped one still yields one value).
+    const dotted = parseExpressionSource('SQRT(Savings.$A)');
+    if ('error' in dotted) {
+      throw new Error(dotted.error);
+    }
+    expect(dotted.expr).toMatchObject({
+      kind: 'call',
+      args: [{ kind: 'series', path: ['Savings', '$A'] }],
+    });
+  });
+
+  it('requires at least one argument for scalar functions', () => {
+    expect(parseError('SQRT()')).toContain('Expected function argument');
+    expect(roundTrip('ROUND($A / $B, 2)')).toBe('ROUND($A / $B, 2)');
   });
 
   it('treats dotted paths in aggregates as series regardless of arity', () => {
