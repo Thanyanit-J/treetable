@@ -112,6 +112,18 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
               (showItems)="store.setChartColumnsIncluded(ctx.ownerId, ctx.chart.id, $event, true)"
             />
           </fieldset>
+          <fieldset class="field">
+            <legend>Rows</legend>
+            <app-visibility-list
+              [visible]="chartRowItems(ctx, true)"
+              [hidden]="chartRowItems(ctx, false)"
+              (hideItems)="store.setChartRowsIncluded(ctx.ownerId, ctx.chart.id, $event, false)"
+              (showItems)="store.setChartRowsIncluded(ctx.ownerId, ctx.chart.id, $event, true)"
+            />
+            <p class="mt-1 text-[11px] font-normal text-slate-400">
+              A branch row charts its subtree, aggregated per column.
+            </p>
+          </fieldset>
           <button
             type="button"
             class="danger-button"
@@ -891,6 +903,29 @@ export class DetailsPanelComponent {
 
   protected columnItems(columns: ColumnV2[]): VisibilityItem[] {
     return columns.map((column) => ({ id: column.id, label: column.displayName }));
+  }
+
+  /** Every node of the source tree, indented by depth, split by inclusion. */
+  protected chartRowItems(
+    context: { chart: ChartConfigV2; sourceTopic: TopicCardV2 | null },
+    included: boolean,
+  ): VisibilityItem[] {
+    const topic = context.sourceTopic;
+    if (!topic) {
+      return [];
+    }
+    const selected = new Set(this.store.effectiveChartRowIds(topic, context.chart));
+    const items: VisibilityItem[] = [];
+    const walk = (nodes: readonly NodeV2[], depth: number): void => {
+      for (const node of nodes) {
+        if (selected.has(node.id) === included) {
+          items.push({ id: node.id, label: node.displayName, indent: depth });
+        }
+        walk(node.children, depth + 1);
+      }
+    };
+    walk(topic.children, 0);
+    return items;
   }
 
   protected readonly topic = computed<TopicCardV2 | null>(() => {

@@ -58,8 +58,13 @@ export interface ChartConfigV2 {
   type: ChartType;
   /** User-given title; absent = derived from the charted columns. */
   name?: string;
-  /** Column Reference Names (same Topic) charted over the Leaves; pie uses the first. */
+  /** Column Reference Names (same Topic) charted over the rows; pie uses the first. */
   columns: string[];
+  /**
+   * Node ids charted as rows, in tree order; absent = every Leaf. Branch
+   * rows chart their subtree aggregated per column (see rowRollup).
+   */
+  rows?: string[];
 }
 
 export type PillAlignment = 'center' | 'top';

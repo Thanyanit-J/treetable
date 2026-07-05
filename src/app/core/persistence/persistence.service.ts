@@ -284,6 +284,14 @@ export class PersistenceService {
     if (typeof config.name === 'string' && config.name.trim().length > 0) {
       chart.name = config.name;
     }
+    if (Array.isArray(config.rows)) {
+      // Dead node ids are dropped lazily at render time, not here (the
+      // source tree may not be parsed yet for Chart Cards).
+      const rows = config.rows.filter((id): id is string => typeof id === 'string');
+      if (rows.length > 0) {
+        chart.rows = rows;
+      }
+    }
     return chart;
   }
 

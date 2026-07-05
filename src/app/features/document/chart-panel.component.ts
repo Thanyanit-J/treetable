@@ -7,8 +7,10 @@ import {
 import {
   ChartConfigV2,
   ColumnV2,
+  NodeV2,
   TopicCardV2,
   collectLeaves,
+  walkNodes,
 } from '../../core/model/document.model';
 import { DocumentStoreService } from '../../core/store/document-store.service';
 
@@ -242,7 +244,6 @@ export class ChartPanelComponent {
   protected readonly renderedCharts = computed<RenderedChart[]>(() => {
     const topic = this.topic();
     const evaluation = this.evaluation();
-    const leaves = collectLeaves(topic.children);
     const columnsByRef = new Map(topic.columns.map((column) => [column.refName, column]));
 
     return (this.charts() ?? topic.charts ?? []).map((config) => {
@@ -263,8 +264,9 @@ export class ChartPanelComponent {
         }
       }
 
+      const rows = this.chartRows(topic, config);
       const values = series.map((entry) =>
-        leaves.map((leaf) => leafNumericValue(entry.column, leaf, evaluation) ?? 0),
+        rows.map((node) => this.rowValue(entry.column, node, evaluation)),
       );
 
       if (config.type === 'pie') {
@@ -276,7 +278,7 @@ export class ChartPanelComponent {
           zeroLineY: null,
           categories: [],
           ...this.renderPie(
-            leaves.map((leaf) => leaf.displayName),
+            rows.map((node) => node.displayName),
             values,
             series.map((entry) => entry.displayName),
           ),
@@ -290,13 +292,39 @@ export class ChartPanelComponent {
         slices: [],
         legend: series.map((entry) => ({ color: entry.color, label: entry.displayName })),
         ...this.renderBars(
-          leaves.map((leaf) => leaf.displayName),
+          rows.map((node) => node.displayName),
           values,
           series,
         ),
       };
     });
   });
+
+  /** Rows charted: the config's node ids (tree order) or every Leaf. */
+  private chartRows(topic: TopicCardV2, config: ChartConfigV2): NodeV2[] {
+    if (!config.rows) {
+      return collectLeaves(topic.children);
+    }
+    const wanted = new Set(config.rows);
+    const rows: NodeV2[] = [];
+    walkNodes(topic.children, (node) => {
+      if (wanted.has(node.id)) {
+        rows.push(node);
+      }
+    });
+    return rows;
+  }
+
+  /** A Leaf charts its cell; a Branch charts its subtree summed per column. */
+  private rowValue(column: ColumnV2, node: NodeV2, evaluation: TopicEvaluation): number {
+    if (node.children.length === 0) {
+      return leafNumericValue(column, node, evaluation) ?? 0;
+    }
+    return collectLeaves(node.children)
+      .map((leaf) => leafNumericValue(column, leaf, evaluation))
+      .filter((value): value is number => value !== null)
+      .reduce((sum, value) => sum + value, 0);
+  }
 
   protected chartTitle(chart: RenderedChart): string {
     return chart.config.name ?? (chart.series.map((entry) => entry.displayName).join(', ') || '—');

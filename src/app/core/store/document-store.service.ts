@@ -784,6 +784,88 @@ export class DocumentStoreService {
     });
   }
 
+  /** A chart's rows resolved to existing node ids in tree order. */
+  effectiveChartRowIds(source: TopicCardV2, chart: ChartConfigV2): string[] {
+    if (chart.rows) {
+      const wanted = new Set(chart.rows);
+      const ids: string[] = [];
+      walkNodes(source.children, (node) => {
+        if (wanted.has(node.id)) {
+          ids.push(node.id);
+        }
+      });
+      return ids;
+    }
+    return collectLeaves(source.children).map((leaf) => leaf.id);
+  }
+
+  /**
+   * Includes or excludes a batch of row nodes as ONE undo step. Rows are
+   * stored in tree order; when the selection is exactly "every Leaf" the
+   * chart drops back to its default (new Leaves then join automatically).
+   * A chart keeps at least one row.
+   */
+  setChartRowsIncluded(
+    ownerCardId: string,
+    chartId: string,
+    nodeIds: readonly string[],
+    included: boolean,
+  ): void {
+    const owner = this.cardById(ownerCardId);
+    const chart = owner ? this.chartsOf(owner)?.find((c) => c.id === chartId) : undefined;
+    const source =
+      owner?.kind === 'topic'
+        ? owner
+        : owner?.kind === 'chartcard'
+          ? this.topicById(owner.sourceTopicId)
+          : undefined;
+    if (!chart || !source) {
+      return;
+    }
+    const valid = new Set<string>();
+    walkNodes(source.children, (node) => valid.add(node.id));
+    const current = new Set(this.effectiveChartRowIds(source, chart));
+    let changed = false;
+    for (const id of nodeIds) {
+      if (!valid.has(id)) {
+        continue;
+      }
+      if (included ? !current.has(id) : current.has(id)) {
+        changed = true;
+        if (included) {
+          current.add(id);
+        } else {
+          current.delete(id);
+        }
+      }
+    }
+    if (!changed || current.size === 0) {
+      return;
+    }
+    const ordered: string[] = [];
+    walkNodes(source.children, (node) => {
+      if (current.has(node.id)) {
+        ordered.push(node.id);
+      }
+    });
+    const leafIds = collectLeaves(source.children).map((leaf) => leaf.id);
+    const isDefault = ordered.length === leafIds.length && leafIds.every((id) => current.has(id));
+    this.mutate((document) => {
+      const draftOwner = document.cards.find((candidate) => candidate.id === ownerCardId);
+      const draftChart = draftOwner
+        ? this.chartsOf(draftOwner)?.find((candidate) => candidate.id === chartId)
+        : undefined;
+      if (!draftChart) {
+        return;
+      }
+      if (isDefault) {
+        delete draftChart.rows;
+      } else {
+        draftChart.rows = ordered;
+      }
+    });
+  }
+
   renameChart(ownerCardId: string, chartId: string, name: string): void {
     const owner = this.cardById(ownerCardId);
     const chart = owner ? this.chartsOf(owner)?.find((c) => c.id === chartId) : undefined;

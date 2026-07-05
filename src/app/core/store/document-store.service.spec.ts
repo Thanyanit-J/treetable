@@ -552,6 +552,28 @@ describe('DocumentStoreService', () => {
       expect(wealth().charts![0]!.columns).toEqual(['$Amount', '$Rate', '$Yield']);
     });
 
+    it('manages chart rows: all Leaves by default, branches includable, tree-ordered', () => {
+      const bankB = () => savings().children.find((node) => node.refName === 'BankB')!;
+      const cash = () => wealth().children.find((node) => node.refName === 'Cash')!;
+      store.addChart(wealth().id, 'bar');
+      const chartId = wealth().charts![0]!.id;
+      expect(wealth().charts![0]!.rows).toBeUndefined();
+
+      store.setChartRowsIncluded(wealth().id, chartId, [bankA().id], false);
+      expect(wealth().charts![0]!.rows).toEqual([bankB().id, cash().id]);
+
+      store.setChartRowsIncluded(wealth().id, chartId, [savings().id, bankA().id], true);
+      expect(wealth().charts![0]!.rows).toEqual([savings().id, bankA().id, bankB().id, cash().id]);
+
+      // Back to exactly "every Leaf" collapses to the default.
+      store.setChartRowsIncluded(wealth().id, chartId, [savings().id], false);
+      expect(wealth().charts![0]!.rows).toBeUndefined();
+
+      // Excluding every row is refused.
+      store.setChartRowsIncluded(wealth().id, chartId, [bankA().id, bankB().id, cash().id], false);
+      expect(wealth().charts![0]!.rows).toBeUndefined();
+    });
+
     it('re-syncs chart source order when table columns are reordered', () => {
       store.addChart(wealth().id, 'bar');
       const chartId = wealth().charts![0]!.id;
