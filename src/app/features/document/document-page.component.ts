@@ -52,6 +52,14 @@ interface CardDragSession {
   started: boolean;
   zones: { key: string; rect: DOMRect }[];
   preview: HTMLElement | null;
+  /** Scroll container around the rail; edges auto-scroll during the drag. */
+  scrollHost: HTMLElement | null;
+  /** Scroll position when zones were measured; hit-testing compensates. */
+  baseScrollLeft: number;
+  baseScrollTop: number;
+  lastX: number;
+  lastY: number;
+  rafId: number | null;
   onMove: (event: PointerEvent) => void;
   onUp: () => void;
   onCancel: () => void;
@@ -379,6 +387,12 @@ export class DocumentPageComponent {
       started: false,
       zones: [],
       preview: null,
+      scrollHost: null,
+      baseScrollLeft: 0,
+      baseScrollTop: 0,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      rafId: null,
       onMove: (moveEvent) => this.onCardDragMove(moveEvent),
       onUp: () => this.finishCardDrag(true),
       onCancel: () => this.finishCardDrag(false),
@@ -399,6 +413,8 @@ export class DocumentPageComponent {
     if (!session) {
       return;
     }
+    session.lastX = event.clientX;
+    session.lastY = event.clientY;
     if (!session.started) {
       if (Math.hypot(event.clientX - session.startX, event.clientY - session.startY) < 5) {
         return;
@@ -432,8 +448,57 @@ export class DocumentPageComponent {
       .map((zone) => ({ key: zone.dataset['zone'] ?? '', rect: zone.getBoundingClientRect() }))
       .filter((zone) => zone.key !== '' && !disabled.has(zone.key));
     session.preview = this.buildDragPreview(cardElement, event);
+    session.scrollHost = rail.parentElement;
+    session.baseScrollLeft = session.scrollHost?.scrollLeft ?? 0;
+    session.baseScrollTop = session.scrollHost?.scrollTop ?? 0;
+    const step = (): void => {
+      if (this.cardDragSession !== session) {
+        return;
+      }
+      this.autoScrollRail(session);
+      session.rafId = requestAnimationFrame(step);
+    };
+    session.rafId = requestAnimationFrame(step);
     document.body.classList.add('tt-card-dragging');
     this.cardDragId.set(session.cardId);
+  }
+
+  /**
+   * Holding the pointer near a rail edge scrolls the rail, so drop positions
+   * beyond the viewport stay reachable in both directions.
+   */
+  private autoScrollRail(session: CardDragSession): void {
+    const host = session.scrollHost;
+    if (!host) {
+      return;
+    }
+    const edge = 48;
+    const maxStep = 16;
+    const rect = host.getBoundingClientRect();
+    const pull = (distance: number): number =>
+      Math.ceil((Math.min(distance, edge) / edge) * maxStep);
+    let dx = 0;
+    let dy = 0;
+    if (session.lastX < rect.left + edge) {
+      dx = -pull(rect.left + edge - session.lastX);
+    } else if (session.lastX > rect.right - edge) {
+      dx = pull(session.lastX - (rect.right - edge));
+    }
+    if (session.lastY < rect.top + edge) {
+      dy = -pull(rect.top + edge - session.lastY);
+    } else if (session.lastY > rect.bottom - edge) {
+      dy = pull(session.lastY - (rect.bottom - edge));
+    }
+    if (dx === 0 && dy === 0) {
+      return;
+    }
+    const beforeLeft = host.scrollLeft;
+    const beforeTop = host.scrollTop;
+    host.scrollLeft += dx;
+    host.scrollTop += dy;
+    if (host.scrollLeft !== beforeLeft || host.scrollTop !== beforeTop) {
+      this.hoverZone.set(this.zoneAt(session, session.lastX, session.lastY));
+    }
   }
 
   private finishCardDrag(commit: boolean): void {
@@ -442,6 +507,9 @@ export class DocumentPageComponent {
       return;
     }
     this.cardDragSession = null;
+    if (session.rafId !== null) {
+      cancelAnimationFrame(session.rafId);
+    }
     session.grip.removeEventListener('pointermove', session.onMove);
     session.grip.removeEventListener('pointerup', session.onUp);
     session.grip.removeEventListener('pointercancel', session.onCancel);
@@ -511,18 +579,22 @@ export class DocumentPageComponent {
         return current;
       }
     }
+    // Static rects were measured at the activation scroll position; testing
+    // the pointer in that frame keeps them truthful after auto-scrolling.
+    const staticX = x + (session.scrollHost?.scrollLeft ?? 0) - session.baseScrollLeft;
+    const staticY = y + (session.scrollHost?.scrollTop ?? 0) - session.baseScrollTop;
     let bestKey: string | null = null;
     let bestDistance = Number.POSITIVE_INFINITY;
     for (const zone of session.zones) {
-      if (!this.zoneHit(zone.key, zone.rect, x, y)) {
+      if (!this.zoneHit(zone.key, zone.rect, staticX, staticY)) {
         continue;
       }
       const centerX = (zone.rect.left + zone.rect.right) / 2;
       const centerY = (zone.rect.top + zone.rect.bottom) / 2;
       // Rail zones span the full rail height; only horizontal aim matters.
       const distance = zone.key.startsWith('rail:')
-        ? Math.abs(x - centerX)
-        : Math.hypot(x - centerX, y - centerY);
+        ? Math.abs(staticX - centerX)
+        : Math.hypot(staticX - centerX, staticY - centerY);
       if (distance < bestDistance) {
         bestDistance = distance;
         bestKey = zone.key;
