@@ -1,5 +1,6 @@
 import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList } from '@angular/cdk/drag-drop';
 import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
+import { NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -8,6 +9,7 @@ import {
   computed,
   effect,
   inject,
+  input,
   output,
   signal,
   viewChild,
@@ -23,77 +25,141 @@ import { DocumentStoreService } from '../../core/store/document-store.service';
  */
 @Component({
   selector: 'app-page-sidebar',
-  imports: [CdkDrag, CdkDragHandle, CdkDropList, CdkMenu, CdkMenuItem, CdkMenuTrigger],
+  imports: [
+    CdkDrag,
+    CdkDragHandle,
+    CdkDropList,
+    CdkMenu,
+    CdkMenuItem,
+    CdkMenuTrigger,
+    NgTemplateOutlet,
+  ],
   template: `
-    <aside class="flex h-full w-44 shrink-0 flex-col border-r border-slate-200 bg-white">
-      <div class="px-2 pt-2">
-        <button
-          type="button"
-          class="w-full rounded bg-sky-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-600"
-          [cdkMenuTriggerFor]="addMenu"
-        >
-          + Add new
-        </button>
-      </div>
-
-      <p class="px-3 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-        Pages
-      </p>
-      <div
-        cdkDropList
-        class="min-h-0 flex-1 overflow-y-auto px-2 pb-2"
-        (cdkDropListDropped)="onPageDrop($event)"
-      >
-        @for (page of store.pages(); track page.id) {
-          <div cdkDrag [cdkDragData]="page.id" class="group/page relative">
-            @if (renamingPageId() === page.id) {
-              <input
-                #renameInput
-                class="w-full rounded border border-sky-300 px-2 py-1.5 text-sm text-slate-800 focus-visible:outline-none"
-                [value]="page.name"
-                aria-label="Rename page"
-                (blur)="commitRename(page, $event)"
-                (keydown.enter)="commitRenameAndBlur(page, $event)"
-                (keydown.escape)="cancelRename($event)"
-                (contextmenu)="$event.stopPropagation()"
-              />
-            } @else {
+    <aside
+      class="relative h-full shrink-0 border-r border-slate-200 bg-white"
+      [class.w-44]="!collapsed()"
+      [class.w-11]="collapsed()"
+      (pointerenter)="onAsideEnter()"
+      (pointerleave)="onAsideLeave()"
+    >
+      @if (!collapsed()) {
+        <ng-container [ngTemplateOutlet]="panelContent" />
+      } @else {
+        <!-- Mini rail: one icon per row, at the exact vertical positions the
+             expanded rows occupy, so peeking/expanding never shifts them. -->
+        <div class="flex h-full flex-col">
+          <div class="px-2 pt-2">
+            <button
+              type="button"
+              class="flex h-7 w-full items-center justify-center rounded bg-sky-600 text-sm font-semibold text-white hover:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-600"
+              [cdkMenuTriggerFor]="addMenu"
+              aria-label="Add new"
+            >
+              +
+            </button>
+          </div>
+          <div class="h-8" aria-hidden="true"></div>
+          <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+            @for (page of store.pages(); track page.id) {
               <button
                 type="button"
-                class="w-full truncate rounded py-1.5 pl-2 pr-12 text-left text-sm hover:bg-slate-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                class="flex h-8 w-full items-center justify-center rounded text-xs font-semibold hover:bg-slate-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
                 [class.bg-sky-100]="isActive(page)"
                 [class.text-sky-800]="isActive(page)"
-                [class.text-slate-600]="!isActive(page)"
+                [class.text-slate-500]="!isActive(page)"
                 [attr.aria-current]="isActive(page) ? 'page' : null"
-                [attr.aria-label]="
-                  'Page ' + page.name + (isActive(page) ? ' (current — click again to rename)' : '')
-                "
-                (click)="onPageClick(page)"
+                [attr.aria-label]="'Page ' + page.name"
+                (click)="store.selectPage(page.id)"
               >
-                {{ page.name }}
-              </button>
-              <button
-                cdkDragHandle
-                type="button"
-                class="absolute right-6 top-1/2 z-10 flex h-5 w-4 -translate-y-1/2 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-200 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/page:opacity-100"
-                [attr.aria-label]="'Drag to reorder page ' + page.name"
-              >
-                <span aria-hidden="true" class="text-[10px] leading-none">⠿</span>
-              </button>
-              <button
-                type="button"
-                class="absolute right-1 top-1/2 z-10 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-200 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/page:opacity-100"
-                [cdkMenuTriggerFor]="pageMenu"
-                (click)="menuPage.set(page)"
-                [attr.aria-label]="'Actions for page ' + page.name"
-              >
-                <span aria-hidden="true" class="text-xs leading-none">⋯</span>
+                {{ pageInitial(page) }}
               </button>
             }
           </div>
+        </div>
+        @if (peek()) {
+          <!-- Hover peek floats over the content area; nothing gets pushed. -->
+          <div
+            class="absolute inset-y-0 left-0 z-40 w-44 border-r border-slate-200 bg-white shadow-xl"
+          >
+            <ng-container [ngTemplateOutlet]="panelContent" />
+          </div>
         }
-      </div>
+      }
     </aside>
+
+    <ng-template #panelContent>
+      <div class="flex h-full flex-col">
+        <div class="px-2 pt-2">
+          <button
+            type="button"
+            class="flex h-7 w-full items-center justify-center rounded bg-sky-600 px-2.5 text-xs font-semibold text-white hover:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-600"
+            [cdkMenuTriggerFor]="addMenu"
+          >
+            + Add new
+          </button>
+        </div>
+
+        <p class="px-3 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Pages
+        </p>
+        <div
+          cdkDropList
+          class="min-h-0 flex-1 overflow-y-auto px-2 pb-2"
+          (cdkDropListDropped)="onPageDrop($event)"
+        >
+          @for (page of store.pages(); track page.id) {
+            <div cdkDrag [cdkDragData]="page.id" class="group/page relative">
+              @if (renamingPageId() === page.id) {
+                <input
+                  #renameInput
+                  class="w-full rounded border border-sky-300 px-2 py-1.5 text-sm text-slate-800 focus-visible:outline-none"
+                  [value]="page.name"
+                  aria-label="Rename page"
+                  (blur)="commitRename(page, $event)"
+                  (keydown.enter)="commitRenameAndBlur(page, $event)"
+                  (keydown.escape)="cancelRename($event)"
+                  (contextmenu)="$event.stopPropagation()"
+                />
+              } @else {
+                <button
+                  type="button"
+                  class="w-full truncate rounded py-1.5 pl-2 pr-12 text-left text-sm hover:bg-slate-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                  [class.bg-sky-100]="isActive(page)"
+                  [class.text-sky-800]="isActive(page)"
+                  [class.text-slate-600]="!isActive(page)"
+                  [attr.aria-current]="isActive(page) ? 'page' : null"
+                  [attr.aria-label]="
+                    'Page ' +
+                    page.name +
+                    (isActive(page) ? ' (current — click again to rename)' : '')
+                  "
+                  (click)="onPageClick(page)"
+                >
+                  {{ page.name }}
+                </button>
+                <button
+                  cdkDragHandle
+                  type="button"
+                  class="absolute right-6 top-1/2 z-10 flex h-5 w-4 -translate-y-1/2 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-200 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/page:opacity-100"
+                  [attr.aria-label]="'Drag to reorder page ' + page.name"
+                >
+                  <span aria-hidden="true" class="text-[10px] leading-none">⠿</span>
+                </button>
+                <button
+                  type="button"
+                  class="absolute right-1 top-1/2 z-10 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-200 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sky-600 group-hover/page:opacity-100"
+                  [cdkMenuTriggerFor]="pageMenu"
+                  (click)="menuPage.set(page)"
+                  [attr.aria-label]="'Actions for page ' + page.name"
+                >
+                  <span aria-hidden="true" class="text-xs leading-none">⋯</span>
+                </button>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </ng-template>
 
     <ng-template #addMenu>
       <div
@@ -281,8 +347,11 @@ import { DocumentStoreService } from '../../core/store/document-store.service';
 export class PageSidebarComponent {
   protected readonly store = inject(DocumentStoreService);
 
+  /** Collapsed = mini icon rail; hovering peeks the full panel as an overlay. */
+  readonly collapsed = input(false);
   readonly requestDeletePage = output<string>();
 
+  protected readonly peek = signal(false);
   protected readonly renamingPageId = signal<string | null>(null);
   protected readonly menuPage = signal<PageV2 | null>(null);
   protected readonly createKind = signal<'topic' | 'table' | null>(null);
@@ -363,6 +432,24 @@ export class PageSidebarComponent {
 
   protected isActive(page: PageV2): boolean {
     return this.store.activePage().id === page.id;
+  }
+
+  protected pageInitial(page: PageV2): string {
+    const first = page.name.trim().charAt(0);
+    return first === '' ? '?' : first.toUpperCase();
+  }
+
+  protected onAsideEnter(): void {
+    if (this.collapsed()) {
+      this.peek.set(true);
+    }
+  }
+
+  /** A rename in the peek overlay keeps it open until committed/cancelled. */
+  protected onAsideLeave(): void {
+    if (this.renamingPageId() === null) {
+      this.peek.set(false);
+    }
   }
 
   /** Click switches to the page; a second click on the current page renames. */

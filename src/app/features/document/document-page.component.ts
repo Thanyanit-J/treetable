@@ -91,7 +91,7 @@ interface Toast {
   },
   template: `
     <div class="flex h-dvh overflow-hidden bg-slate-50">
-      <app-page-sidebar (requestDeletePage)="queuePageDelete($event)" />
+      <app-page-sidebar [collapsed]="!pagesOpen()" (requestDeletePage)="queuePageDelete($event)" />
 
       <div class="flex min-w-0 flex-1 flex-col">
         <header
@@ -132,6 +132,14 @@ interface Toast {
                 (change)="importJson($event)"
               />
             </label>
+            <button
+              type="button"
+              class="toolbar-button"
+              [attr.aria-pressed]="pagesOpen()"
+              (click)="pagesOpen.set(!pagesOpen())"
+            >
+              {{ pagesOpen() ? 'Hide pages' : 'Show pages' }}
+            </button>
             <button
               type="button"
               class="toolbar-button"
@@ -339,6 +347,7 @@ export class DocumentPageComponent {
 
   protected readonly pendingDelete = signal<PendingDelete | null>(null);
   protected readonly detailsOpen = signal(true);
+  protected readonly pagesOpen = signal(true);
   protected readonly toast = signal<Toast | null>(null);
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
