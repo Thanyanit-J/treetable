@@ -11,6 +11,7 @@ import {
   AccentColor,
   ChartCardV2,
   ChartConfigV2,
+  ChartRowRollup,
   ColumnV2,
   NodeV2,
   NoteCardV2,
@@ -120,8 +121,27 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
               (hideItems)="store.setChartRowsIncluded(ctx.ownerId, ctx.chart.id, $event, false)"
               (showItems)="store.setChartRowsIncluded(ctx.ownerId, ctx.chart.id, $event, true)"
             />
+            <label class="mt-2 block">
+              <span
+                class="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400"
+              >
+                Branch rows
+              </span>
+              <select
+                class="field-input"
+                [value]="ctx.chart.rowRollup ?? 'sum'"
+                (change)="commitChartRowRollup(ctx, $event)"
+              >
+                <option value="sum">Sum</option>
+                <option value="avg">Average</option>
+                <option value="min">Min</option>
+                <option value="max">Max</option>
+                <option value="count">Count</option>
+              </select>
+            </label>
             <p class="mt-1 text-[11px] font-normal text-slate-400">
-              A branch row charts its subtree, aggregated per column.
+              A branch row charts its subtree with this function, per column — independent of the
+              columns' own Summary.
             </p>
           </fieldset>
           <button
@@ -881,6 +901,17 @@ export class DetailsPanelComponent {
       context.ownerId,
       context.chart.id,
       (event.target as HTMLInputElement).value,
+    );
+  }
+
+  protected commitChartRowRollup(
+    context: { ownerId: string; chart: ChartConfigV2 },
+    event: Event,
+  ): void {
+    this.store.setChartRowRollup(
+      context.ownerId,
+      context.chart.id,
+      (event.target as HTMLSelectElement).value as ChartRowRollup,
     );
   }
 

@@ -65,7 +65,12 @@ export interface ChartConfigV2 {
    * rows chart their subtree aggregated per column (see rowRollup).
    */
   rows?: string[];
+  /** Aggregate applied per column to a Branch row's subtree; absent = sum. */
+  rowRollup?: ChartRowRollup;
 }
+
+/** Distinct from a column's Summary — this only shapes Branch rows in charts. */
+export type ChartRowRollup = Exclude<RollupMode, 'none'>;
 
 export type PillAlignment = 'center' | 'top';
 export type ConnectorStyle = 'elbow' | 'straight' | 'curved';

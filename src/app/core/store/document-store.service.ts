@@ -12,6 +12,7 @@ import {
   CardV2,
   ChartCardV2,
   ChartConfigV2,
+  ChartRowRollup,
   ChartType,
   ColumnV2,
   ConnectorStyle,
@@ -862,6 +863,28 @@ export class DocumentStoreService {
         delete draftChart.rows;
       } else {
         draftChart.rows = ordered;
+      }
+    });
+  }
+
+  setChartRowRollup(ownerCardId: string, chartId: string, mode: ChartRowRollup): void {
+    const owner = this.cardById(ownerCardId);
+    const chart = owner ? this.chartsOf(owner)?.find((c) => c.id === chartId) : undefined;
+    if (!chart || (chart.rowRollup ?? 'sum') === mode) {
+      return;
+    }
+    this.mutate((document) => {
+      const draftOwner = document.cards.find((candidate) => candidate.id === ownerCardId);
+      const draftChart = draftOwner
+        ? this.chartsOf(draftOwner)?.find((candidate) => candidate.id === chartId)
+        : undefined;
+      if (!draftChart) {
+        return;
+      }
+      if (mode === 'sum') {
+        delete draftChart.rowRollup; // Sum is the default.
+      } else {
+        draftChart.rowRollup = mode;
       }
     });
   }

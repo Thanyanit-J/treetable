@@ -292,6 +292,14 @@ export class PersistenceService {
         chart.rows = rows;
       }
     }
+    if (
+      config.rowRollup === 'avg' ||
+      config.rowRollup === 'min' ||
+      config.rowRollup === 'max' ||
+      config.rowRollup === 'count'
+    ) {
+      chart.rowRollup = config.rowRollup; // 'sum' stays implicit.
+    }
     return chart;
   }
 

@@ -6,6 +6,7 @@ import {
 } from '../../core/engine/formula-evaluator';
 import {
   ChartConfigV2,
+  ChartRowRollup,
   ColumnV2,
   NodeV2,
   TopicCardV2,
@@ -265,8 +266,9 @@ export class ChartPanelComponent {
       }
 
       const rows = this.chartRows(topic, config);
+      const rollup = config.rowRollup ?? 'sum';
       const values = series.map((entry) =>
-        rows.map((node) => this.rowValue(entry.column, node, evaluation)),
+        rows.map((node) => this.rowValue(entry.column, node, evaluation, rollup)),
       );
 
       if (config.type === 'pie') {
@@ -315,15 +317,34 @@ export class ChartPanelComponent {
     return rows;
   }
 
-  /** A Leaf charts its cell; a Branch charts its subtree summed per column. */
-  private rowValue(column: ColumnV2, node: NodeV2, evaluation: TopicEvaluation): number {
+  /** A Leaf charts its cell; a Branch charts its subtree aggregated per column. */
+  private rowValue(
+    column: ColumnV2,
+    node: NodeV2,
+    evaluation: TopicEvaluation,
+    rollup: ChartRowRollup,
+  ): number {
     if (node.children.length === 0) {
       return leafNumericValue(column, node, evaluation) ?? 0;
     }
-    return collectLeaves(node.children)
+    const values = collectLeaves(node.children)
       .map((leaf) => leafNumericValue(column, leaf, evaluation))
-      .filter((value): value is number => value !== null)
-      .reduce((sum, value) => sum + value, 0);
+      .filter((value): value is number => value !== null);
+    if (values.length === 0) {
+      return 0;
+    }
+    switch (rollup) {
+      case 'sum':
+        return values.reduce((sum, value) => sum + value, 0);
+      case 'avg':
+        return values.reduce((sum, value) => sum + value, 0) / values.length;
+      case 'min':
+        return Math.min(...values);
+      case 'max':
+        return Math.max(...values);
+      case 'count':
+        return values.length;
+    }
   }
 
   protected chartTitle(chart: RenderedChart): string {
