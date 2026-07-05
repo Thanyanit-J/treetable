@@ -163,12 +163,15 @@ interface ConnectorPath {
               <!-- Column width handle on the header's right edge. -->
               <button
                 type="button"
-                class="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none hover:bg-sky-300/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+                class="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none focus-visible:bg-sky-300/70 focus-visible:outline-none"
+                [class.line-hot]="isBorderHot('column', column.id)"
                 [attr.aria-label]="
                   'Resize column ' +
                   column.displayName +
                   ' (drag, or arrow keys; double-click fits content)'
                 "
+                (pointerenter)="onBorderHover('column', column.id, $event)"
+                (pointerleave)="onBorderLeave()"
                 (pointerdown)="startColumnResize(column, $event)"
                 (dblclick)="store.setColumnWidth(topic().id, column.id, null)"
                 (keydown.arrowleft)="nudgeColumnWidth(column, $event, -16)"
@@ -344,7 +347,10 @@ interface ConnectorPath {
                     type="button"
                     tabindex="-1"
                     aria-hidden="true"
-                    class="absolute inset-y-0 right-0 z-10 w-1 cursor-col-resize touch-none hover:bg-sky-300/70"
+                    class="absolute inset-y-0 right-0 z-10 w-1 cursor-col-resize touch-none"
+                    [class.line-hot]="isBorderHot('column', column.id)"
+                    (pointerenter)="onBorderHover('column', column.id, $event)"
+                    (pointerleave)="onBorderLeave()"
                     (pointerdown)="startColumnResize(column, $event)"
                     (dblclick)="
                       $event.stopPropagation(); store.setColumnWidth(topic().id, column.id, null)
@@ -354,7 +360,10 @@ interface ConnectorPath {
                     type="button"
                     tabindex="-1"
                     aria-hidden="true"
-                    class="absolute inset-x-0 bottom-0 z-10 h-1 cursor-row-resize touch-none hover:bg-sky-300/70"
+                    class="absolute inset-x-0 bottom-0 z-10 h-1 cursor-row-resize touch-none"
+                    [class.line-hot]="isBorderHot('row', row.nodeId)"
+                    (pointerenter)="onBorderHover('row', row.nodeId, $event)"
+                    (pointerleave)="onBorderLeave()"
                     (pointerdown)="startRowResize(row, $event)"
                     (dblclick)="
                       $event.stopPropagation(); store.setRowHeight(topic().id, row.nodeId, null)
@@ -447,6 +456,17 @@ interface ConnectorPath {
           <path [attr.d]="path.d" fill="none" stroke="var(--color-slate-300)" stroke-width="1.5" />
         }
       </svg>
+
+      @if (borderTip(); as tip) {
+        <div
+          class="pointer-events-none fixed z-50 rounded bg-slate-800 px-1.5 py-0.5 text-[11px] leading-snug text-white shadow"
+          [style.left.px]="tip.x"
+          [style.top.px]="tip.y"
+          role="tooltip"
+        >
+          Double-click to fit content
+        </div>
+      }
     </div>
 
     <ng-template #columnMenu>
@@ -602,6 +622,10 @@ interface ConnectorPath {
     </ng-template>
   `,
   styles: `
+    /* One hovered handle lights every handle on its border line. */
+    .line-hot {
+      background: color-mix(in srgb, var(--color-sky-300) 70%, transparent);
+    }
     .menu-item {
       display: block;
       width: 100%;
@@ -772,6 +796,47 @@ export class LatticeComponent {
     return this.findNode(row.nodeId)?.rowHeight ?? null;
   }
 
+  /** Border under the pointer: every handle on the same line highlights. */
+  protected readonly hotBorder = signal<{ kind: 'column' | 'row'; id: string } | null>(null);
+  /** Discoverability tooltip, shown after lingering on a border for 1s. */
+  protected readonly borderTip = signal<{ x: number; y: number } | null>(null);
+  private borderTipTimer: ReturnType<typeof setTimeout> | null = null;
+
+  protected onBorderHover(kind: 'column' | 'row', id: string, event: PointerEvent): void {
+    this.hotBorder.set({ kind, id });
+    this.clearBorderTip();
+    // Fixed positioning inside a zoomed surface multiplies lengths by the
+    // effective zoom — divide so the tip lands at the pointer.
+    const scale = this.latticeScale();
+    const x = (event.clientX + 12) / scale;
+    const y = (event.clientY + 14) / scale;
+    this.borderTipTimer = setTimeout(() => this.borderTip.set({ x, y }), 1000);
+  }
+
+  protected onBorderLeave(): void {
+    this.hotBorder.set(null);
+    this.clearBorderTip();
+  }
+
+  protected isBorderHot(kind: 'column' | 'row', id: string): boolean {
+    const hot = this.hotBorder();
+    return hot?.kind === kind && hot.id === id;
+  }
+
+  private clearBorderTip(): void {
+    if (this.borderTipTimer !== null) {
+      clearTimeout(this.borderTipTimer);
+      this.borderTipTimer = null;
+    }
+    this.borderTip.set(null);
+  }
+
+  /** Rendered px per layout px at the lattice root (CSS zoom compensation). */
+  private latticeScale(): number {
+    const root = this.latticeRootRef().nativeElement;
+    return root.offsetWidth > 0 ? root.getBoundingClientRect().width / root.offsetWidth : 1;
+  }
+
   /**
    * Border drag (column edges and row bottoms, along their whole line):
    * live preview via the resizing signals, one undo step on release.
@@ -834,6 +899,7 @@ export class LatticeComponent {
     }
     event.preventDefault();
     event.stopPropagation();
+    this.clearBorderTip();
     const handle = event.currentTarget as HTMLElement;
     try {
       handle.setPointerCapture(event.pointerId);
