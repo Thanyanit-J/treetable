@@ -457,6 +457,23 @@ interface ConnectorPath {
         >
           Clear
         </button>
+        <div class="my-1 border-t border-slate-200" role="separator"></div>
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          (cdkMenuItemTriggered)="insertColumnsFromSelection('left')"
+        >
+          Insert column left
+        </button>
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          (cdkMenuItemTriggered)="insertColumnsFromSelection('right')"
+        >
+          Insert column right
+        </button>
       </div>
     </ng-template>
 
@@ -957,6 +974,34 @@ export class LatticeComponent {
       return column?.kind === 'input';
     }
     return selection?.kind === 'range';
+  }
+
+  /** Distinct columns covered by the current cell/range selection (visible order). */
+  private selectionColumnIds(): string[] {
+    const selection = this.store.selection();
+    if (selection?.kind === 'cell') {
+      return [selection.columnId];
+    }
+    if (selection?.kind !== 'range') {
+      return [];
+    }
+    const visible = this.renderColumns();
+    const anchorIndex = visible.findIndex((column) => column.id === selection.anchor.columnId);
+    const focusIndex = visible.findIndex((column) => column.id === selection.focus.columnId);
+    if (anchorIndex < 0 || focusIndex < 0) {
+      return [];
+    }
+    const [start, end] =
+      anchorIndex <= focusIndex ? [anchorIndex, focusIndex] : [focusIndex, anchorIndex];
+    return visible.slice(start, end + 1).map((column) => column.id);
+  }
+
+  /** One new column per selected column; same-column cells collapse to one. */
+  protected insertColumnsFromSelection(side: 'left' | 'right'): void {
+    const ids = this.selectionColumnIds();
+    if (ids.length > 0) {
+      this.store.insertColumnsAdjacent(this.topic().id, ids, side);
+    }
   }
 
   protected canPasteCells(): boolean {

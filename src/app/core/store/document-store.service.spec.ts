@@ -591,6 +591,29 @@ describe('DocumentStoreService', () => {
     });
   });
 
+  describe('insertColumnsAdjacent', () => {
+    it('adds one column per distinct reference, right of each, as one undo step', () => {
+      const amount = amountColumn();
+      const rate = wealth().columns.find((column) => column.refName === '$Rate')!;
+
+      // Duplicate ids (several cells of one column) collapse to one insert.
+      store.insertColumnsAdjacent(wealth().id, [amount.id, rate.id, amount.id], 'right');
+
+      expect(wealth().columns.map((column) => column.displayName)).toEqual([
+        'Amount',
+        'New Column',
+        'Rate',
+        'New Column',
+        'Yield',
+      ]);
+      const refNames = wealth().columns.map((column) => column.refName);
+      expect(new Set(refNames).size).toBe(refNames.length);
+
+      store.undo();
+      expect(wealth().columns).toHaveLength(3);
+    });
+  });
+
   describe('bulk summaries', () => {
     it('sets the Summary of several columns as one undo step', () => {
       const ids = [

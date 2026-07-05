@@ -1286,21 +1286,44 @@ export class DocumentStoreService {
   }
 
   insertColumn(topicId: string, referenceColumnId: string, side: 'left' | 'right'): void {
+    this.insertColumnsAdjacent(topicId, [referenceColumnId], side);
+  }
+
+  /**
+   * Inserts one new column per DISTINCT reference column (a multi-cell
+   * selection grows one column beside each spanned column) — ONE undo step.
+   * Splices run right-to-left so earlier insertions don't shift the rest.
+   */
+  insertColumnsAdjacent(
+    topicId: string,
+    referenceColumnIds: readonly string[],
+    side: 'left' | 'right',
+  ): void {
+    const topic = this.topicById(topicId);
+    if (!topic) {
+      return;
+    }
+    const positions = [...new Set(referenceColumnIds)]
+      .map((id) => topic.columns.findIndex((column) => column.id === id))
+      .filter((index) => index >= 0)
+      .sort((a, b) => b - a);
+    if (positions.length === 0) {
+      return;
+    }
     this.mutate((document) => {
-      const topic = this.findTopic(document, topicId);
-      if (!topic) {
+      const draftTopic = this.findTopic(document, topicId);
+      if (!draftTopic) {
         return;
       }
-      const referenceIndex = topic.columns.findIndex((column) => column.id === referenceColumnId);
-      if (referenceIndex < 0) {
-        return;
+      const taken = new Set(draftTopic.columns.map((column) => column.refName));
+      for (const referenceIndex of positions) {
+        const column = createInputColumn(
+          'New Column',
+          uniqueRefName(slugifyColumnRefName('New Column'), taken),
+        );
+        taken.add(column.refName);
+        draftTopic.columns.splice(side === 'left' ? referenceIndex : referenceIndex + 1, 0, column);
       }
-      const taken = new Set(topic.columns.map((column) => column.refName));
-      const column = createInputColumn(
-        'New Column',
-        uniqueRefName(slugifyColumnRefName('New Column'), taken),
-      );
-      topic.columns.splice(side === 'left' ? referenceIndex : referenceIndex + 1, 0, column);
     });
   }
 
