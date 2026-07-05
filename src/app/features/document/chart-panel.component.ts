@@ -394,9 +394,14 @@ export class ChartPanelComponent {
       // categoryAxis 'columns' swaps the dimensions: columns become the
       // categories and each row turns into a coloured series.
       const swapped = config.categoryAxis === 'columns';
+      const labelColumn = config.labelColumn
+        ? (topic.columns.find(
+            (column) => column.refName === config.labelColumn && column.kind !== 'chart',
+          ) ?? null)
+        : null;
       const categories = swapped
         ? series.map((entry) => entry.displayName)
-        : rows.map((node) => node.displayName);
+        : rows.map((node) => this.rowLabel(node, labelColumn, evaluation));
       const plotSeries = swapped
         ? rows.map((node, index) => ({
             displayName: node.displayName,
@@ -464,6 +469,23 @@ export class ChartPanelComponent {
       }
     });
     return rows;
+  }
+
+  /** A row's category label: the label column's cell (Leaves) or the row's name. */
+  private rowLabel(
+    node: NodeV2,
+    labelColumn: ColumnV2 | null,
+    evaluation: TopicEvaluation,
+  ): string {
+    if (!labelColumn || node.children.length > 0) {
+      return node.displayName;
+    }
+    if (labelColumn.kind === 'computed') {
+      const value = leafNumericValue(labelColumn, node, evaluation);
+      return value !== null ? formatNumericValue(value) : node.displayName;
+    }
+    const raw = (node.values[labelColumn.id] ?? '').trim();
+    return raw.length > 0 ? raw : node.displayName;
   }
 
   /** A Leaf charts its cell; a Branch charts its subtree aggregated per column. */

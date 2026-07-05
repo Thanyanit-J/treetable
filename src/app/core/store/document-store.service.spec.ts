@@ -752,6 +752,25 @@ describe('DocumentStoreService', () => {
       store.undo();
       expect(chartCard().charts).toHaveLength(1);
     });
+
+    it('groups chart rows at a tree level and labels categories from a column', () => {
+      const cash = () => wealth().children.find((node) => node.refName === 'Cash')!;
+      store.addChartCard(wealth().id);
+      const chartId = chartCard().charts[0]!.id;
+
+      store.setChartRowGrouping(chartCard().id, chartId, 1);
+      expect(chartCard().charts[0]!.rows).toEqual([savings().id, cash().id]);
+
+      store.setChartRowGrouping(chartCard().id, chartId, null);
+      expect(chartCard().charts[0]!.rows).toBeUndefined();
+
+      store.setChartLabelColumn(chartCard().id, chartId, '$Rate');
+      expect(chartCard().charts[0]!.labelColumn).toBe('$Rate');
+      store.setChartLabelColumn(chartCard().id, chartId, '$Nope');
+      expect(chartCard().charts[0]!.labelColumn).toBe('$Rate');
+      store.setChartLabelColumn(chartCard().id, chartId, null);
+      expect(chartCard().charts[0]!.labelColumn).toBeUndefined();
+    });
   });
 
   describe('chart axis options', () => {

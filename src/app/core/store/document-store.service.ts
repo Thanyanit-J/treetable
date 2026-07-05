@@ -36,6 +36,7 @@ import {
   createPage,
   ensureCanHostChildren,
   findNodeAndParent,
+  isChartableColumn,
   isLeaf,
   makeId,
   isTopicCard,
@@ -497,7 +498,7 @@ export class DocumentStoreService {
    */
   addChartCard(sourceTopicId: string): void {
     const source = this.topicById(sourceTopicId);
-    const defaultColumn = source?.columns.find((column) => column.kind !== 'chart');
+    const defaultColumn = source?.columns.find(isChartableColumn);
     if (!source || !defaultColumn) {
       return;
     }
@@ -761,6 +762,92 @@ export class DocumentStoreService {
     });
   }
 
+  /** Labels row categories with a column's cell values; null = row names. */
+  setChartLabelColumn(ownerCardId: string, chartId: string, refName: string | null): void {
+    const owner = this.cardById(ownerCardId);
+    const chart = owner ? this.chartsOf(owner)?.find((c) => c.id === chartId) : undefined;
+    if (!chart || (chart.labelColumn ?? null) === refName) {
+      return;
+    }
+    if (refName !== null) {
+      const source = owner?.kind === 'chartcard' ? this.topicById(owner.sourceTopicId) : undefined;
+      const valid = source?.columns.some(
+        (column) => column.refName === refName && column.kind !== 'chart',
+      );
+      if (!valid) {
+        return;
+      }
+    }
+    this.mutate((document) => {
+      const draftOwner = document.cards.find((candidate) => candidate.id === ownerCardId);
+      const draftChart = draftOwner
+        ? this.chartsOf(draftOwner)?.find((candidate) => candidate.id === chartId)
+        : undefined;
+      if (!draftChart) {
+        return;
+      }
+      if (refName === null) {
+        delete draftChart.labelColumn;
+      } else {
+        draftChart.labelColumn = refName;
+      }
+    });
+  }
+
+  /**
+   * Groups the chart's rows at a tree level: every node at depth `level`
+   * (1 = top level) becomes one category, branches combined by the chart's
+   * group function. `null` returns to the default — every Leaf.
+   */
+  setChartRowGrouping(ownerCardId: string, chartId: string, level: number | null): void {
+    const owner = this.cardById(ownerCardId);
+    const chart = owner ? this.chartsOf(owner)?.find((c) => c.id === chartId) : undefined;
+    const source = owner?.kind === 'chartcard' ? this.topicById(owner.sourceTopicId) : undefined;
+    if (!chart || !source) {
+      return;
+    }
+    let rows: string[] | undefined;
+    if (level !== null) {
+      rows = this.nodeIdsAtLevel(source, level);
+      if (rows.length === 0) {
+        return;
+      }
+    }
+    if (JSON.stringify(rows ?? null) === JSON.stringify(chart.rows ?? null)) {
+      return;
+    }
+    this.mutate((document) => {
+      const draftOwner = document.cards.find((candidate) => candidate.id === ownerCardId);
+      const draftChart = draftOwner
+        ? this.chartsOf(draftOwner)?.find((candidate) => candidate.id === chartId)
+        : undefined;
+      if (!draftChart) {
+        return;
+      }
+      if (rows === undefined) {
+        delete draftChart.rows;
+      } else {
+        draftChart.rows = rows;
+      }
+    });
+  }
+
+  /** Node ids at a 1-based tree level, in tree order. */
+  nodeIdsAtLevel(topic: TopicCardV2, level: number): string[] {
+    const ids: string[] = [];
+    const descend = (nodes: readonly NodeV2[], depth: number): void => {
+      for (const node of nodes) {
+        if (depth === level) {
+          ids.push(node.id);
+        } else {
+          descend(node.children, depth + 1);
+        }
+      }
+    };
+    descend(topic.children, 1);
+    return ids;
+  }
+
   setChartHorizontal(ownerCardId: string, chartId: string, horizontal: boolean): void {
     const owner = this.cardById(ownerCardId);
     const chart = owner ? this.chartsOf(owner)?.find((c) => c.id === chartId) : undefined;
@@ -989,9 +1076,7 @@ export class DocumentStoreService {
     if (card?.kind !== 'chartcard' || !topic || card.sourceTopicId === sourceTopicId) {
       return;
     }
-    const validRefs = topic.columns
-      .filter((column) => column.kind !== 'chart')
-      .map((column) => column.refName);
+    const validRefs = topic.columns.filter(isChartableColumn).map((column) => column.refName);
     if (validRefs.length === 0) {
       return; // Nothing chartable in the target Topic.
     }

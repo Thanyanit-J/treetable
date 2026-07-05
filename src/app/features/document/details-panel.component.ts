@@ -18,6 +18,7 @@ import {
   RollupMode,
   TopicCardV2,
   findNodeAndParent,
+  isChartableColumn,
   isTopicCard,
 } from '../../core/model/document.model';
 import {
@@ -148,6 +149,24 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
               The other dimension becomes the coloured series.
             </p>
           </fieldset>
+          @if ((ctx.chart.categoryAxis ?? 'rows') === 'rows') {
+            <label class="field">
+              <span>{{ ctx.chart.type === 'pie' ? 'Slice labels' : 'X axis labels' }}</span>
+              <select
+                class="field-input"
+                [value]="ctx.chart.labelColumn ?? ''"
+                (change)="commitChartLabelColumn(ctx, $event)"
+              >
+                <option value="">Row name</option>
+                @for (option of labelColumnOptions(ctx); track option.id) {
+                  <option [value]="option.refName">{{ option.displayName }}</option>
+                }
+              </select>
+              <span class="mt-1 block text-[11px] font-normal text-slate-400">
+                Label categories from a column — e.g. an account name or ticker text column.
+              </span>
+            </label>
+          }
           @if (ctx.chart.type === 'bar') {
             <fieldset class="field">
               <legend>Direction</legend>
@@ -186,6 +205,30 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
           </fieldset>
           <fieldset class="field">
             <legend>Rows</legend>
+            <label class="mb-2 block">
+              <span
+                class="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400"
+              >
+                Group by
+              </span>
+              <select
+                class="field-input"
+                [value]="rowGroupingValue(ctx)"
+                (change)="commitRowGrouping(ctx, $event)"
+              >
+                <option value="">Every leaf row</option>
+                @for (level of groupLevels(ctx); track level) {
+                  <option [value]="level">Level {{ level }} groups</option>
+                }
+                @if (rowGroupingValue(ctx) === 'custom') {
+                  <option value="custom" disabled>Custom selection (below)</option>
+                }
+              </select>
+              <span class="mt-1 block text-[11px] font-normal text-slate-400">
+                Level 1 charts each top-level branch as one bar, its rows combined by the group
+                function.
+              </span>
+            </label>
             <app-visibility-list
               [visible]="chartRowItems(ctx, true)"
               [hidden]="chartRowItems(ctx, false)"
@@ -196,7 +239,7 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
               <span
                 class="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400"
               >
-                Branch rows
+                Group function
               </span>
               <select
                 class="field-input"
@@ -211,7 +254,7 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
               </select>
             </label>
             <p class="mt-1 text-[11px] font-normal text-slate-400">
-              A branch row charts its subtree with this function, per column — independent of the
+              How a group (branch) row combines the rows beneath it, per column — independent of the
               columns' own Summary.
             </p>
           </fieldset>
@@ -1004,11 +1047,78 @@ export class DetailsPanelComponent {
     if (!context.sourceTopic) {
       return [];
     }
+    // Text columns carry labels, not values — they are offered as X labels.
     return context.sourceTopic.columns
       .filter(
-        (column) => column.kind !== 'chart' && !context.chart.columns.includes(column.refName),
+        (column) => isChartableColumn(column) && !context.chart.columns.includes(column.refName),
       )
       .map((column) => ({ refName: column.refName, displayName: column.displayName }));
+  }
+
+  /** Any non-chart column can label the categories (text columns shine here). */
+  protected labelColumnOptions(context: { sourceTopic: TopicCardV2 | null }): ColumnV2[] {
+    return (context.sourceTopic?.columns ?? []).filter((column) => column.kind !== 'chart');
+  }
+
+  protected commitChartLabelColumn(
+    context: { ownerId: string; chart: ChartConfigV2 },
+    event: Event,
+  ): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.store.setChartLabelColumn(context.ownerId, context.chart.id, value === '' ? null : value);
+  }
+
+  /** Tree levels offering meaningful grouping: above the deepest one. */
+  protected groupLevels(context: { sourceTopic: TopicCardV2 | null }): number[] {
+    const topic = context.sourceTopic;
+    if (!topic) {
+      return [];
+    }
+    let maxDepth = 0;
+    const descend = (nodes: readonly NodeV2[], depth: number): void => {
+      for (const node of nodes) {
+        maxDepth = Math.max(maxDepth, depth);
+        descend(node.children, depth + 1);
+      }
+    };
+    descend(topic.children, 1);
+    return Array.from({ length: Math.max(0, maxDepth - 1) }, (_, index) => index + 1);
+  }
+
+  /** '' = every Leaf (default), a level number, or 'custom' for hand-picked rows. */
+  protected rowGroupingValue(context: {
+    chart: ChartConfigV2;
+    sourceTopic: TopicCardV2 | null;
+  }): string {
+    if (!context.chart.rows) {
+      return '';
+    }
+    const topic = context.sourceTopic;
+    if (!topic) {
+      return 'custom';
+    }
+    const rowsKey = context.chart.rows.join('\n');
+    for (const level of this.groupLevels(context)) {
+      if (this.store.nodeIdsAtLevel(topic, level).join('\n') === rowsKey) {
+        return String(level);
+      }
+    }
+    return 'custom';
+  }
+
+  protected commitRowGrouping(
+    context: { ownerId: string; chart: ChartConfigV2 },
+    event: Event,
+  ): void {
+    const value = (event.target as HTMLSelectElement).value;
+    if (value === 'custom') {
+      return;
+    }
+    this.store.setChartRowGrouping(
+      context.ownerId,
+      context.chart.id,
+      value === '' ? null : Number(value),
+    );
   }
 
   protected sourceLabel(context: { sourceTopic: TopicCardV2 | null }, refName: string): string {

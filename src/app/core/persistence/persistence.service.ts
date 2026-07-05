@@ -343,6 +343,12 @@ export class PersistenceService {
     if (config.horizontal === true) {
       chart.horizontal = true;
     }
+    if (
+      typeof config.labelColumn === 'string' &&
+      (!validRefs || validRefs.has(config.labelColumn))
+    ) {
+      chart.labelColumn = config.labelColumn;
+    }
     return chart;
   }
 

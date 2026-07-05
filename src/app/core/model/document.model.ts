@@ -85,6 +85,11 @@ export interface ChartConfigV2 {
   categoryAxis?: 'columns';
   /** Bar only: horizontal bars, categories down the y axis. Absent = vertical. */
   horizontal?: true;
+  /**
+   * Column (by Reference Name, often a text column like an account name)
+   * whose cell values label the row categories; absent = the row's name.
+   */
+  labelColumn?: string;
 }
 
 /** Distinct from a column's Summary — this only shapes Branch rows in charts. */
@@ -165,6 +170,11 @@ export type CardV2 = TopicCardV2 | NoteCardV2 | ChartCardV2;
 
 export function isTopicCard(card: CardV2): card is TopicCardV2 {
   return card.kind === 'topic';
+}
+
+/** Columns that can feed chart VALUES — text columns label categories instead. */
+export function isChartableColumn(column: ColumnV2): boolean {
+  return column.kind !== 'chart' && !(column.kind === 'input' && column.valueType === 'text');
 }
 
 /** One rail column: cards stacked top-to-bottom. */
