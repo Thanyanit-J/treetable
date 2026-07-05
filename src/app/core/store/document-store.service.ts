@@ -2198,6 +2198,42 @@ export class DocumentStoreService {
     });
   }
 
+  setShowRowNumbers(topicId: string, show: boolean): void {
+    const current = this.topicById(topicId);
+    if (!current || (current.showRowNumbers ?? false) === show) {
+      return;
+    }
+    this.mutate((document) => {
+      const topic = this.findTopic(document, topicId);
+      if (!topic) {
+        return;
+      }
+      if (show) {
+        topic.showRowNumbers = true;
+      } else {
+        delete topic.showRowNumbers;
+      }
+    });
+  }
+
+  /** Inserts a fresh sibling row above/below a Node (any depth). */
+  insertSiblingNode(topicId: string, nodeId: string, side: 'above' | 'below'): void {
+    this.mutate((document) => {
+      const topic = this.findTopic(document, topicId);
+      if (!topic) {
+        return;
+      }
+      const located = findNodeAndParent(topic.children, nodeId);
+      if (!located) {
+        return;
+      }
+      const displayName = 'New Row';
+      const node = createNode(displayName, nextNodeRefName(topic, displayName));
+      const siblings = located.parent ? located.parent.children : topic.children;
+      siblings.splice(located.index + (side === 'below' ? 1 : 0), 0, node);
+    });
+  }
+
   /**
    * Persists a card border-drag or nudge. `null` releases a dimension back
    * to following content; a fixed dimension scrolls its overflow inside.

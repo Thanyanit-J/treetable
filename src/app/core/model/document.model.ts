@@ -137,6 +137,8 @@ export interface TopicCardV2 {
   connectorStyle?: ConnectorStyle;
   /** Explicit card size and overflow behaviour; absent = grow with content. */
   sizing?: CardSizingV2;
+  /** Numbers every visible row in a gutter column left of the data. */
+  showRowNumbers?: true;
 }
 
 export type NoteFormat = 'text' | 'markdown';

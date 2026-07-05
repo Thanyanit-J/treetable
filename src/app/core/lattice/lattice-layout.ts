@@ -50,6 +50,16 @@ export function computeTopicLattice(
   const pills: LatticePill[] = [];
   // An empty Topic always keeps its root pill — it is the only handle left.
   const showRoot = (topic.showRoot ?? true) || topic.children.length === 0;
+
+  // A hidden root over leaves only is a pure table: rows without any tree
+  // column at all (the "New table" shape).
+  if (!showRoot && topic.children.every((node) => node.children.length === 0)) {
+    for (const node of topic.children) {
+      rows.push({ nodeId: node.id, kind: 'leaf' });
+    }
+    return { rows, pills, pillsByRowStart: new Map(), depthCount: 0 };
+  }
+
   let maxDepth = 0;
 
   const visit = (

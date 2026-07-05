@@ -326,6 +326,14 @@ const SWATCH_BY_ACCENT: Record<AccentColor, string> = {
                 />
                 Show root node
               </label>
+              <label class="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  [checked]="topic.showRowNumbers === true"
+                  (change)="toggleShowRowNumbers(topic, $event)"
+                />
+                Show row numbers
+              </label>
               <fieldset class="field">
                 <legend>Columns</legend>
                 <app-visibility-list
@@ -1185,6 +1193,10 @@ export class DetailsPanelComponent {
 
   protected toggleShowRoot(topic: TopicCardV2, event: Event): void {
     this.store.setShowRoot(topic.id, (event.target as HTMLInputElement).checked);
+  }
+
+  protected toggleShowRowNumbers(topic: TopicCardV2, event: Event): void {
+    this.store.setShowRowNumbers(topic.id, (event.target as HTMLInputElement).checked);
   }
 
   protected visibleColumns(topic: TopicCardV2): ColumnV2[] {

@@ -94,4 +94,18 @@ describe('computeTopicLattice', () => {
     const savings = TREE.children[0]!;
     expect(hiddenLeavesOf(savings).map((leaf) => leaf.id)).toEqual(['bankA', 'bankB']);
   });
+
+  it('renders a hidden root over leaves only as a pure table — no tree columns', () => {
+    const flat = { ...topicOf([node('r1'), node('r2')]), showRoot: false };
+    const lattice = computeTopicLattice(flat, new Set());
+    expect(lattice.rows.map((row) => row.nodeId)).toEqual(['r1', 'r2']);
+    expect(lattice.pills).toEqual([]);
+    expect(lattice.depthCount).toBe(0);
+  });
+
+  it('keeps the tree columns when a hidden-root Topic still has branches', () => {
+    const lattice = computeTopicLattice({ ...TREE, showRoot: false }, new Set());
+    expect(lattice.depthCount).toBeGreaterThan(0);
+    expect(lattice.pills.length).toBeGreaterThan(0);
+  });
 });

@@ -71,14 +71,27 @@ interface ConnectorPath {
       >
         <!-- Header -->
         <div role="row" class="contents" aria-rowindex="1">
-          <div
-            role="columnheader"
-            [style.grid-row]="1"
-            [style.grid-column]="'1 / span ' + lattice().depthCount"
-            [attr.aria-colspan]="lattice().depthCount"
-          >
-            <span class="sr-only">Hierarchy</span>
-          </div>
+          @if (lattice().depthCount > 0) {
+            <div
+              role="columnheader"
+              [style.grid-row]="1"
+              [style.grid-column]="'1 / span ' + lattice().depthCount"
+              [attr.aria-colspan]="lattice().depthCount"
+            >
+              <span class="sr-only">Hierarchy</span>
+            </div>
+          }
+          @if (showRowNumbers()) {
+            <div
+              role="columnheader"
+              class="border-y border-r border-slate-200 bg-slate-50 px-1.5 py-1.5 text-right text-xs font-medium text-slate-400"
+              [class.border-l]="lattice().depthCount === 0"
+              [style.grid-row]="1"
+              [style.grid-column]="numberGridColumn()"
+            >
+              #
+            </div>
+          }
           @for (column of renderColumns(); track column.id; let columnIndex = $index) {
             <div
               role="columnheader"
@@ -195,6 +208,18 @@ interface ConnectorPath {
                   (dragStarted)="startPillDrag(pill, $event)"
                   (duplicate)="duplicatePill(pill)"
                 />
+              </div>
+            }
+            @if (showRowNumbers()) {
+              <div
+                role="gridcell"
+                aria-hidden="true"
+                class="flex min-h-9 items-center justify-end border-b border-r border-slate-200 bg-slate-50 px-1.5 py-1.5 text-right text-xs tabular-nums text-slate-400"
+                [class.border-l]="lattice().depthCount === 0"
+                [style.grid-row]="rowIndex + 2"
+                [style.grid-column]="numberGridColumn()"
+              >
+                {{ rowIndex + 1 }}
               </div>
             }
             @if (row.kind === 'collapsed' && !hasFooter()) {
@@ -351,14 +376,18 @@ interface ConnectorPath {
         <!-- Footer rollups -->
         @if (hasFooter()) {
           <div role="row" class="contents" [attr.aria-rowindex]="lattice().rows.length + 2">
-            <div
-              role="gridcell"
-              class="flex items-center justify-end px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-slate-400"
-              [style.grid-row]="footerGridRow()"
-              [style.grid-column]="'1 / span ' + lattice().depthCount"
-            >
-              Summary
-            </div>
+            <!-- Pure tables (no tree columns) skip the caption — the boxed
+                 totals row explains itself, and the number gutter is narrow. -->
+            @if (lattice().depthCount > 0) {
+              <div
+                role="gridcell"
+                class="flex items-center justify-end px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-slate-400"
+                [style.grid-row]="footerGridRow()"
+                [style.grid-column]="'1 / span ' + (lattice().depthCount + numberOffset())"
+              >
+                Summary
+              </div>
+            }
             <!-- Only columns WITH a summary get a bordered footer cell; the
                  rest of the footer row stays blank. -->
             @for (column of renderColumns(); track column.id; let columnIndex = $index) {
@@ -493,6 +522,31 @@ interface ConnectorPath {
           (cdkMenuItemTriggered)="insertColumnsFromSelection('right')"
         >
           Insert column right
+        </button>
+        <div class="my-1 border-t border-slate-200" role="separator"></div>
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          (cdkMenuItemTriggered)="insertRowFromMenu('above')"
+        >
+          Insert row above
+        </button>
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item"
+          (cdkMenuItemTriggered)="insertRowFromMenu('below')"
+        >
+          Insert row below
+        </button>
+        <button
+          cdkMenuItem
+          type="button"
+          class="menu-item text-rose-700"
+          (cdkMenuItemTriggered)="deleteRowFromMenu()"
+        >
+          Delete row
         </button>
       </div>
     </ng-template>
@@ -655,8 +709,20 @@ export class LatticeComponent {
   /** Live width override while a header-edge drag is in flight. */
   protected readonly resizingColumn = signal<{ id: string; width: number } | null>(null);
 
+  protected readonly showRowNumbers = computed(() => this.topic().showRowNumbers === true);
+  /** Extra grid column for the row-number gutter. */
+  protected readonly numberOffset = computed(() => (this.showRowNumbers() ? 1 : 0));
+  protected readonly numberGridColumn = computed(() => this.lattice().depthCount + 1);
+
   protected readonly gridTemplateColumns = computed(() => {
-    const tree = `repeat(${this.lattice().depthCount}, max-content)`;
+    const depthCount = this.lattice().depthCount;
+    const parts: string[] = [];
+    if (depthCount > 0) {
+      parts.push(`repeat(${depthCount}, max-content)`);
+    }
+    if (this.showRowNumbers()) {
+      parts.push('max-content');
+    }
     const resizing = this.resizingColumn();
     const data = this.renderColumns()
       .map((column) => {
@@ -664,7 +730,8 @@ export class LatticeComponent {
         return width !== undefined ? `${width}px` : 'minmax(6rem, max-content)';
       })
       .join(' ');
-    return `${tree} ${data || 'minmax(6rem, max-content)'}`;
+    parts.push(data || 'minmax(6rem, max-content)');
+    return parts.join(' ');
   });
 
   /**
@@ -729,7 +796,7 @@ export class LatticeComponent {
   }
 
   protected readonly columnCount = computed(
-    () => this.lattice().depthCount + this.renderColumns().length,
+    () => this.lattice().depthCount + this.numberOffset() + this.renderColumns().length,
   );
   protected readonly rowCount = computed(
     () => this.lattice().rows.length + 1 + (this.hasFooter() ? 1 : 0),
@@ -747,7 +814,7 @@ export class LatticeComponent {
   }
 
   protected dataGridColumn(columnIndex: number): number {
-    return this.lattice().depthCount + columnIndex + 1;
+    return this.lattice().depthCount + this.numberOffset() + columnIndex + 1;
   }
 
   protected emptyMessageGridColumn(): string {
@@ -1024,6 +1091,32 @@ export class LatticeComponent {
     }
   }
 
+  /** The row the cell menu acts on: the selection's node (anchor for ranges). */
+  private menuRowNodeId(): string | null {
+    const selection = this.store.selection();
+    if (selection?.kind === 'cell' || selection?.kind === 'node') {
+      return selection.nodeId;
+    }
+    if (selection?.kind === 'range') {
+      return selection.anchor.nodeId;
+    }
+    return null;
+  }
+
+  protected insertRowFromMenu(side: 'above' | 'below'): void {
+    const nodeId = this.menuRowNodeId();
+    if (nodeId) {
+      this.store.insertSiblingNode(this.topic().id, nodeId, side);
+    }
+  }
+
+  protected deleteRowFromMenu(): void {
+    const nodeId = this.menuRowNodeId();
+    if (nodeId) {
+      this.requestDeleteNode.emit({ topicId: this.topic().id, nodeId });
+    }
+  }
+
   /** Expand from the collapsed row's context menu (cells or the merged row). */
   protected expandSelectedRow(): void {
     const selection = this.store.selection();
@@ -1041,7 +1134,8 @@ export class LatticeComponent {
   }
 
   protected hiddenRowGridColumn(): string {
-    return `${this.lattice().depthCount + 1} / span ${Math.max(1, this.renderColumns().length)}`;
+    const start = this.lattice().depthCount + this.numberOffset() + 1;
+    return `${start} / span ${Math.max(1, this.renderColumns().length)}`;
   }
 
   protected selectHiddenRow(row: LatticeRow): void {

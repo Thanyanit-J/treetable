@@ -467,6 +467,9 @@ export class PersistenceService {
     if ((candidate as { showRoot?: unknown }).showRoot === false) {
       card.showRoot = false;
     }
+    if ((candidate as { showRowNumbers?: unknown }).showRowNumbers === true) {
+      card.showRowNumbers = true;
+    }
     if (candidate.customRefName === true) {
       card.customRefName = true;
     }
