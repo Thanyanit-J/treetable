@@ -75,6 +75,35 @@ export type ChartRowRollup = Exclude<RollupMode, 'none'>;
 export type PillAlignment = 'center' | 'top';
 export type ConnectorStyle = 'elbow' | 'straight' | 'curved';
 
+/**
+ * How the card tracks its table's size:
+ * - 'grow'  (default, stored as absent) — the card hugs the table and widens
+ *   as content grows.
+ * - 'wrap'  — the width is fixed; cell text wraps and the table grows down.
+ * - 'fixed' — width and height are fixed; overflowing content scrolls inside.
+ */
+export type CardSizingMode = 'grow' | 'wrap' | 'fixed';
+
+export interface CardSizingV2 {
+  mode: Exclude<CardSizingMode, 'grow'>;
+  /** Explicit size in CSS px; a missing dimension keeps following content. */
+  width?: number;
+  height?: number;
+}
+
+export const CARD_MIN_WIDTH = 256;
+export const CARD_MAX_WIDTH = 1600;
+export const CARD_MIN_HEIGHT = 160;
+export const CARD_MAX_HEIGHT = 1600;
+
+export function clampCardWidth(width: number): number {
+  return Math.min(CARD_MAX_WIDTH, Math.max(CARD_MIN_WIDTH, Math.round(width)));
+}
+
+export function clampCardHeight(height: number): number {
+  return Math.min(CARD_MAX_HEIGHT, Math.max(CARD_MIN_HEIGHT, Math.round(height)));
+}
+
 export interface TopicCardV2 {
   kind: 'topic';
   id: string;
@@ -96,6 +125,8 @@ export interface TopicCardV2 {
   showRoot?: boolean;
   /** Tree connector lines: right-angle elbows (default), straight segments, or curves. */
   connectorStyle?: ConnectorStyle;
+  /** Explicit card size and overflow behaviour; absent = grow with content. */
+  sizing?: CardSizingV2;
 }
 
 export type NoteFormat = 'text' | 'markdown';

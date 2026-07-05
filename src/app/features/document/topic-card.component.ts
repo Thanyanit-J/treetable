@@ -13,17 +13,13 @@ import {
   viewChild,
 } from '@angular/core';
 import { TopicEvaluation } from '../../core/engine/formula-evaluator';
-import { TopicCardV2 } from '../../core/model/document.model';
+import { TopicCardV2, clampCardHeight, clampCardWidth } from '../../core/model/document.model';
 import { DocumentStoreService } from '../../core/store/document-store.service';
 import { ChartPanelComponent } from './chart-panel.component';
 import { LatticeComponent } from './lattice/lattice.component';
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2;
-const MIN_CARD_WIDTH = 256;
-const MAX_CARD_WIDTH = 1600;
-const MIN_CARD_HEIGHT = 160;
-const MAX_CARD_HEIGHT = 1600;
 
 /**
  * Card chrome around one Topic's lattice. Edge-to-edge (no padding), a ⋯
@@ -109,50 +105,44 @@ const MAX_CARD_HEIGHT = 1600;
           </div>
         }
 
-        <!-- Resize handles; content scrolls inside the card. Width handles
-             only exist when another stack sits beside this card, height
-             handles only when cards are stacked in the same column — sizing
-             is about arranging against neighbours, so a lone card has none. -->
-        @if (canResizeWidth()) {
-          <button
-            type="button"
-            class="absolute inset-y-0 right-0 z-30 w-1.5 cursor-col-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
-            aria-label="Resize card width (drag, or arrow keys; double-click resets)"
-            (pointerdown)="startResize($event, 'right')"
-            (keydown.arrowleft)="nudgeWidth($event, -32)"
-            (keydown.arrowright)="nudgeWidth($event, 32)"
-            (dblclick)="cardWidth.set(null)"
-          ></button>
-          <button
-            type="button"
-            class="absolute inset-y-0 left-0 z-30 w-1.5 cursor-col-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
-            aria-label="Resize card width from the left edge (drag, or arrow keys; double-click resets)"
-            (pointerdown)="startResize($event, 'left')"
-            (keydown.arrowleft)="nudgeWidth($event, -32)"
-            (keydown.arrowright)="nudgeWidth($event, 32)"
-            (dblclick)="cardWidth.set(null)"
-          ></button>
-        }
-        @if (canResizeHeight()) {
-          <button
-            type="button"
-            class="absolute inset-x-0 bottom-0 z-30 h-1.5 cursor-row-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
-            aria-label="Resize card height (drag, or arrow keys; double-click resets)"
-            (pointerdown)="startResize($event, 'bottom')"
-            (keydown.arrowup)="nudgeHeight($event, -32)"
-            (keydown.arrowdown)="nudgeHeight($event, 32)"
-            (dblclick)="cardHeight.set(null)"
-          ></button>
-          <button
-            type="button"
-            class="absolute inset-x-0 top-0 z-30 h-1.5 cursor-row-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
-            aria-label="Resize card height from the top edge (drag, or arrow keys; double-click resets)"
-            (pointerdown)="startResize($event, 'top')"
-            (keydown.arrowup)="nudgeHeight($event, -32)"
-            (keydown.arrowdown)="nudgeHeight($event, 32)"
-            (dblclick)="cardHeight.set(null)"
-          ></button>
-        }
+        <!-- Resize handles: dragging a border fixes that dimension (persisted
+             on the card); double-click releases it back to following content. -->
+        <button
+          type="button"
+          class="absolute inset-y-0 right-0 z-30 w-1.5 cursor-col-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+          aria-label="Resize card width (drag, or arrow keys; double-click releases)"
+          (pointerdown)="startResize($event, 'right')"
+          (keydown.arrowleft)="nudgeWidth($event, -32)"
+          (keydown.arrowright)="nudgeWidth($event, 32)"
+          (dblclick)="store.setCardSize(topic().id, { width: null })"
+        ></button>
+        <button
+          type="button"
+          class="absolute inset-y-0 left-0 z-30 w-1.5 cursor-col-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+          aria-label="Resize card width from the left edge (drag, or arrow keys; double-click releases)"
+          (pointerdown)="startResize($event, 'left')"
+          (keydown.arrowleft)="nudgeWidth($event, -32)"
+          (keydown.arrowright)="nudgeWidth($event, 32)"
+          (dblclick)="store.setCardSize(topic().id, { width: null })"
+        ></button>
+        <button
+          type="button"
+          class="absolute inset-x-0 bottom-0 z-30 h-1.5 cursor-row-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+          aria-label="Resize card height (drag, or arrow keys; double-click releases)"
+          (pointerdown)="startResize($event, 'bottom')"
+          (keydown.arrowup)="nudgeHeight($event, -32)"
+          (keydown.arrowdown)="nudgeHeight($event, 32)"
+          (dblclick)="store.setCardSize(topic().id, { height: null })"
+        ></button>
+        <button
+          type="button"
+          class="absolute inset-x-0 top-0 z-30 h-1.5 cursor-row-resize touch-none hover:bg-sky-200/70 focus-visible:bg-sky-300/70 focus-visible:outline-none"
+          aria-label="Resize card height from the top edge (drag, or arrow keys; double-click releases)"
+          (pointerdown)="startResize($event, 'top')"
+          (keydown.arrowup)="nudgeHeight($event, -32)"
+          (keydown.arrowdown)="nudgeHeight($event, 32)"
+          (dblclick)="store.setCardSize(topic().id, { height: null })"
+        ></button>
       </div>
     </article>
 
@@ -211,9 +201,6 @@ export class TopicCardComponent {
 
   readonly topic = input.required<TopicCardV2>();
   readonly evaluation = input.required<TopicEvaluation>();
-  /** Whether a neighbouring stack / stacked card makes the dimension matter. */
-  readonly canResizeWidth = input(true);
-  readonly canResizeHeight = input(true);
 
   readonly requestDeleteTopic = output<string>();
   readonly requestDeleteNode = output<{ topicId: string; nodeId: string }>();
@@ -221,9 +208,28 @@ export class TopicCardComponent {
 
   protected readonly zoom = signal(1);
   protected readonly zoomPercent = computed(() => `${Math.round(this.zoom() * 100)}%`);
-  /** Ephemeral view state like zoom; null = size to content. */
-  protected readonly cardWidth = signal<number | null>(null);
-  protected readonly cardHeight = signal<number | null>(null);
+
+  private readonly sizing = computed(() => this.topic().sizing ?? null);
+  /** Live override while a border drag is in flight; persisted on release. */
+  private readonly dragWidth = signal<number | null>(null);
+  private readonly dragHeight = signal<number | null>(null);
+  /**
+   * Entering a sizing mode fixes dimensions the user may not have dragged
+   * yet; those freeze at the card's rendered size, captured after render.
+   */
+  private readonly frozenWidth = signal<number | null>(null);
+  private readonly frozenHeight = signal<number | null>(null);
+
+  protected readonly cardWidth = computed(() => {
+    const sizing = this.sizing();
+    return this.dragWidth() ?? sizing?.width ?? (sizing ? this.frozenWidth() : null);
+  });
+  protected readonly cardHeight = computed(() => {
+    const sizing = this.sizing();
+    return (
+      this.dragHeight() ?? sizing?.height ?? (sizing?.mode === 'fixed' ? this.frozenHeight() : null)
+    );
+  });
   protected readonly editingTitle = signal(false);
   protected readonly cardTitle = computed(() => this.topic().cardTitle ?? this.topic().displayName);
   protected readonly cardSelected = computed(() => {
@@ -249,14 +255,20 @@ export class TopicCardComponent {
         input?.select();
       }
     });
-    // When a dimension stops being resizable its handles disappear, so drop
-    // any explicit size too — otherwise it would be stuck with no way to reset.
-    effect(() => {
-      if (!this.canResizeWidth()) {
-        this.cardWidth.set(null);
+    // Freeze un-dragged dimensions of a sizing mode at the rendered size —
+    // once per mode entry, so 'Fixed width' really stops following content.
+    afterRenderEffect(() => {
+      const sizing = this.sizing();
+      const root = this.cardRootRef().nativeElement;
+      if (!sizing || sizing.width !== undefined) {
+        this.frozenWidth.set(null);
+      } else if (this.frozenWidth() === null) {
+        this.frozenWidth.set(root.offsetWidth);
       }
-      if (!this.canResizeHeight()) {
-        this.cardHeight.set(null);
+      if (sizing?.mode !== 'fixed' || sizing.height !== undefined) {
+        this.frozenHeight.set(null);
+      } else if (this.frozenHeight() === null) {
+        this.frozenHeight.set(root.offsetHeight);
       }
     });
     // Deleting the last chart (via the Details panel) folds the section away.
@@ -347,33 +359,48 @@ export class TopicCardComponent {
 
     const onMove = (moveEvent: PointerEvent): void => {
       if (horizontal) {
-        const width = Math.round(startWidth + sign * (moveEvent.clientX - startX));
-        this.cardWidth.set(Math.min(MAX_CARD_WIDTH, Math.max(MIN_CARD_WIDTH, width)));
+        this.dragWidth.set(clampCardWidth(startWidth + sign * (moveEvent.clientX - startX)));
       } else {
-        const height = Math.round(startHeight + sign * (moveEvent.clientY - startY));
-        this.cardHeight.set(Math.min(MAX_CARD_HEIGHT, Math.max(MIN_CARD_HEIGHT, height)));
+        this.dragHeight.set(clampCardHeight(startHeight + sign * (moveEvent.clientY - startY)));
       }
     };
     const cleanup = (): void => {
       handle.removeEventListener('pointermove', onMove);
-      handle.removeEventListener('pointerup', cleanup);
-      handle.removeEventListener('pointercancel', cleanup);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onCancel);
+    };
+    const onUp = (): void => {
+      cleanup();
+      // Persist once per gesture — one undo step.
+      const width = this.dragWidth();
+      const height = this.dragHeight();
+      this.store.setCardSize(this.topic().id, {
+        ...(width !== null ? { width } : {}),
+        ...(height !== null ? { height } : {}),
+      });
+      this.dragWidth.set(null);
+      this.dragHeight.set(null);
+    };
+    const onCancel = (): void => {
+      cleanup();
+      this.dragWidth.set(null);
+      this.dragHeight.set(null);
     };
     handle.addEventListener('pointermove', onMove);
-    handle.addEventListener('pointerup', cleanup);
-    handle.addEventListener('pointercancel', cleanup);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onCancel);
   }
 
   protected nudgeWidth(event: Event, delta: number): void {
     event.preventDefault();
     const current = this.cardWidth() ?? this.cardRootRef().nativeElement.offsetWidth;
-    this.cardWidth.set(Math.min(MAX_CARD_WIDTH, Math.max(MIN_CARD_WIDTH, current + delta)));
+    this.store.setCardSize(this.topic().id, { width: current + delta });
   }
 
   protected nudgeHeight(event: Event, delta: number): void {
     event.preventDefault();
     const current = this.cardHeight() ?? this.cardRootRef().nativeElement.offsetHeight;
-    this.cardHeight.set(Math.min(MAX_CARD_HEIGHT, Math.max(MIN_CARD_HEIGHT, current + delta)));
+    this.store.setCardSize(this.topic().id, { height: current + delta });
   }
 
   /** Zooms the lattice (shrink or enlarge) to fill the card's visible width. */

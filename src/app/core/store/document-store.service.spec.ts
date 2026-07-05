@@ -628,6 +628,61 @@ describe('DocumentStoreService', () => {
     });
   });
 
+  describe('card sizing', () => {
+    it('stores a sizing mode and clears it on grow', () => {
+      store.setCardSizingMode(wealth().id, 'wrap');
+      expect(wealth().sizing).toEqual({ mode: 'wrap' });
+
+      store.setCardSizingMode(wealth().id, 'grow');
+      expect(wealth().sizing).toBeUndefined();
+    });
+
+    it('ignores a repeat of the current mode (no history step)', () => {
+      store.setCardSizingMode(wealth().id, 'grow');
+      expect(store.canUndo()).toBe(false);
+    });
+
+    it('fixes a grow card when a dimension is dragged, clamped to bounds', () => {
+      store.setCardSize(wealth().id, { width: 5000 });
+      expect(wealth().sizing).toEqual({ mode: 'fixed', width: 1600 });
+
+      store.setCardSize(wealth().id, { height: 12 });
+      expect(wealth().sizing).toEqual({ mode: 'fixed', width: 1600, height: 160 });
+
+      store.undo();
+      store.undo();
+      expect(wealth().sizing).toBeUndefined();
+    });
+
+    it('keeps dimensions across mode switches', () => {
+      store.setCardSize(wealth().id, { width: 480 });
+      store.setCardSizingMode(wealth().id, 'wrap');
+      expect(wealth().sizing).toEqual({ mode: 'wrap', width: 480 });
+    });
+
+    it('releasing the width of a wrap card ends wrapping', () => {
+      store.setCardSizingMode(wealth().id, 'wrap');
+      store.setCardSize(wealth().id, { width: 480, height: 400 });
+      store.setCardSize(wealth().id, { width: null });
+      expect(wealth().sizing).toEqual({ mode: 'fixed', height: 400 });
+    });
+
+    it('releasing every dimension of a fixed card returns it to grow', () => {
+      store.setCardSize(wealth().id, { width: 480, height: 400 });
+      store.setCardSize(wealth().id, { width: null, height: null });
+      expect(wealth().sizing).toBeUndefined();
+    });
+
+    it('treats a same-size drag as a no-op', () => {
+      store.setCardSize(wealth().id, { width: 480 });
+      const steps = store.canUndo();
+      store.setCardSize(wealth().id, { width: 480 });
+      store.undo();
+      expect(steps).toBe(true);
+      expect(wealth().sizing).toBeUndefined();
+    });
+  });
+
   describe('setRefName', () => {
     const REF_FIXTURE = {
       version: 2,

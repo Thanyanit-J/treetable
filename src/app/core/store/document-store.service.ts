@@ -9,6 +9,8 @@ import {
 import { computeTopicLattice, hiddenLeavesOf } from '../lattice/lattice-layout';
 import {
   AccentColor,
+  CardSizingMode,
+  CardSizingV2,
   CardV2,
   ChartCardV2,
   ChartConfigV2,
@@ -25,6 +27,8 @@ import {
   PillAlignment,
   RollupMode,
   TopicCardV2,
+  clampCardHeight,
+  clampCardWidth,
   cloneDocument,
   collectLeaves,
   createInputColumn,
@@ -2068,6 +2072,53 @@ export class DocumentStoreService {
     });
   }
 
+  setCardSizingMode(topicId: string, mode: CardSizingMode): void {
+    const current = this.topicById(topicId);
+    if (!current || (current.sizing?.mode ?? 'grow') === mode) {
+      return;
+    }
+    this.mutate((document) => {
+      const topic = this.findTopic(document, topicId);
+      if (!topic) {
+        return;
+      }
+      if (mode === 'grow') {
+        delete topic.sizing;
+      } else {
+        // Dimensions survive mode switches; the card fills in a missing
+        // width/height from its rendered size.
+        topic.sizing = { ...topic.sizing, mode };
+      }
+    });
+  }
+
+  /**
+   * Persists a border-drag or nudge. `null` releases a dimension. Setting a
+   * dimension on a grow card makes it 'fixed' (size stops following content);
+   * releasing the width of a 'wrap' card ends wrapping too.
+   */
+  setCardSize(topicId: string, size: { width?: number | null; height?: number | null }): void {
+    const current = this.topicById(topicId);
+    if (!current) {
+      return;
+    }
+    const next = nextCardSizing(current.sizing, size);
+    if (JSON.stringify(next ?? null) === JSON.stringify(current.sizing ?? null)) {
+      return;
+    }
+    this.mutate((document) => {
+      const topic = this.findTopic(document, topicId);
+      if (!topic) {
+        return;
+      }
+      if (next) {
+        topic.sizing = next;
+      } else {
+        delete topic.sizing;
+      }
+    });
+  }
+
   // -------------------------------------------------------------------------
   // Chart Panel
   // -------------------------------------------------------------------------
@@ -2518,6 +2569,40 @@ export class DocumentStoreService {
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Applies a size change to a card's sizing state. Width and height are
+ * clamped; `null` releases the dimension. A released width ends 'wrap' mode
+ * (nothing left to wrap against); a sizing with no fixed dimension left in
+ * 'fixed' mode collapses back to grow-with-content (undefined).
+ */
+function nextCardSizing(
+  current: CardSizingV2 | undefined,
+  size: { width?: number | null; height?: number | null },
+): CardSizingV2 | undefined {
+  const sizing: CardSizingV2 = { mode: 'fixed', ...current };
+  if (size.width !== undefined) {
+    if (size.width === null) {
+      delete sizing.width;
+      if (sizing.mode === 'wrap') {
+        sizing.mode = 'fixed';
+      }
+    } else {
+      sizing.width = clampCardWidth(size.width);
+    }
+  }
+  if (size.height !== undefined) {
+    if (size.height === null) {
+      delete sizing.height;
+    } else {
+      sizing.height = clampCardHeight(size.height);
+    }
+  }
+  if (sizing.mode === 'fixed' && sizing.width === undefined && sizing.height === undefined) {
+    return undefined;
+  }
+  return sizing;
+}
 
 function findOnlyLeafInChain(node: NodeV2): NodeV2 | null {
   let current = node;

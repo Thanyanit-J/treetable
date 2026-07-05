@@ -15,6 +15,8 @@ import {
   PageV2,
   RollupMode,
   TopicCardV2,
+  clampCardHeight,
+  clampCardWidth,
   makeId,
   normalizeDocumentLayout,
   walkNodes,
@@ -421,6 +423,19 @@ export class PersistenceService {
     }
     if (candidate.customRefName === true) {
       card.customRefName = true;
+    }
+    const sizing = (candidate as { sizing?: unknown }).sizing;
+    if (sizing && typeof sizing === 'object') {
+      const { mode, width, height } = sizing as Record<string, unknown>;
+      if (mode === 'wrap' || mode === 'fixed') {
+        card.sizing = { mode };
+        if (typeof width === 'number' && Number.isFinite(width)) {
+          card.sizing.width = clampCardWidth(width);
+        }
+        if (typeof height === 'number' && Number.isFinite(height)) {
+          card.sizing.height = clampCardHeight(height);
+        }
+      }
     }
     return card;
   }

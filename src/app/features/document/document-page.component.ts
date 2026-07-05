@@ -206,8 +206,6 @@ interface Toast {
                           <app-topic-card
                             [topic]="card"
                             [evaluation]="evaluationFor(card.id)"
-                            [canResizeWidth]="store.activeStacks().length > 1"
-                            [canResizeHeight]="stack.cards.length > 1"
                             (requestDeleteTopic)="queueTopicDelete($event)"
                             (requestDeleteNode)="queueNodeDelete($event.topicId, $event.nodeId)"
                             (notify)="showToast(false, $event)"

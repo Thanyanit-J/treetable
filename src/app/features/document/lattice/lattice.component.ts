@@ -59,10 +59,12 @@ interface ConnectorPath {
   selector: 'app-lattice',
   imports: [CdkContextMenuTrigger, CdkMenu, CdkMenuItem, CdkMenuTrigger, NodePillComponent],
   template: `
-    <div #latticeRoot class="relative w-max">
+    <div #latticeRoot class="relative" [class.w-max]="!wrapCells()">
       <div
         role="treegrid"
-        class="grid w-max"
+        class="grid"
+        [class.w-max]="!wrapCells()"
+        [class.w-full]="wrapCells()"
         [style.grid-template-columns]="gridTemplateColumns()"
         [attr.aria-label]="topic().displayName + ' tree-table'"
         [attr.aria-colcount]="columnCount()"
@@ -202,6 +204,7 @@ interface ConnectorPath {
                 <div
                   role="gridcell"
                   class="border-b border-r border-slate-200 p-0"
+                  [class.overflow-hidden]="wrapCells()"
                   [class.border-l]="columnIndex === 0"
                   [class.bg-sky-50]="
                     (selectedNodeId() === row.nodeId || isColumnSelected(column)) &&
@@ -274,7 +277,10 @@ interface ConnectorPath {
                   } @else {
                     <div
                       tabindex="0"
-                      class="h-full min-h-9 w-full min-w-24 max-w-72 cursor-default truncate px-2 py-1.5 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                      class="h-full min-h-9 w-full min-w-24 cursor-default px-2 py-1.5 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600"
+                      [class.truncate]="!wrapCells()"
+                      [class.max-w-72]="!wrapCells()"
+                      [class.break-words]="wrapCells()"
                       [class.text-right]="
                         column.kind === 'computed' || column.valueType === 'number'
                       "
@@ -632,9 +638,15 @@ export class LatticeComponent {
   // Grid geometry (integers only)
   // -------------------------------------------------------------------------
 
+  /** 'wrap' sizing: the table fills the card's width and cell text wraps. */
+  protected readonly wrapCells = computed(() => this.topic().sizing?.mode === 'wrap');
+
   protected readonly gridTemplateColumns = computed(() => {
     const tree = `repeat(${this.lattice().depthCount}, max-content)`;
-    const data = `repeat(${Math.max(1, this.renderColumns().length)}, minmax(6rem, max-content))`;
+    // Wrapping shares the available width between data columns instead of
+    // letting them grow to their content.
+    const dataSize = this.wrapCells() ? 'minmax(6rem, 1fr)' : 'minmax(6rem, max-content)';
+    const data = `repeat(${Math.max(1, this.renderColumns().length)}, ${dataSize})`;
     return `${tree} ${data}`;
   });
 
